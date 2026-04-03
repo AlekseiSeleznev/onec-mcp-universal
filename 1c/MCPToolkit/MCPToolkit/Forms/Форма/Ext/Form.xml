@@ -695,6 +695,23 @@
 									<Width>30</Width>
 									<ExtendedTooltip name="ПолеПарольBSLРасширеннаяПодсказка" id="211"/>
 								</InputField>
+								<InputField name="ПолеГейтвейURL" id="220">
+									<DataPath>ГейтвейURL</DataPath>
+									<Title>
+										<v8:item>
+											<v8:lang>ru</v8:lang>
+											<v8:content>Адрес MCP Gateway</v8:content>
+										</v8:item>
+									</Title>
+									<ToolTip>
+										<v8:item>
+											<v8:lang>ru</v8:lang>
+											<v8:content>URL шлюза (порт 8080), например: http://localhost:8080</v8:content>
+										</v8:item>
+									</ToolTip>
+									<Width>50</Width>
+									<ExtendedTooltip name="ПолеГейтвейURLРасширеннаяПодсказка" id="221"/>
+								</InputField>
 							</ChildItems>
 						</UsualGroup>
 						<UsualGroup name="ГруппаКнопкиВыгрузки" id="218">
@@ -954,6 +971,15 @@
 				<v8:Type>xs:string</v8:Type>
 				<v8:StringQualifiers>
 					<v8:Length>100</v8:Length>
+				</v8:StringQualifiers>
+			</Type>
+		</Attribute>
+		<Attribute name="ГейтвейURL" id="26">
+			<Type>
+				<v8:Type>xs:string</v8:Type>
+				<v8:StringQualifiers>
+					<v8:Length>0</v8:Length>
+					<v8:AllowedLength>Variable</v8:AllowedLength>
 				</v8:StringQualifiers>
 			</Type>
 		</Attribute>
