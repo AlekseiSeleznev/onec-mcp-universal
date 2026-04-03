@@ -1,0 +1,77 @@
+name: onec-mcp-universal
+
+services:
+
+  # ─── Gateway ──────────────────────────────────────────────────────────────────
+  gateway:
+    build: ./gateway
+    container_name: onec-mcp-gw
+    ports:
+      - "${GW_PORT:-8080}:8080"
+    environment:
+      PORT: 8080
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ONEC_TOOLKIT_URL: http://onec-toolkit:6003/mcp
+      PLATFORM_CONTEXT_URL: http://platform-context:8080/sse
+      LSP_DOCKER_CONTAINER: ${LSP_CONTAINER:-mcp-lsp-zup}
+      ENABLED_BACKENDS: ${ENABLED_BACKENDS:-onec-toolkit,platform-context,bsl-lsp-bridge}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+    depends_on:
+      onec-toolkit:
+        condition: service_healthy
+      platform-context:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [onec-net]
+
+  # ─── 1C Data Backend ──────────────────────────────────────────────────────────
+  onec-toolkit:
+    image: roctup/1c-mcp-toolkit-proxy:latest
+    container_name: onec-mcp-toolkit
+    ports:
+      - "6003:6003"   # exposed so 1C app server can POST results to /1c/poll
+    environment:
+      PORT: 6003
+      TIMEOUT: ${ONEC_TIMEOUT:-180}
+      RESPONSE_FORMAT: json
+      ALLOW_DANGEROUS_WITH_APPROVAL: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6003/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks: [onec-net]
+
+  # ─── 1C Platform Docs Backend ─────────────────────────────────────────────────
+  platform-context:
+    image: ghcr.io/alkoleft/mcp-bsl-platform-context:latest
+    container_name: onec-mcp-platform
+    expose:
+      - "8080"
+    command:
+      - "java"
+      - "-jar"
+      - "/app/mcp-bsl-context.jar"
+      - "--mode"
+      - "sse"
+      - "--platform-path"
+      - "${PLATFORM_PATH:-/opt/1cv8/x86_64/8.3.27.2074}"
+      - "--port"
+      - "8080"
+    volumes:
+      - ${HOST_PLATFORM_PATH:-/opt/1cv8}:/opt/1cv8:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    networks: [onec-net]
+
+networks:
+  onec-net:
+    driver: bridge
