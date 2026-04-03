@@ -52,22 +52,19 @@ Claude Code / Cursor
       │
       │  HTTP :8080/mcp
       ▼
-┌──────────────────────────────────────────────────────┐
-│               onec-mcp-gateway (Python)              │
-│                                                      │
-│  ┌─────────────────┐   ┌────────────────────────┐   │
-│  │  onec-toolkit   │   │   platform-context     │   │
-│  │  :6003          │   │   :8081                │   │
-│  │  Python/FastAPI │   │   Java/Spring Boot     │   │
-│  │  8 tools        │   │   5 tools              │   │
-│  └─────────────────┘   └────────────────────────┘   │
-│                                                      │
-│  ┌──────────────────────────────────────────────┐   │
-│  │  BSL Language Server + mcp-lsp-bridge        │   │
-│  │  Java 21 + Go                                │   │
-│  │  14 tools                                    │   │
-│  └──────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│       onec-mcp-gateway (Python)         │
+└─────────────────────────────────────────┘
+   │
+   ├─ onec-toolkit · Streamable HTTP · :6003
+   │  8 инструментов · Python/FastAPI
+   │
+   ├─ platform-context · SSE · :8081
+   │  5 инструментов · Java/Spring Boot
+   │
+   └─ bsl-lsp-bridge · stdio
+      14 инструментов · BSL Language Server + Go
+
       │
       │  HTTP :6003  (обработка MCPToolkit → gateway)
       ▼
