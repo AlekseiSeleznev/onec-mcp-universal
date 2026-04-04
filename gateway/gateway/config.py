@@ -33,7 +33,13 @@ class Settings(BaseSettings):
     # BSL workspace path inside the container (must match BSL_WORKSPACE env of LSP)
     bsl_workspace: str = "/projects"
 
-    # Which backends to enable (comma-separated: onec-toolkit,platform-context,bsl-lsp-bridge)
+    # Test runner backend (mcp-onec-test-runner, optional)
+    test_runner_url: str = "http://localhost:8000/sse"
+
+    # BSL Graph backend REST API (bsl-graph, optional)
+    bsl_graph_url: str = "http://localhost:8888"
+
+    # Which backends to enable (comma-separated: onec-toolkit,platform-context,bsl-lsp-bridge,test-runner)
     enabled_backends: str = "onec-toolkit,platform-context,bsl-lsp-bridge"
 
     class Config:

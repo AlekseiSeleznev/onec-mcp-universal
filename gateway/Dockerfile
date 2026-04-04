@@ -16,6 +16,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY gateway/ ./gateway/
+COPY resources/ ./resources/
 
 EXPOSE 8080
 

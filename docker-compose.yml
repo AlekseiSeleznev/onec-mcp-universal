@@ -76,6 +76,122 @@ services:
     restart: unless-stopped
     networks: [onec-net]
 
+  # ─── Test Runner (optional, activate with: docker compose --profile test-runner up -d)
+  test-runner:
+    image: ghcr.io/alkoleft/mcp-onec-test-runner:0.5.2-sse
+    container_name: onec-mcp-test-runner
+    profiles: [test-runner]
+    ports:
+      - "8000:8000"
+    environment:
+      SPRING_CONFIG_IMPORT: file:/config/application.yml
+      JAVA_OPTS: "-Xmx1g"
+    volumes:
+      - ${HOST_PLATFORM_PATH:-/opt/1cv8}:/opt/1cv8:ro
+      - ./test-runner/application.yml:/config/application.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/localhost/8000'"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks: [onec-net]
+
+  # ─── BSL Graph (optional, activate with: docker compose --profile bsl-graph up -d)
+  # Heavy: requires NebulaGraph (3 containers). Index BSL sources first via bsl-graph UI.
+  bsl-graph:
+    image: ghcr.io/alkoleft/bsl-graph:latest
+    container_name: onec-bsl-graph
+    profiles: [bsl-graph]
+    ports:
+      - "8888:8888"
+    environment:
+      NEBULA_HOST: nebula-graphd
+      NEBULA_PORT: 9669
+      NEBULA_USERNAME: root
+      NEBULA_PASSWORD: nebula
+      NEBULA_SPACE: onec_graph
+      SERVER_PORT: 8888
+    depends_on:
+      - nebula-graphd
+    restart: unless-stopped
+    networks: [onec-net, nebula-net]
+
+  nebula-metad:
+    image: vesoft/nebula-metad:v3.8.0
+    container_name: onec-nebula-metad
+    profiles: [bsl-graph]
+    environment:
+      USER: root
+      TZ: UTC
+    command:
+      - --meta_server_addrs=nebula-metad:9559
+      - --local_ip=nebula-metad
+      - --ws_ip=nebula-metad
+      - --port=9559
+      - --ws_http_port=19559
+      - --data_path=/data/meta
+      - --log_dir=/logs
+    volumes:
+      - nebula-meta-data:/data/meta
+      - nebula-meta-logs:/logs
+    restart: unless-stopped
+    networks: [nebula-net]
+
+  nebula-storaged:
+    image: vesoft/nebula-storaged:v3.8.0
+    container_name: onec-nebula-storaged
+    profiles: [bsl-graph]
+    environment:
+      USER: root
+      TZ: UTC
+    command:
+      - --meta_server_addrs=nebula-metad:9559
+      - --local_ip=nebula-storaged
+      - --ws_ip=nebula-storaged
+      - --port=9779
+      - --ws_http_port=19779
+      - --data_path=/data/storage
+      - --log_dir=/logs
+    volumes:
+      - nebula-storage-data:/data/storage
+      - nebula-storage-logs:/logs
+    depends_on: [nebula-metad]
+    restart: unless-stopped
+    networks: [nebula-net]
+
+  nebula-graphd:
+    image: vesoft/nebula-graphd:v3.8.0
+    container_name: onec-nebula-graphd
+    profiles: [bsl-graph]
+    environment:
+      USER: root
+      TZ: UTC
+    command:
+      - --meta_server_addrs=nebula-metad:9559
+      - --local_ip=nebula-graphd
+      - --ws_ip=nebula-graphd
+      - --port=9669
+      - --ws_http_port=19669
+      - --log_dir=/logs
+    ports:
+      - "9669:9669"
+    volumes:
+      - nebula-graph-logs:/logs
+    depends_on: [nebula-storaged]
+    restart: unless-stopped
+    networks: [nebula-net]
+
 networks:
   onec-net:
     driver: bridge
+  nebula-net:
+    driver: bridge
+
+volumes:
+  nebula-meta-data:
+  nebula-meta-logs:
+  nebula-storage-data:
+  nebula-storage-logs:
+  nebula-graph-logs:

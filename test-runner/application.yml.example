@@ -1,0 +1,39 @@
+# mcp-onec-test-runner configuration
+# Copy this file to test-runner/application.yml and edit for your project.
+# Documentation: https://github.com/alkoleft/mcp-onec-test-runner
+#
+# Then start the service:
+#   docker compose --profile test-runner up -d
+#   # Add test-runner to ENABLED_BACKENDS in .env:
+#   ENABLED_BACKENDS=onec-toolkit,platform-context,bsl-lsp-bridge,test-runner
+
+app:
+  # Project format: DESIGNER (конфигуратор) or EDT
+  format: DESIGNER
+
+  # Absolute path to the project root (inside the container)
+  # Map your host project path via a volume in docker-compose.yml if needed
+  base-path: "/project"
+
+  source-set:
+    - path: "configuration"
+      name: my-config
+      type: CONFIGURATION
+      purpose: [MAIN]
+    - path: "tests"
+      name: tests
+      type: EXTENSION
+      purpose: [TESTS, YAXUNIT]
+
+  connection:
+    # 1C connection string
+    connection-string: "Srvr=your-server;Ref=your-base;"
+    user: ""
+    password: ""
+
+  # Platform version (optional, auto-detected if empty)
+  # platform-version: "8.3.24.1234"
+
+  tools:
+    # Build tool: DESIGNER or IBCMD
+    builder: DESIGNER

@@ -1,11 +1,13 @@
 import asyncio
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
+import httpx
 from mcp.server import Server
-from mcp.types import CallToolResult, TextContent, Tool
+from mcp.types import CallToolResult, Resource, TextContent, TextResourceContents, Tool
 
 from .backends.manager import BackendManager
 from .config import settings
@@ -129,7 +131,94 @@ GW_TOOLS = [
             "required": ["name"],
         },
     ),
+    Tool(
+        name="validate_query",
+        description=(
+            "Validate 1C query syntax without executing it or returning data. "
+            "Performs static checks (balanced parentheses, required keywords, common mistakes) "
+            "and, if a database is active, sends the query to the server with ПЕРВЫЕ 0 "
+            "to catch server-side syntax errors. "
+            "Use this to iteratively fix queries before running execute_query."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "1C query text to validate (ВЫБРАТЬ ...)",
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    Tool(
+        name="graph_stats",
+        description=(
+            "Get statistics of the BSL dependency graph: total number of nodes, edges, "
+            "and breakdown by object type (documents, catalogs, registers, etc.). "
+            "Requires the bsl-graph service to be running."
+        ),
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="graph_search",
+        description=(
+            "Search for 1C configuration objects in the dependency graph. "
+            "Returns matching nodes with their types and IDs for use in graph_related. "
+            "Requires the bsl-graph service to be running."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search term (object name or part of it)",
+                },
+                "types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Filter by object types, e.g. ['DOCUMENT', 'CATALOG', 'REGISTER']. "
+                        "Leave empty to search all types."
+                    ),
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results to return (default 20)",
+                    "default": 20,
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    Tool(
+        name="graph_related",
+        description=(
+            "Find all objects related to a given configuration object in the dependency graph. "
+            "Shows what the object uses and what uses it — useful for impact analysis "
+            "('what breaks if I change X'). "
+            "Use graph_search first to get the object ID. "
+            "Requires the bsl-graph service to be running."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "object_id": {
+                    "type": "string",
+                    "description": "Object ID from graph_search result",
+                },
+                "depth": {
+                    "type": "integer",
+                    "description": "Traversal depth (1 = direct neighbors, 2 = two hops). Default 1.",
+                    "default": 1,
+                },
+            },
+            "required": ["object_id"],
+        },
+    ),
 ]
+
+_SYNTAX_RESOURCE_PATH = Path(__file__).parent.parent / "resources" / "syntax_1c.txt"
 
 
 async def _run_export_bsl(connection: str, output_dir: str) -> str:
@@ -208,6 +297,29 @@ async def _run_export_bsl(connection: str, output_dir: str) -> str:
         return f"ERROR: {exc}"
 
 
+@server.list_resources()
+async def list_resources() -> list[Resource]:
+    return [
+        Resource(
+            uri="file:///syntax_1c.txt",
+            name="1C BSL Syntax Reference",
+            description=(
+                "Syntax reference for the 1C:Enterprise built-in language (BSL): "
+                "types, operators, control structures, procedures, exceptions, "
+                "preprocessor directives. Use as context when writing BSL code."
+            ),
+            mimeType="text/markdown",
+        )
+    ]
+
+
+@server.read_resource()
+async def read_resource(uri) -> str:
+    if str(uri) == "file:///syntax_1c.txt":
+        return _SYNTAX_RESOURCE_PATH.read_text(encoding="utf-8")
+    raise ValueError(f"Unknown resource: {uri}")
+
+
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     return GW_TOOLS + manager.get_all_tools()
@@ -242,8 +354,188 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "disconnect_database":
         return [TextContent(type="text", text=await _disconnect_database(arguments["name"]))]
 
+    if name == "validate_query":
+        result_text = await _validate_query(arguments.get("query", ""))
+        return [TextContent(type="text", text=result_text)]
+
+    if name == "graph_stats":
+        result_text = await _graph_request("GET", "/api/graph/stats")
+        return [TextContent(type="text", text=result_text)]
+
+    if name == "graph_search":
+        payload = {
+            "query": arguments.get("query", ""),
+            "types": arguments.get("types", []),
+            "limit": arguments.get("limit", 20),
+        }
+        result_text = await _graph_request("POST", "/api/graph/search", payload)
+        return [TextContent(type="text", text=result_text)]
+
+    if name == "graph_related":
+        object_id = arguments.get("object_id", "")
+        depth = arguments.get("depth", 1)
+        result_text = await _graph_request(
+            "GET", f"/api/graph/related/{object_id}", params={"depth": depth}
+        )
+        return [TextContent(type="text", text=result_text)]
+
     result: CallToolResult = await manager.call_tool(name, arguments)
     return result.content
+
+
+def _validate_query_static(query: str) -> tuple[bool, list[str], list[str]]:
+    """Static syntax check for 1C queries. Returns (valid, errors, warnings)."""
+    stripped = query.strip()
+    if not stripped:
+        return False, ["Запрос пуст"], []
+
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # Strip single-line comments for keyword analysis
+    clean = re.sub(r'//[^\n]*', '', stripped)
+    upper = clean.upper()
+
+    # Must contain ВЫБРАТЬ
+    if 'ВЫБРАТЬ' not in upper:
+        errors.append("В запросе отсутствует ключевое слово ВЫБРАТЬ")
+
+    # Balanced parentheses (skip string literals)
+    depth = 0
+    i = 0
+    while i < len(clean):
+        c = clean[i]
+        if c == '"':
+            i += 1
+            while i < len(clean) and clean[i] != '"':
+                i += 1
+        elif c == '(':
+            depth += 1
+        elif c == ')':
+            depth -= 1
+            if depth < 0:
+                errors.append("Лишняя закрывающая скобка ')'")
+                depth = 0
+        i += 1
+
+    if depth > 0:
+        errors.append(f"Несбалансированные скобки: {depth} незакрытых '('")
+
+    # Warn: virtual table params in WHERE instead of inside brackets
+    vt_pattern = r'\.(Остатки|ОстаткиИОбороты|Обороты|СрезПоследних|СрезПервых)\s*\)'
+    if re.search(vt_pattern, clean, re.IGNORECASE) and 'ГДЕ' in upper:
+        warnings.append(
+            "Параметры виртуальной таблицы могут быть в ГДЕ вместо скобок — "
+            "это снижает производительность. Фильтруйте внутри .Остатки(...)"
+        )
+
+    # Warn: SELECT *
+    if re.search(r'ВЫБРАТЬ\s+(\w+\s+)*\*', upper):
+        warnings.append("Рекомендуется выбирать конкретные поля вместо *")
+
+    return len(errors) == 0, errors, warnings
+
+
+def _add_limit_zero(query: str) -> str:
+    """Insert ПЕРВЫЕ 0 after the outermost ВЫБРАТЬ (skips sub-queries)."""
+    # Find the position of the first top-level ВЫБРАТЬ
+    match = re.search(r'\bВЫБРАТЬ\b', query, re.IGNORECASE)
+    if not match:
+        return query
+    pos = match.end()
+    # Skip РАЗЛИЧНЫЕ if present
+    tail = query[pos:]
+    diff_match = re.match(r'\s+РАЗЛИЧНЫЕ\b', tail, re.IGNORECASE)
+    if diff_match:
+        pos += diff_match.end()
+    # Skip existing ПЕРВЫЕ N if present
+    tail = query[pos:]
+    first_match = re.match(r'\s+ПЕРВЫЕ\s+\d+\b', tail, re.IGNORECASE)
+    if first_match:
+        # Replace the existing limit with 0
+        return query[:pos] + re.sub(
+            r'(\s+ПЕРВЫЕ\s+)\d+', r'\g<1>0', tail, count=1, flags=re.IGNORECASE
+        )
+    return query[:pos] + ' ПЕРВЫЕ 0 ' + tail
+
+
+async def _validate_query(query: str) -> str:
+    valid, errors, warnings = _validate_query_static(query)
+    result: dict = {}
+
+    if errors:
+        result["valid"] = False
+        result["errors"] = errors
+        if warnings:
+            result["warnings"] = warnings
+        return json.dumps(result, ensure_ascii=False, indent=2)
+
+    # Static checks passed — try server-side validation if DB is active
+    try:
+        active = registry.get_active()
+        if active:
+            toolkit = manager._tool_map.get("execute_query")
+            if toolkit:
+                limited_query = _add_limit_zero(query)
+                call_result = await toolkit.call_tool(
+                    "execute_query", {"query": limited_query}
+                )
+                response_text = (
+                    call_result.content[0].text if call_result.content else ""
+                )
+                # Detect server-reported syntax errors
+                low = response_text.lower()
+                if any(
+                    kw in low
+                    for kw in ("синтаксическ", "syntax error", "ошибка синтакс",
+                               "недопустимый", "unexpected token", "parse error")
+                ):
+                    result["valid"] = False
+                    result["errors"] = [f"Ошибка синтаксиса от сервера 1С: {response_text[:600]}"]
+                else:
+                    result["valid"] = True
+                    result["source"] = "server"
+                    result["message"] = "Запрос проверен на сервере 1С — синтаксис корректен"
+                if warnings:
+                    result["warnings"] = warnings
+                return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception:
+        pass  # fall through to static-only result
+
+    result["valid"] = True
+    result["source"] = "static"
+    result["message"] = "Статическая проверка пройдена (база данных не подключена)"
+    if warnings:
+        result["warnings"] = warnings
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+async def _graph_request(
+    method: str,
+    path: str,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> str:
+    base_url = settings.bsl_graph_url.rstrip("/")
+    url = base_url + path
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            if method == "GET":
+                resp = await client.get(url, params=params)
+            else:
+                resp = await client.post(url, json=body, params=params)
+            resp.raise_for_status()
+            try:
+                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
+            except Exception:
+                return resp.text
+    except httpx.ConnectError:
+        return (
+            f"ERROR: bsl-graph service not available at {base_url}. "
+            "Start it with: docker compose --profile bsl-graph up -d"
+        )
+    except Exception as exc:
+        return f"ERROR: {exc}"
 
 
 async def _connect_database(name: str, connection: str, project_path: str) -> str:

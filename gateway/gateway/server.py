@@ -51,6 +51,8 @@ def _build_backends() -> list:
                     ["exec", "-i", settings.lsp_docker_container, "mcp-lsp-bridge"],
                 )
             )
+    if "test-runner" in enabled:
+        backends.append(HttpBackend("test-runner", settings.test_runner_url, "sse"))
     return backends
 
 
