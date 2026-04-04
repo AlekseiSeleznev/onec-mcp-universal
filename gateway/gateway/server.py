@@ -90,6 +90,12 @@ async def export_bsl_api(request: Request) -> JSONResponse:
     if not connection:
         return JSONResponse({"error": "Field 'connection' is required"}, status_code=400)
 
+    # If EPF sends the default container path "/projects", remap to the active DB's project_path
+    if output_dir == "/projects" or not output_dir:
+        active_db = _registry.get_active()
+        if active_db and active_db.project_path:
+            output_dir = active_db.project_path
+
     from . import mcp_server as _ms
     result = await _ms._run_export_bsl(connection, output_dir)
     ok = not result.startswith("ERROR") and not result.startswith("Export failed")
