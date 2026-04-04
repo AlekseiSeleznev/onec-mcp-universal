@@ -385,6 +385,19 @@ Cursor / Claude Code
 
 ---
 
+## Используемые проекты
+
+Шлюз объединяет три независимых MCP-сервера сообщества 1С:
+
+| Проект | Автор | Что делает |
+|---|---|---|
+| [1c-mcp-toolkit](https://github.com/ROCTUP/1c-mcp-toolkit) | ROCTUP | Запросы к БД, выполнение кода, метаданные, журнал регистрации |
+| [mcp-bsl-platform-context](https://github.com/alkoleft/mcp-bsl-platform-context) | alkoleft | Документация платформы 1С, поиск по API |
+| [mcp-bsl-lsp-bridge](https://github.com/alkoleft/mcp-bsl-lsp-bridge) | alkoleft | MCP-мост к BSL Language Server |
+| [lsp-session-manager](https://github.com/alkoleft/lsp-session-manager) | alkoleft | Мультиплексор сессий BSL Language Server |
+
+---
+
 ## Удаление
 
 ```bash
