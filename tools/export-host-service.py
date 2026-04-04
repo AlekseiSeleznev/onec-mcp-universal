@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """
-Хостовый HTTP-сервис для выгрузки BSL-исходников через 1cv8c.
+Хостовый HTTP-сервис для выгрузки BSL-исходников через 1cv8 DESIGNER.
 Запускается на хосте (не в контейнере), слушает на порту 8082.
-Контейнер вызывает его через host.docker.internal:8082 или IP хоста.
+Контейнер вызывает его через --network host → localhost:8082.
+
+ВАЖНО: использует 1cv8 (толстый клиент), НЕ 1cv8c.
+1cv8c не поддерживает режим DESIGNER и игнорирует DumpConfigToFiles.
 
 Запуск:
     python3 tools/export-host-service.py
-    python3 tools/export-host-service.py --port 8082 --workspace /home/aleksei/projects
+    python3 tools/export-host-service.py --port 8082 --workspace /z/Z01
+
+ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ: ERP содержит роли с именами длиннее 255 байт.
+На Linux-файловых системах (ext4/btrfs) такие имена не поддерживаются,
+выгрузка завершится с ошибкой "File name too long" на соответствующей роли.
 """
 import argparse
 import json
