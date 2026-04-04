@@ -279,7 +279,7 @@ async def _connect_database(name: str, connection: str, project_path: str) -> st
         )
         lsp_backend = StdioBackend(
             f"mcp-lsp-{name}", "docker",
-            ["exec", "-i", lsp_container, "mcp-lsp-bridge"]
+            ["exec", "-w", "/projects", "-i", lsp_container, "mcp-lsp-bridge"]
         )
         await manager.add_db_backends(name, toolkit_backend, lsp_backend)
 

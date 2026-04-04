@@ -56,6 +56,13 @@ def _build_backends() -> list:
 
 @asynccontextmanager
 async def lifespan(app: Starlette):
+    # Patch static onec-toolkit container (disables outputSchema generation in FastMCP)
+    try:
+        from .docker_manager import _patch_toolkit_structured_output
+        _patch_toolkit_structured_output("onec-mcp-toolkit")
+    except Exception as exc:
+        logger.warning(f"Could not patch static onec-mcp-toolkit: {exc}")
+
     backends = _build_backends()
     logger.info(f"Starting {len(backends)} backend(s)...")
     await _manager.start_all(backends)

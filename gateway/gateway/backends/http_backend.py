@@ -21,7 +21,12 @@ class HttpBackend(BackendBase):
         self._exit_stack: AsyncExitStack | None = None
         self._session: ClientSession | None = None
 
-    async def start(self) -> None:
+    async def _connect(self) -> None:
+        if self._exit_stack:
+            try:
+                await self._exit_stack.aclose()
+            except Exception:
+                pass
         self._exit_stack = AsyncExitStack()
         if self._transport == "sse":
             read, write = await self._exit_stack.enter_async_context(
@@ -38,6 +43,9 @@ class HttpBackend(BackendBase):
         result = await self._session.list_tools()
         self.tools = result.tools
         self.available = True
+
+    async def start(self) -> None:
+        await self._connect()
         logger.info(f"[{self.name}] connected ({len(self.tools)} tools) via {self._transport}")
 
     async def stop(self) -> None:
@@ -46,4 +54,10 @@ class HttpBackend(BackendBase):
         self.available = False
 
     async def call_tool(self, name: str, arguments: dict) -> CallToolResult:
-        return await self._session.call_tool(name, arguments)
+        try:
+            return await self._session.call_tool(name, arguments)
+        except Exception as exc:
+            logger.warning(f"[{self.name}] call_tool failed ({exc}), reconnecting...")
+            await self._connect()
+            logger.info(f"[{self.name}] reconnected ({len(self.tools)} tools)")
+            return await self._session.call_tool(name, arguments)

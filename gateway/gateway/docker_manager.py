@@ -73,6 +73,39 @@ def _get_container_port(container: docker.models.containers.Container, env_var: 
     return None
 
 
+def _patch_toolkit_structured_output(container_name: str) -> None:
+    """
+    Patch mcp_handler.py inside the toolkit container to disable outputSchema generation.
+    FastMCP 1.26+ auto-generates outputSchema from Dict return types, but the toolkit
+    returns TextContent which fails MCP output validation. structured_output=False disables it.
+    """
+    try:
+        c = _docker().containers.get(container_name)
+        handler_path = "/app/onec_mcp_toolkit_proxy/mcp_handler.py"
+        # Check if already patched
+        result = c.exec_run(f"grep -c 'structured_output=False' {handler_path}")
+        if result.exit_code == 0 and result.output.decode().strip() != "0":
+            log.debug(f"[{container_name}] mcp_handler.py already patched")
+            return
+        # Apply patch
+        c.exec_run(
+            f"sed -i 's/@mcp\\.tool()/@mcp.tool(structured_output=False)/g' {handler_path}"
+        )
+        log.info(f"[{container_name}] patched mcp_handler.py: structured_output=False")
+        # Restart the Python process by restarting the container
+        c.restart(timeout=5)
+        # Wait for healthy
+        for _ in range(20):
+            time.sleep(1)
+            c.reload()
+            health = c.attrs.get("State", {}).get("Health", {}).get("Status", "")
+            if health == "healthy":
+                break
+        log.info(f"[{container_name}] restarted after patch")
+    except Exception as exc:
+        log.warning(f"[{container_name}] patch failed: {exc}")
+
+
 def start_toolkit(db_name: str) -> tuple[int, str]:
     """
     Start onec-toolkit container for db_name.
@@ -83,6 +116,7 @@ def start_toolkit(db_name: str) -> tuple[int, str]:
     if existing:
         port = _get_container_port(existing, "PORT") or 6003
         log.info(f"Toolkit {container_name} already running on port {port}")
+        _patch_toolkit_structured_output(container_name)
         return port, container_name
 
     # Remove stopped container with same name if any
@@ -120,6 +154,7 @@ def start_toolkit(db_name: str) -> tuple[int, str]:
         log.warning(f"Container {container_name} health check timed out, proceeding anyway")
 
     log.info(f"Started {container_name} on port {port}")
+    _patch_toolkit_structured_output(container_name)
     return port, container_name
 
 
