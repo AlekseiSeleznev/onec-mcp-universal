@@ -487,7 +487,9 @@ Cursor / Claude Code
 
 ## Используемые проекты
 
-Шлюз объединяет четыре независимых проекта сообщества 1С:
+Шлюз объединяет open-source проекты сообщества 1С:
+
+**Основные (запускаются всегда):**
 
 | Проект | Автор | Что делает |
 |---|---|---|
@@ -495,6 +497,13 @@ Cursor / Claude Code
 | [mcp-bsl-platform-context](https://github.com/alkoleft/mcp-bsl-platform-context) | alkoleft | Документация платформы 1С, поиск по API |
 | [mcp-bsl-lsp-bridge](https://github.com/alkoleft/mcp-bsl-lsp-bridge) | alkoleft | MCP-мост к BSL Language Server |
 | [lsp-session-manager](https://github.com/alkoleft/lsp-session-manager) | alkoleft | Мультиплексор сессий BSL Language Server |
+
+**Опциональные (профили docker compose):**
+
+| Проект | Автор | Профиль | Что делает |
+|---|---|---|---|
+| [mcp-onec-test-runner](https://github.com/alkoleft/mcp-onec-test-runner) | alkoleft | `test-runner` | Запуск тестов YaXUnit, сборка конфигурации, проверка синтаксиса |
+| [bsl-graph](https://github.com/alkoleft/bsl-graph) | alkoleft | `bsl-graph` | Граф зависимостей объектов конфигурации |
 
 ---
 
