@@ -13,6 +13,7 @@ from .backends.http_backend import HttpBackend
 from .backends.manager import BackendManager
 from .backends.stdio_backend import StdioBackend
 from .config import settings
+from .db_registry import registry as _registry
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 _manager = BackendManager()
 mcp_server.manager = _manager
+mcp_server.registry = _registry
 
 session_manager = StreamableHTTPSessionManager(
     app=mcp_server.server,
@@ -94,10 +96,43 @@ async def export_bsl_api(request: Request) -> JSONResponse:
     return JSONResponse({"ok": ok, "result": result}, status_code=200)
 
 
+async def register_epf_api(request: Request) -> JSONResponse:
+    """
+    Called by MCPToolkit EPF when user presses 'Подключить к прокси'.
+    Body: {"name": "Z01", "connection": "Srvr=as-hp;Ref=Z01;"}
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+    db_name = body.get("name", "").strip()
+    if not db_name:
+        return JSONResponse({"error": "Field 'name' is required"}, status_code=400)
+
+    _registry.mark_epf_connected(db_name)
+    logger.info(f"EPF registered for database: {db_name}")
+
+    # Return toolkit poll URL for this database (host-accessible for 1C client)
+    db = _registry.get(db_name)
+    poll_url = ""
+    if db and db.toolkit_port:
+        poll_url = f"http://localhost:{db.toolkit_port}/1c/poll"
+    elif db and db.toolkit_url:
+        poll_url = db.toolkit_url.replace("/mcp", "/1c/poll")
+    return JSONResponse({
+        "ok": True,
+        "database": db_name,
+        "toolkit_poll_url": poll_url,
+        "active": _registry.active_name == db_name,
+    })
+
+
 _starlette = Starlette(
     routes=[
         Route("/health", health),
         Route("/api/export-bsl", export_bsl_api, methods=["POST"]),
+        Route("/api/register", register_epf_api, methods=["POST"]),
     ],
     lifespan=lifespan,
 )

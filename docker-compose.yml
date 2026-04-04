@@ -4,7 +4,9 @@ services:
 
   # ─── Gateway ──────────────────────────────────────────────────────────────────
   gateway:
-    build: ./gateway
+    build:
+      context: ./gateway
+      network: host
     container_name: onec-mcp-gw
     ports:
       - "${GW_PORT:-8080}:8080"
@@ -37,7 +39,7 @@ services:
       RESPONSE_FORMAT: json
       ALLOW_DANGEROUS_WITH_APPROVAL: "true"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6003/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6003/health')"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -64,7 +66,7 @@ services:
     volumes:
       - ${HOST_PLATFORM_PATH:-/opt/1cv8}:/opt/1cv8:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/localhost/8080'"]
       interval: 20s
       timeout: 10s
       retries: 5

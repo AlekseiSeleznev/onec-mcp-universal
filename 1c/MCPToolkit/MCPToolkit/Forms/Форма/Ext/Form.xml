@@ -741,6 +741,17 @@
 									<CommandName>Form.Command.ВыгрузитьBSL</CommandName>
 									<ExtendedTooltip name="КнопкаВыгрузитьBSLРасширеннаяПодсказка" id="215"/>
 								</Button>
+								<Button name="КнопкаЗарегистрироватьсяВШлюзе" id="222">
+									<Type>UsualButton</Type>
+									<Title>
+										<v8:item>
+											<v8:lang>ru</v8:lang>
+											<v8:content>Подключить к прокси</v8:content>
+										</v8:item>
+									</Title>
+									<CommandName>Form.Command.ЗарегистрироватьсяВШлюзе</CommandName>
+									<ExtendedTooltip name="КнопкаЗарегистрироватьсяВШлюзеРасширеннаяПодсказка" id="223"/>
+								</Button>
 							</ChildItems>
 						</UsualGroup>
 						<InputField name="ПолеЛогВыгрузки" id="216">
@@ -1056,6 +1067,15 @@
 				</v8:item>
 			</Title>
 			<Action>ВыгрузитьBSL</Action>
+		</Command>
+		<Command name="ЗарегистрироватьсяВШлюзе" id="10">
+			<Title>
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Подключить к прокси</v8:content>
+				</v8:item>
+			</Title>
+			<Action>ЗарегистрироватьсяВШлюзе</Action>
 		</Command>
 	</Commands>
 	<Events>

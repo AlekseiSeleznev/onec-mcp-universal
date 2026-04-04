@@ -1,9 +1,6 @@
 FROM python:3.12-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        docker.io \
-        curl \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=docker:cli /usr/local/bin/docker /usr/local/bin/docker
 
 WORKDIR /app
 
@@ -15,6 +12,6 @@ COPY gateway/ ./gateway/
 EXPOSE 8080
 
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
 
 CMD ["python", "-m", "gateway"]

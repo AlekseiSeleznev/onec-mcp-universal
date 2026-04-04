@@ -9,9 +9,11 @@ from mcp.types import CallToolResult, TextContent, Tool
 
 from .backends.manager import BackendManager
 from .config import settings
+from .db_registry import DatabaseRegistry
 
 server = Server("onec-universal-mcp")
 manager: BackendManager  # injected by server.py before lifespan starts
+registry: DatabaseRegistry  # injected by server.py before lifespan starts
 
 GW_TOOLS = [
     Tool(
@@ -54,6 +56,60 @@ GW_TOOLS = [
                 },
             },
             "required": ["connection"],
+        },
+    ),
+    Tool(
+        name="connect_database",
+        description=(
+            "Register a 1C database in the gateway and prepare its backends "
+            "(onec-toolkit + BSL LSP). Call this when starting work with a new database. "
+            "After calling this tool, open the EPF in the 1C client, press 'Подключить' "
+            "and 'Выгрузить BSL' to export sources to the project folder. "
+            "The database becomes the active context for all subsequent tool calls."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Database identifier, e.g. 'Z01' or 'ERP_DEMO'",
+                },
+                "connection": {
+                    "type": "string",
+                    "description": "1C connection string, e.g. 'Srvr=as-hp;Ref=Z01;'",
+                },
+                "project_path": {
+                    "type": "string",
+                    "description": (
+                        "Absolute host path to the project folder where BSL files "
+                        "will be exported and LSP will index. "
+                        "Use the current working directory of the Cursor project."
+                    ),
+                },
+            },
+            "required": ["name", "connection", "project_path"],
+        },
+    ),
+    Tool(
+        name="list_databases",
+        description="List all registered 1C databases and their connection status.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="switch_database",
+        description=(
+            "Switch the active 1C database context. All tool calls (execute_query, "
+            "BSL navigation, etc.) will route to the selected database."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Database name to switch to (must be registered first)",
+                },
+            },
+            "required": ["name"],
         },
     ),
 ]
@@ -151,5 +207,75 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         result = await _run_export_bsl(connection, output_dir)
         return [TextContent(type="text", text=result)]
 
+    if name == "connect_database":
+        return [TextContent(type="text", text=await _connect_database(
+            arguments["name"], arguments["connection"], arguments["project_path"]
+        ))]
+
+    if name == "list_databases":
+        dbs = registry.list()
+        return [TextContent(type="text", text=json.dumps(dbs, ensure_ascii=False, indent=2))]
+
+    if name == "switch_database":
+        db_name = arguments["name"]
+        if manager.switch_db(db_name) and registry.switch(db_name):
+            return [TextContent(type="text", text=f"Switched to database: {db_name}")]
+        return [TextContent(type="text", text=f"ERROR: Database '{db_name}' not found. Use list_databases() to see registered databases.")]
+
     result: CallToolResult = await manager.call_tool(name, arguments)
     return result.content
+
+
+async def _connect_database(name: str, connection: str, project_path: str) -> str:
+    import asyncio
+    from .docker_manager import start_toolkit, start_lsp
+    from .backends.http_backend import HttpBackend
+    from .backends.stdio_backend import StdioBackend
+
+    try:
+        # Register in registry
+        db_info = registry.register(name, connection, project_path)
+
+        # Start containers (blocking I/O — run in thread)
+        loop = asyncio.get_event_loop()
+
+        toolkit_port, toolkit_container = await loop.run_in_executor(
+            None, start_toolkit, name
+        )
+        lsp_container = await loop.run_in_executor(
+            None, start_lsp, name, project_path
+        )
+
+        # Update registry with container info
+        # toolkit container is in onec-net → reachable by container name
+        toolkit_internal_url = f"http://{toolkit_container}:6003/mcp"
+        db_info.toolkit_port = toolkit_port      # host port (for 1C /1c/poll)
+        db_info.toolkit_url = toolkit_internal_url
+        db_info.lsp_container = lsp_container
+
+        # Create and start backends
+        toolkit_backend = HttpBackend(
+            f"onec-toolkit-{name}", toolkit_internal_url, "streamable"
+        )
+        lsp_backend = StdioBackend(
+            f"mcp-lsp-{name}", "docker",
+            ["exec", "-i", lsp_container, "mcp-lsp-bridge"]
+        )
+        await manager.add_db_backends(name, toolkit_backend, lsp_backend)
+
+        # Switch to this database
+        manager.switch_db(name)
+        registry.switch(name)
+
+        return (
+            f"Database '{name}' connected successfully.\n"
+            f"  onec-toolkit: {db_info.toolkit_url}\n"
+            f"  LSP container: {lsp_container}\n"
+            f"  BSL workspace: {project_path}\n\n"
+            f"Next steps:\n"
+            f"1. In the 1C EPF, set database name to '{name}' and press 'Подключить к прокси'\n"
+            f"2. Press 'Выгрузить BSL' to export sources to {project_path}\n"
+            f"3. BSL navigation will be available after indexing completes"
+        )
+    except Exception as exc:
+        return f"ERROR connecting database '{name}': {exc}"
