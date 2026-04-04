@@ -6,6 +6,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from . import mcp_server
 from .backends.http_backend import HttpBackend
@@ -93,11 +94,26 @@ async def export_bsl_api(request: Request) -> JSONResponse:
     return JSONResponse({"ok": ok, "result": result}, status_code=200)
 
 
-app = Starlette(
+_starlette = Starlette(
     routes=[
-        Route("/mcp", session_manager.handle_request, methods=["GET", "POST", "DELETE"]),
         Route("/health", health),
         Route("/api/export-bsl", export_bsl_api, methods=["POST"]),
     ],
     lifespan=lifespan,
 )
+
+
+class _App:
+    """Route /mcp* to session_manager (ASGI), everything else to Starlette."""
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        path: str = scope.get("path", "")
+        if scope["type"] in ("http", "websocket") and (
+            path == "/mcp" or path.startswith("/mcp/")
+        ):
+            await session_manager.handle_request(scope, receive, send)
+        else:
+            await _starlette(scope, receive, send)
+
+
+app: ASGIApp = _App()
