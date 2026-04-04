@@ -60,9 +60,37 @@ GW_TOOLS = [
 
 
 async def _run_export_bsl(connection: str, output_dir: str) -> str:
+    # If a host-side export service URL is configured, delegate to it.
+    if settings.export_host_url:
+        import httpx
+
+        host_dir = output_dir
+        # Remap container path → host path if BSL_HOST_WORKSPACE is set
+        if settings.bsl_host_workspace and settings.bsl_workspace:
+            container_ws = settings.bsl_workspace.rstrip("/")
+            host_ws = settings.bsl_host_workspace.rstrip("/")
+            if host_dir.startswith(container_ws):
+                host_dir = host_ws + host_dir[len(container_ws):]
+            elif host_dir == "/projects" or not host_dir:
+                host_dir = host_ws
+
+        url = settings.export_host_url.rstrip("/") + "/export-bsl"
+        try:
+            async with httpx.AsyncClient(timeout=1800) as client:
+                resp = await client.post(url, json={"connection": connection, "output_dir": host_dir})
+                data = resp.json()
+                return data.get("result", str(data))
+        except Exception as exc:
+            return f"ERROR calling export host service at {url}: {exc}"
+
+    # Fallback: try ibcmd (works only with standalone 1C server, not cluster)
     ibcmd = Path(settings.ibcmd_path)
     if not ibcmd.exists():
-        return f"ERROR: ibcmd not found at {ibcmd}. Set IBCMD_PATH env variable."
+        return (
+            f"ERROR: ibcmd not found at {ibcmd} and EXPORT_HOST_URL is not set. "
+            f"Run tools/export-host-service.py on the host and set "
+            f"EXPORT_HOST_URL=http://<host-ip>:8082"
+        )
 
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
