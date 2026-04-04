@@ -497,6 +497,7 @@ Cursor / Claude Code
 | [mcp-bsl-platform-context](https://github.com/alkoleft/mcp-bsl-platform-context) | alkoleft | Документация платформы 1С, поиск по API |
 | [mcp-bsl-lsp-bridge](https://github.com/alkoleft/mcp-bsl-lsp-bridge) | alkoleft | MCP-мост к BSL Language Server |
 | [lsp-session-manager](https://github.com/alkoleft/lsp-session-manager) | alkoleft | Мультиплексор сессий BSL Language Server |
+| [1c_mcp](https://github.com/vladimir-kharin/1c_mcp) | vladimir-kharin | Справочник синтаксиса BSL (`syntax_1c.txt`) как MCP Resource |
 
 **Опциональные (профили docker compose):**
 
