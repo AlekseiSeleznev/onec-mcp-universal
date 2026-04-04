@@ -14,9 +14,6 @@ log = logging.getLogger(__name__)
 TOOLKIT_IMAGE = "roctup/1c-mcp-toolkit-proxy"
 LSP_IMAGE = "mcp-lsp-bridge-bsl:latest"
 
-# Docker network shared with gateway container
-DOCKER_NETWORK = "onec-mcp-universal_onec-net"
-
 _client: docker.DockerClient | None = None
 
 
@@ -99,10 +96,9 @@ def start_toolkit(db_name: str) -> tuple[int, str]:
     container = _docker().containers.run(
         TOOLKIT_IMAGE,
         name=container_name,
-        network=DOCKER_NETWORK,
-        ports={"6003/tcp": port},    # expose on host for 1C /1c/poll
+        network_mode="host",
         environment={
-            "PORT": "6003",          # internal port is always 6003
+            "PORT": str(port),
             "TIMEOUT": "180",
             "RESPONSE_FORMAT": "json",
             "ALLOW_DANGEROUS_WITH_APPROVAL": "true",
@@ -147,7 +143,6 @@ def start_lsp(db_name: str, bsl_host_path: str) -> str:
     _docker().containers.run(
         LSP_IMAGE,
         name=container_name,
-        network=DOCKER_NETWORK,
         volumes={bsl_host_path: {"bind": "/projects", "mode": "rw"}},
         detach=True,
         restart_policy={"Name": "unless-stopped"},

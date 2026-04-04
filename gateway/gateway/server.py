@@ -27,7 +27,7 @@ mcp_server.registry = _registry
 
 session_manager = StreamableHTTPSessionManager(
     app=mcp_server.server,
-    stateless=False,
+    stateless=True,
 )
 
 

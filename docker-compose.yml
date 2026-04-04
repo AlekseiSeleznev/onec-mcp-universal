@@ -8,31 +8,26 @@ services:
       context: ./gateway
       network: host
     container_name: onec-mcp-gw
-    ports:
-      - "${GW_PORT:-8080}:8080"
+    # host network: gateway sees localhost → export-host-service, toolkit, platform-context
+    network_mode: host
     environment:
-      PORT: 8080
+      PORT: ${GW_PORT:-8080}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      ONEC_TOOLKIT_URL: http://onec-toolkit:6003/mcp
-      PLATFORM_CONTEXT_URL: http://platform-context:8080/sse
+      ONEC_TOOLKIT_URL: http://localhost:6003/mcp
+      PLATFORM_CONTEXT_URL: http://localhost:8081/sse
       LSP_DOCKER_CONTAINER: ${LSP_CONTAINER:-mcp-lsp-zup}
       ENABLED_BACKENDS: ${ENABLED_BACKENDS:-onec-toolkit,platform-context,bsl-lsp-bridge}
-      # Linux: leave empty, ibcmd is used directly via HOST_1CV8_PATH mount
-      # Windows: set to http://host.docker.internal:8082 and run tools/export-host-service.py
-      EXPORT_HOST_URL: ${EXPORT_HOST_URL:-}
-      IBCMD_PATH: ${IBCMD_PATH:-/opt/1cv8/x86_64/8.3.27.2074/ibcmd}
+      # Linux: leave empty, uses export-host-service on localhost:8082
+      # Windows: set to http://localhost:8082 and run tools/export-host-service.py
+      EXPORT_HOST_URL: ${EXPORT_HOST_URL:-http://localhost:8082}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
-      # Linux: mount host 1C platform so ibcmd runs inside container
-      # Windows: remove this line and set EXPORT_HOST_URL instead
-      - ${HOST_1CV8_PATH:-/opt/1cv8}:/opt/1cv8:ro
     depends_on:
       onec-toolkit:
         condition: service_healthy
       platform-context:
         condition: service_healthy
     restart: unless-stopped
-    networks: [onec-net]
 
   # ─── 1C Data Backend ──────────────────────────────────────────────────────────
   onec-toolkit:
@@ -58,8 +53,8 @@ services:
   platform-context:
     image: ghcr.io/alkoleft/mcp-bsl-platform-context:latest
     container_name: onec-mcp-platform
-    expose:
-      - "8080"
+    ports:
+      - "8081:8080"
     command:
       - "java"
       - "-jar"

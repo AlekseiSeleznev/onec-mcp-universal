@@ -154,8 +154,8 @@ async def _run_export_bsl(connection: str, output_dir: str) -> str:
     cmd = [
         str(ibcmd),
         "infobase", "config", "export",
-        f"--connection={connection}",
-        f"--dir={output_dir}",
+        "--connection", connection,
+        "--dir", output_dir,
         "--force",
     ]
 
@@ -247,8 +247,8 @@ async def _connect_database(name: str, connection: str, project_path: str) -> st
         )
 
         # Update registry with container info
-        # toolkit container is in onec-net → reachable by container name
-        toolkit_internal_url = f"http://{toolkit_container}:6003/mcp"
+        # gateway uses host network → reach toolkit via localhost
+        toolkit_internal_url = f"http://localhost:{toolkit_port}/mcp"
         db_info.toolkit_port = toolkit_port      # host port (for 1C /1c/poll)
         db_info.toolkit_url = toolkit_internal_url
         db_info.lsp_container = lsp_container
