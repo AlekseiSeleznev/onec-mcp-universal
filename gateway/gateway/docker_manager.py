@@ -28,8 +28,26 @@ def _docker() -> docker.DockerClient:
 
 
 def _find_free_port(start: int = 6100) -> int:
+    """Find a free host port, excluding ports already bound by Docker containers."""
+    # Collect all host ports currently allocated by Docker
+    used_by_docker: set[int] = set()
+    try:
+        for c in _docker().containers.list():
+            for port_bindings in c.ports.values():
+                if port_bindings:
+                    for b in port_bindings:
+                        try:
+                            used_by_docker.add(int(b["HostPort"]))
+                        except (KeyError, ValueError):
+                            pass
+    except Exception:
+        pass
+
     port = start
     while port < 7000:
+        if port in used_by_docker:
+            port += 1
+            continue
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if s.connect_ex(("localhost", port)) != 0:
                 return port
