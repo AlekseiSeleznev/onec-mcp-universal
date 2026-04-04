@@ -44,7 +44,7 @@ def run_export(connection: str, output_dir: str) -> tuple[bool, str]:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as lf:
         log_path = lf.name
 
-    cmd = [f"{V8_PATH}/1cv8c", "DESIGNER"]
+    cmd = [f"{V8_PATH}/1cv8", "DESIGNER"]
     if server and ref:
         cmd += [f"/S", f"{server}\\{ref}"]
     elif fpath:
