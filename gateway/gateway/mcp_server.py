@@ -112,6 +112,23 @@ GW_TOOLS = [
             "required": ["name"],
         },
     ),
+    Tool(
+        name="disconnect_database",
+        description=(
+            "Disconnect a 1C database: stop its containers (onec-toolkit + LSP) "
+            "and remove it from the registry."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Database name to disconnect",
+                },
+            },
+            "required": ["name"],
+        },
+    ),
 ]
 
 
@@ -222,6 +239,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(type="text", text=f"Switched to database: {db_name}")]
         return [TextContent(type="text", text=f"ERROR: Database '{db_name}' not found. Use list_databases() to see registered databases.")]
 
+    if name == "disconnect_database":
+        return [TextContent(type="text", text=await _disconnect_database(arguments["name"]))]
+
     result: CallToolResult = await manager.call_tool(name, arguments)
     return result.content
 
@@ -279,3 +299,21 @@ async def _connect_database(name: str, connection: str, project_path: str) -> st
         )
     except Exception as exc:
         return f"ERROR connecting database '{name}': {exc}"
+
+
+async def _disconnect_database(name: str) -> str:
+    import asyncio
+    from .docker_manager import stop_db_containers
+
+    db = registry.get(name)
+    if not db:
+        return f"ERROR: Database '{name}' not found."
+
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, stop_db_containers, name)
+        await manager.remove_db_backends(name)
+        registry.remove(name)
+        return f"Database '{name}' disconnected and containers removed."
+    except Exception as exc:
+        return f"ERROR disconnecting database '{name}': {exc}"
