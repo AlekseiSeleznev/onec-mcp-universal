@@ -333,6 +333,7 @@
 					<Group>Vertical</Group>
 					<Representation>NormalSeparation</Representation>
 					<Behavior>Collapsible</Behavior>
+					<ControlRepresentation>Picture</ControlRepresentation>
 					<Collapsed>true</Collapsed>
 					<ExtendedTooltip name="ГруппаАвтоРазрешениеРасширеннаяПодсказка" id="25"/>
 					<ChildItems>
@@ -627,6 +628,7 @@
 							<Representation>NormalSeparation</Representation>
 							<Behavior>Collapsible</Behavior>
 							<ControlRepresentation>Picture</ControlRepresentation>
+							<Collapsed>true</Collapsed>
 							<ExtendedTooltip name="ГруппаМаппингиРасширеннаяПодсказка" id="103"/>
 							<ChildItems>
 								<UsualGroup name="ГруппаУправлениеМаппингами" id="61">
@@ -761,6 +763,7 @@
 							<Representation>NormalSeparation</Representation>
 							<Behavior>Collapsible</Behavior>
 							<ControlRepresentation>Picture</ControlRepresentation>
+							<Collapsed>true</Collapsed>
 							<HorizontalStretch>true</HorizontalStretch>
 							<ExtendedTooltip name="ГруппаДеАнонимизацияТекстаРасширеннаяПодсказка" id="109"/>
 							<ChildItems>

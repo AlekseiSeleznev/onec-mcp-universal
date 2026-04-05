@@ -241,11 +241,11 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <div class="tc on" id="t-info">
 <div class="grid">
 <div class="card"><h2>{{h_databases}}</h2>{{databases_html}}</div>
+<div class="card"><h2>{{h_anon}}</h2><div class="sr"><div class="dot {{anon_dot}}"></div><span class="sn">{{anon_status}}</span></div></div>
 <div class="card"><h2>{{h_profiling}}</h2>{{profiling_html}}</div>
+<div class="card"><h2>{{h_cache}}</h2>{{cache_html}}</div>
 <div class="card"><h2>{{h_backends}}</h2>{{backends_html}}</div>
 <div class="card"><h2>{{h_system}}</h2>{{docker_info_html}}{{system_html}}</div>
-<div class="card"><h2>{{h_anon}}</h2><div class="sr"><div class="dot {{anon_dot}}"></div><span class="sn">{{anon_status}}</span></div></div>
-<div class="card"><h2>{{h_cache}}</h2>{{cache_html}}</div>
 </div>
 </div>
 <div class="tc" id="t-settings">
@@ -262,7 +262,15 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 </div>
 </div>
 <div class="card">
-<h2>{{h_config}} <button class="btn" style="float:right;font-size:.7rem" onclick="editEnv()">{{edit_config}}</button></h2>
+<h2>{{h_config}}</h2>
+<div id="config-actions" style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #334155;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+<button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button>
+<span class="st">{{cache_status}}</span>
+<span class="st">|</span>
+<button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button>
+<span class="st" style="display:flex;align-items:center;gap:4px"><span class="dot {{anon_dot}}"></span>{{anon_status}}</span>
+<span style="margin-left:auto"><button class="btn" style="font-size:.7rem" onclick="editEnv()">{{edit_config}}</button></span>
+</div>
 <div id="config-view">
 <table><tr><th style="width:40%">{{setting}}</th><th>{{value}}</th></tr>{{config_html}}</table>
 </div>
@@ -273,13 +281,6 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <button class="btn" onclick="cancelEnv()">{{cancel}}</button>
 </div>
 <p class="hint">{{config_edit_hint}}</p>
-</div>
-<div id="config-actions" style="margin-top:10px;padding-top:10px;border-top:1px solid #334155;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-<button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button>
-<span class="st">{{cache_status}}</span>
-<span class="st">|</span>
-<button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button>
-<span class="st" style="display:flex;align-items:center;gap:4px"><span class="dot {{anon_dot}}"></span>{{anon_status}}</span>
 </div>
 </div>
 </div>
