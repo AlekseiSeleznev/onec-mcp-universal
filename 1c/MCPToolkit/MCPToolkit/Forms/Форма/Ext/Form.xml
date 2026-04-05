@@ -13,7 +13,7 @@
 							<v8:content>Подключение</v8:content>
 						</v8:item>
 					</Title>
-					<Group>Vertical</Group>
+					<Group>HorizontalIfPossible</Group>
 					<ExtendedTooltip name="СтраницаПодключениеРасширеннаяПодсказка" id="58"/>
 					<ChildItems>
 		<UsualGroup name="ГруппаПодключение" id="1">
@@ -40,7 +40,7 @@
 									<v8:content>Адрес шлюза</v8:content>
 								</v8:item>
 							</Title>
-							<Width>50</Width>
+							<Width>35</Width>
 							<ExtendedTooltip name="ПолеГейтвейURLГлавнаяРасширеннаяПодсказка" id="333"/>
 						</InputField>
 					</ChildItems>
@@ -77,7 +77,7 @@
 								</v8:item>
 							</Title>
 							<ReadOnly>true</ReadOnly>
-							<Width>40</Width>
+							<Width>25</Width>
 							<ExtendedTooltip name="ПолеСтрокаПодключенияРасширеннаяПодсказка" id="339"/>
 						</InputField>
 						<InputField name="ПолеПользовательГлавная" id="340">
@@ -182,7 +182,7 @@
 							<v8:content>Адрес сервера</v8:content>
 						</v8:item>
 					</Title>
-					<Width>50</Width>
+					<Width>35</Width>
 					<ExtendedTooltip name="АдресСервераПолеРасширеннаяПодсказка" id="4"/>
 				</InputField>
 				<UsualGroup name="ГруппаКанал" id="32">
@@ -205,7 +205,7 @@
 									<v8:content>Channel ID</v8:content>
 								</v8:item>
 							</Title>
-							<Width>40</Width>
+							<Width>25</Width>
 							<ExtendedTooltip name="ИдентификаторКаналаПолеРасширеннаяПодсказка" id="35">
 								<Title>
 									<v8:item>
@@ -319,6 +319,8 @@
 					</ChildItems>
 				</UsualGroup>
 				<UsualGroup name="ГруппаАвтоРазрешение" id="24">
+					<Behavior>Collapsible</Behavior>
+					<Collapsed>true</Collapsed>
 					<Title>
 						<v8:item>
 							<v8:lang>ru</v8:lang>
@@ -379,6 +381,39 @@
 						</Button>
 					</ChildItems>
 				</UsualGroup>
+			</ChildItems>
+		</UsualGroup>
+		<UsualGroup name="ГруппаСтатус" id="11">
+			<Group>Horizontal</Group>
+			<Grouping>Horizontal</Grouping>
+			<Representation>NormalSeparation</Representation>
+			<ShowTitle>false</ShowTitle>
+			<ExtendedTooltip name="ГруппаСтатусРасширеннаяПодсказка" id="12"/>
+			<ChildItems>
+				<Decoration name="ИндикаторПодключения" id="13">
+					<Type>Label</Type>
+					<Title>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>●</v8:content>
+						</v8:item>
+					</Title>
+					<ExtendedTooltip name="ИндикаторПодключенияРасширеннаяПодсказка" id="14"/>
+				</Decoration>
+				<InputField name="СтатусПоле" id="15">
+					<DataPath>Статус</DataPath>
+					<Title>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Статус</v8:content>
+						</v8:item>
+					</Title>
+					<ReadOnly>true</ReadOnly>
+					<Width>25</Width>
+					<ExtendedTooltip name="СтатусПолеРасширеннаяПодсказка" id="16"/>
+				</InputField>
+			</ChildItems>
+		</UsualGroup>
 				<UsualGroup name="ГруппаСсылки" id="350">
 					<Group>AlwaysHorizontal</Group>
 					<Representation>None</Representation>
@@ -408,39 +443,6 @@
 						</Button>
 					</ChildItems>
 				</UsualGroup>
-			</ChildItems>
-		</UsualGroup>
-		<UsualGroup name="ГруппаСтатус" id="11">
-			<Group>Horizontal</Group>
-			<Grouping>Horizontal</Grouping>
-			<Representation>NormalSeparation</Representation>
-			<ShowTitle>false</ShowTitle>
-			<ExtendedTooltip name="ГруппаСтатусРасширеннаяПодсказка" id="12"/>
-			<ChildItems>
-				<Decoration name="ИндикаторПодключения" id="13">
-					<Type>Label</Type>
-					<Title>
-						<v8:item>
-							<v8:lang>ru</v8:lang>
-							<v8:content>●</v8:content>
-						</v8:item>
-					</Title>
-					<ExtendedTooltip name="ИндикаторПодключенияРасширеннаяПодсказка" id="14"/>
-				</Decoration>
-				<InputField name="СтатусПоле" id="15">
-					<DataPath>Статус</DataPath>
-					<Title>
-						<v8:item>
-							<v8:lang>ru</v8:lang>
-							<v8:content>Статус</v8:content>
-						</v8:item>
-					</Title>
-					<ReadOnly>true</ReadOnly>
-					<Width>40</Width>
-					<ExtendedTooltip name="СтатусПолеРасширеннаяПодсказка" id="16"/>
-				</InputField>
-			</ChildItems>
-		</UsualGroup>
 		<UsualGroup name="ГруппаBSLНаГлавной" id="300">
 			<Title>
 				<v8:item>
@@ -530,8 +532,8 @@
 					<TitleLocation>None</TitleLocation>
 					<ReadOnly>true</ReadOnly>
 					<MultiLine>true</MultiLine>
-					<Height>10</Height>
-					<Width>80</Width>
+					<Height>15</Height>
+					<Width>45</Width>
 					<ExtendedTooltip name="ЛогПолеРасширеннаяПодсказка" id="20"/>
 				</InputField>
 				<Button name="КнопкаОчиститьЖурнал" id="30">
@@ -669,7 +671,7 @@
 							<TitleLocation>None</TitleLocation>
 							<ReadOnly>true</ReadOnly>
 							<Height>12</Height>
-							<Width>80</Width>
+							<Width>45</Width>
 							<RowFilter xsi:nil="true"/>
 							<ContextMenu name="ТаблицаМаппинговПолеКонтекстноеМеню" id="71"/>
 							<AutoCommandBar name="ТаблицаМаппинговПолеКоманднаяПанель" id="72">
@@ -697,7 +699,7 @@
 											<v8:content>Реальное значение</v8:content>
 										</v8:item>
 									</Title>
-									<Width>40</Width>
+									<Width>25</Width>
 									<ContextMenu name="ТаблицаМаппинговПолеРеальноеЗначениеКонтекстноеМеню" id="87"/>
 									<ExtendedTooltip name="ТаблицаМаппинговПолеРеальноеЗначениеРасширеннаяПодсказка" id="88"/>
 								</InputField>
@@ -854,7 +856,7 @@
 											<v8:content>Сервер 1С</v8:content>
 										</v8:item>
 									</Title>
-									<Width>40</Width>
+									<Width>25</Width>
 									<ExtendedTooltip name="ПолеСерверБазыРасширеннаяПодсказка" id="205"/>
 								</InputField>
 								<InputField name="ПолеИмяБазы" id="206">
@@ -865,7 +867,7 @@
 											<v8:content>Имя базы</v8:content>
 										</v8:item>
 									</Title>
-									<Width>40</Width>
+									<Width>25</Width>
 									<ExtendedTooltip name="ПолеИмяБазыРасширеннаяПодсказка" id="207"/>
 								</InputField>
 								<InputField name="ПолеПользовательBSL" id="208">
@@ -905,7 +907,7 @@
 											<v8:content>URL шлюза (порт 8080), например: http://localhost:8080</v8:content>
 										</v8:item>
 									</ToolTip>
-									<Width>50</Width>
+									<Width>35</Width>
 									<ExtendedTooltip name="ПолеГейтвейURLРасширеннаяПодсказка" id="221"/>
 								</InputField>
 							</ChildItems>
