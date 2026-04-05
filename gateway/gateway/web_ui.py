@@ -283,7 +283,7 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 {{title}} {{version}} &mdash;
 <a href="{{github_url}}">{{project}}</a> &mdash;
 <a href="{{github_url}}/blob/main/LICENSE">{{license}}: MIT</a> &mdash;
-<a href="/health">Health</a> &mdash; <a href="/mcp">MCP</a>
+<a href="/health">Health</a> &mdash; MCP: <code>http://localhost:8080/mcp</code>
 </div>
 <script>
 function stab(el,id){
@@ -303,7 +303,7 @@ document.querySelectorAll('.tab').forEach(t=>{if(t.textContent&&t.onclick&&t.onc
 }else{document.querySelector('.tc').classList.add('on');document.querySelector('.tab').classList.add('on')}
 }})();
 function reload(){var h=location.hash;location.href=location.pathname+'?lang={{lang}}'+h}
-function act(u){fetch(u,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message||d.error||JSON.stringify(d));setTimeout(reload,300)}).catch(e=>alert(e))}
+function act(u){fetch(u,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message||d.error||JSON.stringify(d));reload()}).catch(e=>alert(e))}
 function connectDb(){
 var n=document.getElementById('db-name').value.trim();
 var c=document.getElementById('db-conn').value.trim();
@@ -583,7 +583,14 @@ DOCS_HTML = {
 <li><b>Строка подключения</b> — формат 1С: <code>Srvr=имя_сервера;Ref=имя_базы;</code> или <code>File=/путь/к/базе</code></li>
 <li><b>Путь к проекту</b> — абсолютный путь на хосте, куда будут выгружены BSL-исходники</li>
 </ul>
-<div class="note"><p><b>Автоподключение из EPF:</b> Базу можно подключить и из обработки MCPToolkit — при нажатии «Подключиться» обработка автоматически зарегистрирует базу в шлюзе и создаст контейнеры.</p></div>
+<h3>Способы подключения базы</h3>
+<p>Базу 1С можно подключить тремя способами:</p>
+<ol>
+<li><b>Из обработки MCPToolkit.epf</b> — откройте обработку в 1С, нажмите «Подключиться». База зарегистрируется автоматически, контейнеры создадутся.</li>
+<li><b>Из дашборда</b> — вкладка «Параметры» → «Добавить базу». Заполните имя, строку подключения и путь к проекту.</li>
+<li><b>Через AI-ассистент</b> — напишите в чате:
+<pre><code>Подключи базу ERP_DEMO, строка подключения Srvr=localhost;Ref=ERP_DEMO;, папка /z/ERP_DEMO</code></pre></li>
+</ol>
 
 <h3>Конфигурация шлюза</h3>
 <p>Текущие значения всех переменных окружения. Нажмите <b>«Редактировать»</b> для изменения:</p>
@@ -756,7 +763,14 @@ DOCS_HTML = {
 <li><b>Disconnect</b> — stop and remove Docker containers (1C data and BSL sources untouched)</li>
 </ul>
 <p><b>Add Database</b> — name (latin), connection string (<code>Srvr=server;Ref=db;</code>), host project path.</p>
-<div class="note"><p><b>Auto-connect from EPF:</b> You can also connect a database directly from MCPToolkit EPF — clicking "Connect" will auto-register the database and create containers.</p></div>
+<h3>Ways to connect a database</h3>
+<p>Three ways to connect a 1C database:</p>
+<ol>
+<li><b>From MCPToolkit EPF</b> — open the EPF in 1C client, click "Connect". The database registers automatically, containers are created.</li>
+<li><b>From dashboard</b> — Parameters tab → "Add Database". Fill in name, connection string, and project path.</li>
+<li><b>Via AI assistant</b> — type in chat:
+<pre><code>Connect database ERP_DEMO, connection string Srvr=localhost;Ref=ERP_DEMO;, folder /z/ERP_DEMO</code></pre></li>
+</ol>
 
 <h3>Gateway Configuration</h3>
 <p>All environment variables from <code>.env</code> file. Click <b>"Edit"</b> to modify:</p>

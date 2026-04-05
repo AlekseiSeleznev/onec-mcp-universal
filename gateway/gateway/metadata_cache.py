@@ -54,7 +54,7 @@ class MetadataCache:
         self._store.clear()
         self._hits = 0
         self._misses = 0
-        return f"Metadata cache cleared ({count} entries removed)."
+        return f"Кеш метаданных очищен ({count} записей удалено)."
 
     def stats(self) -> dict:
         """Return cache statistics."""

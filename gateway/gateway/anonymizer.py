@@ -75,12 +75,12 @@ class Anonymizer:
     def enable(self) -> str:
         self.enabled = True
         self._cache.clear()
-        return "Anonymization enabled. PII in query results will be masked."
+        return "Анонимизация включена. Персональные данные в ответах будут маскироваться."
 
     def disable(self) -> str:
         self.enabled = False
         self._cache.clear()
-        return "Anonymization disabled. Query results will contain original data."
+        return "Анонимизация выключена. Ответы содержат реальные данные."
 
     def _replace_inn(self, match: re.Match) -> str:
         original = match.group(0)

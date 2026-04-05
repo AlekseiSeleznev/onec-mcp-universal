@@ -989,6 +989,6 @@ async def _disconnect_database(name: str) -> str:
         )
         await manager.remove_db_backends(name)
         registry.remove(name)
-        return f"Database '{name}' disconnected and containers removed."
+        return f"База '{name}' отключена, контейнеры удалены."
     except Exception as exc:
         return f"ERROR disconnecting database '{name}': {exc}"
