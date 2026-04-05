@@ -114,6 +114,12 @@ class BackendManager:
                     tools.extend(b.tools)
         return tools
 
+    def has_tool(self, name: str) -> bool:
+        return name in self._tool_map
+
+    def get_backend_for_tool(self, name: str) -> BackendBase | None:
+        return self._tool_map.get(name)
+
     async def call_tool(self, name: str, arguments: dict) -> CallToolResult:
         backend = self._tool_map.get(name)
         if backend is None:

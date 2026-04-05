@@ -1,21 +1,25 @@
 import asyncio
 import json
+import logging
 import os
 import re
-import subprocess
 from pathlib import Path
 
 import httpx
 from mcp.server import Server
-from mcp.types import CallToolResult, Resource, TextContent, TextResourceContents, Tool
+from mcp.types import CallToolResult, Resource, TextContent, Tool
 
 from .backends.manager import BackendManager
 from .config import settings
 from .db_registry import DatabaseRegistry
 
+log = logging.getLogger(__name__)
+
 server = Server("onec-universal-mcp")
 manager: BackendManager  # injected by server.py before lifespan starts
 registry: DatabaseRegistry  # injected by server.py before lifespan starts
+
+_DB_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$")
 
 GW_TOOLS = [
     Tool(
@@ -74,7 +78,10 @@ GW_TOOLS = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Database identifier, e.g. 'Z01' or 'ERP_DEMO'",
+                    "description": (
+                        "Database identifier (letters, digits, hyphens, underscores). "
+                        "Examples: 'ERP', 'ZUP_TEST', 'buh-main'"
+                    ),
                 },
                 "connection": {
                     "type": "string",
@@ -84,8 +91,7 @@ GW_TOOLS = [
                     "type": "string",
                     "description": (
                         "Absolute host path to the project folder where BSL files "
-                        "will be exported and LSP will index. "
-                        "Use the current working directory of the Cursor project."
+                        "will be exported and LSP will index."
                     ),
                 },
             },
@@ -220,14 +226,16 @@ GW_TOOLS = [
 
 _SYNTAX_RESOURCE_PATH = Path(__file__).parent.parent / "resources" / "syntax_1c.txt"
 
+GW_TOOL_NAMES = {t.name for t in GW_TOOLS}
+
+
+# ---------------------------------------------------------------------------
+# Export BSL sources
+# ---------------------------------------------------------------------------
 
 async def _run_export_bsl(connection: str, output_dir: str) -> str:
-    # If a host-side export service URL is configured, delegate to it.
     if settings.export_host_url:
-        import httpx
-
         host_dir = output_dir
-        # Remap container path → host path if BSL_HOST_WORKSPACE is set
         if settings.bsl_host_workspace and settings.bsl_workspace:
             container_ws = settings.bsl_workspace.rstrip("/")
             host_ws = settings.bsl_host_workspace.rstrip("/")
@@ -245,7 +253,6 @@ async def _run_export_bsl(connection: str, output_dir: str) -> str:
         except Exception as exc:
             return f"ERROR calling export host service at {url}: {exc}"
 
-    # Fallback: try ibcmd (works only with standalone 1C server, not cluster)
     ibcmd = Path(settings.ibcmd_path)
     if not ibcmd.exists():
         return (
@@ -276,17 +283,14 @@ async def _run_export_bsl(connection: str, output_dir: str) -> str:
         output = stdout.decode("utf-8", errors="replace").strip()
 
         if proc.returncode == 0:
-            # Count exported files
             bsl_count = sum(1 for _ in out_path.rglob("*.bsl"))
             result = f"Export completed successfully.\nBSL files in {output_dir}: {bsl_count}\n\nOutput:\n{output}"
 
-            # Notify BSL LS about changed files via did_change_watched_files
-            if "bsl-lsp-bridge" in manager._tool_map:
+            if manager.has_tool("did_change_watched_files"):
                 try:
                     await manager.call_tool("did_change_watched_files", {"path": output_dir})
                 except Exception:
-                    pass  # not critical
-
+                    pass
             return result
         else:
             return f"Export failed (rc={proc.returncode}):\n{output}"
@@ -296,6 +300,10 @@ async def _run_export_bsl(connection: str, output_dir: str) -> str:
     except Exception as exc:
         return f"ERROR: {exc}"
 
+
+# ---------------------------------------------------------------------------
+# MCP Resources
+# ---------------------------------------------------------------------------
 
 @server.list_resources()
 async def list_resources() -> list[Resource]:
@@ -319,6 +327,10 @@ async def read_resource(uri) -> str:
         return _SYNTAX_RESOURCE_PATH.read_text(encoding="utf-8")
     raise ValueError(f"Unknown resource: {uri}")
 
+
+# ---------------------------------------------------------------------------
+# MCP Tools — list & dispatch
+# ---------------------------------------------------------------------------
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
@@ -359,32 +371,25 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=result_text)]
 
     if name == "graph_stats":
-        result_text = await _graph_request("GET", "/api/graph/stats")
-        return [TextContent(type="text", text=result_text)]
+        return [TextContent(type="text", text=await _graph_request("GET", "/api/graph/stats"))]
 
     if name == "graph_search":
-        payload = {
-            "query": arguments.get("query", ""),
-            "types": arguments.get("types", []),
-            "limit": arguments.get("limit", 20),
-        }
-        result_text = await _graph_request("POST", "/api/graph/search", payload)
-        return [TextContent(type="text", text=result_text)]
+        payload = {"query": arguments.get("query", ""), "types": arguments.get("types", []), "limit": arguments.get("limit", 20)}
+        return [TextContent(type="text", text=await _graph_request("POST", "/api/graph/search", payload))]
 
     if name == "graph_related":
-        object_id = arguments.get("object_id", "")
-        depth = arguments.get("depth", 1)
-        result_text = await _graph_request(
-            "GET", f"/api/graph/related/{object_id}", params={"depth": depth}
-        )
-        return [TextContent(type="text", text=result_text)]
+        oid = arguments.get("object_id", "")
+        return [TextContent(type="text", text=await _graph_request("GET", f"/api/graph/related/{oid}", params={"depth": arguments.get("depth", 1)}))]
 
     result: CallToolResult = await manager.call_tool(name, arguments)
     return result.content
 
 
+# ---------------------------------------------------------------------------
+# validate_query
+# ---------------------------------------------------------------------------
+
 def _validate_query_static(query: str) -> tuple[bool, list[str], list[str]]:
-    """Static syntax check for 1C queries. Returns (valid, errors, warnings)."""
     stripped = query.strip()
     if not stripped:
         return False, ["Запрос пуст"], []
@@ -392,15 +397,12 @@ def _validate_query_static(query: str) -> tuple[bool, list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
 
-    # Strip single-line comments for keyword analysis
     clean = re.sub(r'//[^\n]*', '', stripped)
     upper = clean.upper()
 
-    # Must contain ВЫБРАТЬ
     if 'ВЫБРАТЬ' not in upper:
         errors.append("В запросе отсутствует ключевое слово ВЫБРАТЬ")
 
-    # Balanced parentheses (skip string literals)
     depth = 0
     i = 0
     while i < len(clean):
@@ -421,7 +423,6 @@ def _validate_query_static(query: str) -> tuple[bool, list[str], list[str]]:
     if depth > 0:
         errors.append(f"Несбалансированные скобки: {depth} незакрытых '('")
 
-    # Warn: virtual table params in WHERE instead of inside brackets
     vt_pattern = r'\.(Остатки|ОстаткиИОбороты|Обороты|СрезПоследних|СрезПервых)\s*\)'
     if re.search(vt_pattern, clean, re.IGNORECASE) and 'ГДЕ' in upper:
         warnings.append(
@@ -429,7 +430,6 @@ def _validate_query_static(query: str) -> tuple[bool, list[str], list[str]]:
             "это снижает производительность. Фильтруйте внутри .Остатки(...)"
         )
 
-    # Warn: SELECT *
     if re.search(r'ВЫБРАТЬ\s+(\w+\s+)*\*', upper):
         warnings.append("Рекомендуется выбирать конкретные поля вместо *")
 
@@ -437,25 +437,18 @@ def _validate_query_static(query: str) -> tuple[bool, list[str], list[str]]:
 
 
 def _add_limit_zero(query: str) -> str:
-    """Insert ПЕРВЫЕ 0 after the outermost ВЫБРАТЬ (skips sub-queries)."""
-    # Find the position of the first top-level ВЫБРАТЬ
     match = re.search(r'\bВЫБРАТЬ\b', query, re.IGNORECASE)
     if not match:
         return query
     pos = match.end()
-    # Skip РАЗЛИЧНЫЕ if present
     tail = query[pos:]
     diff_match = re.match(r'\s+РАЗЛИЧНЫЕ\b', tail, re.IGNORECASE)
     if diff_match:
         pos += diff_match.end()
-    # Skip existing ПЕРВЫЕ N if present
     tail = query[pos:]
     first_match = re.match(r'\s+ПЕРВЫЕ\s+\d+\b', tail, re.IGNORECASE)
     if first_match:
-        # Replace the existing limit with 0
-        return query[:pos] + re.sub(
-            r'(\s+ПЕРВЫЕ\s+)\d+', r'\g<1>0', tail, count=1, flags=re.IGNORECASE
-        )
+        return query[:pos] + re.sub(r'(\s+ПЕРВЫЕ\s+)\d+', r'\g<1>0', tail, count=1, flags=re.IGNORECASE)
     return query[:pos] + ' ПЕРВЫЕ 0 ' + tail
 
 
@@ -470,26 +463,17 @@ async def _validate_query(query: str) -> str:
             result["warnings"] = warnings
         return json.dumps(result, ensure_ascii=False, indent=2)
 
-    # Static checks passed — try server-side validation if DB is active
     try:
         active = registry.get_active()
         if active:
-            toolkit = manager._tool_map.get("execute_query")
+            toolkit = manager.get_backend_for_tool("execute_query")
             if toolkit:
                 limited_query = _add_limit_zero(query)
-                call_result = await toolkit.call_tool(
-                    "execute_query", {"query": limited_query}
-                )
-                response_text = (
-                    call_result.content[0].text if call_result.content else ""
-                )
-                # Detect server-reported syntax errors
+                call_result = await toolkit.call_tool("execute_query", {"query": limited_query})
+                response_text = call_result.content[0].text if call_result.content else ""
                 low = response_text.lower()
-                if any(
-                    kw in low
-                    for kw in ("синтаксическ", "syntax error", "ошибка синтакс",
-                               "недопустимый", "unexpected token", "parse error")
-                ):
+                if any(kw in low for kw in ("синтаксическ", "syntax error", "ошибка синтакс",
+                                             "недопустимый", "unexpected token", "parse error")):
                     result["valid"] = False
                     result["errors"] = [f"Ошибка синтаксиса от сервера 1С: {response_text[:600]}"]
                 else:
@@ -499,8 +483,8 @@ async def _validate_query(query: str) -> str:
                 if warnings:
                     result["warnings"] = warnings
                 return json.dumps(result, ensure_ascii=False, indent=2)
-    except Exception:
-        pass  # fall through to static-only result
+    except Exception as exc:
+        log.warning(f"Server-side query validation failed: {exc}")
 
     result["valid"] = True
     result["source"] = "static"
@@ -510,12 +494,11 @@ async def _validate_query(query: str) -> str:
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
-async def _graph_request(
-    method: str,
-    path: str,
-    body: dict | None = None,
-    params: dict | None = None,
-) -> str:
+# ---------------------------------------------------------------------------
+# bsl-graph REST wrapper
+# ---------------------------------------------------------------------------
+
+async def _graph_request(method: str, path: str, body: dict | None = None, params: dict | None = None) -> str:
     base_url = settings.bsl_graph_url.rstrip("/")
     url = base_url + path
     try:
@@ -530,52 +513,50 @@ async def _graph_request(
             except Exception:
                 return resp.text
     except httpx.ConnectError:
-        return (
-            f"ERROR: bsl-graph service not available at {base_url}. "
-            "Start it with: docker compose --profile bsl-graph up -d"
-        )
+        return f"ERROR: bsl-graph service not available at {base_url}. Start it with: docker compose --profile bsl-graph up -d"
     except Exception as exc:
         return f"ERROR: {exc}"
 
 
+# ---------------------------------------------------------------------------
+# Database management
+# ---------------------------------------------------------------------------
+
 async def _connect_database(name: str, connection: str, project_path: str) -> str:
-    import asyncio
     from .docker_manager import start_toolkit, start_lsp
     from .backends.http_backend import HttpBackend
     from .backends.stdio_backend import StdioBackend
 
+    if not _DB_NAME_RE.match(name):
+        return f"ERROR: Invalid database name '{name}'. Use only letters, digits, hyphens and underscores."
+
     try:
-        # Register in registry
         db_info = registry.register(name, connection, project_path)
 
-        # Start containers (blocking I/O — run in thread)
         loop = asyncio.get_event_loop()
+        try:
+            toolkit_port, toolkit_container = await asyncio.wait_for(
+                loop.run_in_executor(None, start_toolkit, name), timeout=120
+            )
+            lsp_container = await asyncio.wait_for(
+                loop.run_in_executor(None, start_lsp, name, project_path), timeout=60
+            )
+        except Exception:
+            registry.remove(name)
+            raise
 
-        toolkit_port, toolkit_container = await loop.run_in_executor(
-            None, start_toolkit, name
-        )
-        lsp_container = await loop.run_in_executor(
-            None, start_lsp, name, project_path
-        )
-
-        # Update registry with container info
-        # gateway uses host network → reach toolkit via localhost
         toolkit_internal_url = f"http://localhost:{toolkit_port}/mcp"
-        db_info.toolkit_port = toolkit_port      # host port (for 1C /1c/poll)
+        db_info.toolkit_port = toolkit_port
         db_info.toolkit_url = toolkit_internal_url
         db_info.lsp_container = lsp_container
 
-        # Create and start backends
-        toolkit_backend = HttpBackend(
-            f"onec-toolkit-{name}", toolkit_internal_url, "streamable"
-        )
+        toolkit_backend = HttpBackend(f"onec-toolkit-{name}", toolkit_internal_url, "streamable")
         lsp_backend = StdioBackend(
             f"mcp-lsp-{name}", "docker",
             ["exec", "-w", "/projects", "-i", lsp_container, "mcp-lsp-bridge"]
         )
         await manager.add_db_backends(name, toolkit_backend, lsp_backend)
 
-        # Switch to this database
         manager.switch_db(name)
         registry.switch(name)
 
@@ -594,7 +575,6 @@ async def _connect_database(name: str, connection: str, project_path: str) -> st
 
 
 async def _disconnect_database(name: str) -> str:
-    import asyncio
     from .docker_manager import stop_db_containers
 
     db = registry.get(name)
@@ -603,7 +583,9 @@ async def _disconnect_database(name: str) -> str:
 
     try:
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, stop_db_containers, name)
+        await asyncio.wait_for(
+            loop.run_in_executor(None, stop_db_containers, name), timeout=30
+        )
         await manager.remove_db_backends(name)
         registry.remove(name)
         return f"Database '{name}' disconnected and containers removed."
