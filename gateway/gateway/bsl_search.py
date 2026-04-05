@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -51,8 +52,11 @@ class BslSearchIndex:
     def symbol_count(self) -> int:
         return len(self._symbols)
 
-    def build_index(self, bsl_root: str) -> str:
-        """Index all BSL files under the given directory."""
+    def build_index(self, bsl_root: str, container: str = "") -> str:
+        """Index all BSL files. If container is set, use docker exec to read from LSP container."""
+        if container:
+            return self._build_index_docker(container, bsl_root)
+
         root = Path(bsl_root)
         if not root.exists():
             return f"ERROR: Directory {bsl_root} does not exist."
@@ -71,6 +75,66 @@ class BslSearchIndex:
         self._indexed_path = bsl_root
         log.info(f"BSL index built: {len(self._symbols)} symbols from {len(bsl_files)} files")
         return f"Indexed {len(self._symbols)} symbols from {len(bsl_files)} BSL files in {bsl_root}."
+
+    def _build_index_docker(self, container: str, bsl_root: str = "/projects") -> str:
+        """Index BSL files via docker exec grep — fast, no file-by-file reads."""
+        self._symbols.clear()
+        try:
+            # Single grep to extract all proc/func declarations with file/line info
+            result = subprocess.run(
+                [
+                    "docker", "exec", container,
+                    "grep", "-rn",
+                    "--include=*.bsl",
+                    "-E", r"^(Процедура|Функция|Procedure|Function)\s+\w+\s*\(",
+                    bsl_root,
+                ],
+                capture_output=True, text=True, timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            return "ERROR: grep timed out after 120s."
+        except Exception as exc:
+            return f"ERROR: {exc}"
+
+        if not result.stdout.strip():
+            return f"ERROR: No BSL symbols found in {container}:{bsl_root}."
+
+        root_prefix = bsl_root.rstrip("/") + "/"
+        file_count = set()
+        for line in result.stdout.strip().split("\n"):
+            # Format: /projects/CommonModules/Mod/Ext/Module.bsl:42:Функция Имя(Параметры) Экспорт
+            parts = line.split(":", 2)
+            if len(parts) < 3:
+                continue
+            filepath = parts[0]
+            try:
+                line_num = int(parts[1])
+            except ValueError:
+                continue
+            decl = parts[2].strip()
+
+            match = _PROC_RE.match(decl)
+            if not match:
+                continue
+
+            rel_path = filepath[len(root_prefix):] if filepath.startswith(root_prefix) else filepath
+            file_count.add(rel_path)
+            rel_parts = tuple(rel_path.split("/"))
+            module = self._derive_module_name(rel_parts)
+
+            self._symbols.append(BslSymbol(
+                name=match.group(2),
+                kind=match.group(1).capitalize(),
+                params=match.group(3).strip()[:200] if match.group(3) else "",
+                export=bool(match.group(4)),
+                file=rel_path,
+                module=module,
+                line=line_num,
+            ))
+
+        self._indexed_path = f"{container}:{bsl_root}"
+        log.info(f"BSL index built (docker): {len(self._symbols)} symbols from {len(file_count)} files")
+        return f"Indexed {len(self._symbols)} symbols from {len(file_count)} BSL files in {container}:{bsl_root}."
 
     def _index_file(self, filepath: Path, root: Path) -> None:
         """Extract procedures/functions from a BSL file."""

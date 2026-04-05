@@ -20,6 +20,8 @@ services:
       # Linux: leave empty, uses export-host-service on localhost:8082
       # Windows: set to http://localhost:8082 and run tools/export-host-service.py
       EXPORT_HOST_URL: ${EXPORT_HOST_URL:-http://localhost:8082}
+      NAPILNIK_API_KEY: ${NAPILNIK_API_KEY:-}
+      METADATA_CACHE_TTL: ${METADATA_CACHE_TTL:-600}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - gw-data:/data

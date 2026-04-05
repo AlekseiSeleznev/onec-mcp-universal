@@ -41,7 +41,7 @@ class NapilnikClient:
                     CONVERSATIONS_URL,
                     headers=self._headers(),
                     json={
-                        "skill_name": "custom",
+                        "skill_name": "raw",
                         "is_chat": True,
                         "ui_language": "russian",
                         "script_language": "ru",
@@ -108,24 +108,28 @@ class NapilnikClient:
             except json.JSONDecodeError:
                 continue
 
-            # Format 1: content_delta
-            if "content_delta" in data:
-                chunks.append(data["content_delta"])
+            # Format 1: content_delta (can be str or {"content": "..."})
+            cd = data.get("content_delta")
+            if cd:
+                if isinstance(cd, dict):
+                    chunks.append(cd.get("content", ""))
+                elif isinstance(cd, str):
+                    chunks.append(cd)
             # Format 2: OpenAI-like choices
             elif "choices" in data:
                 for choice in data.get("choices", []):
                     delta = choice.get("delta", {})
-                    if "content" in delta:
+                    if delta and delta.get("content"):
                         chunks.append(delta["content"])
             # Format 3: Final content
-            elif "content" in data and isinstance(data["content"], dict):
+            elif isinstance(data.get("content"), dict):
                 text = data["content"].get("text", "")
                 if text:
                     chunks.append(text)
-            elif "content" in data and isinstance(data["content"], str):
+            elif isinstance(data.get("content"), str) and data["content"]:
                 chunks.append(data["content"])
 
-        return "".join(chunks)
+        return "".join(str(c) for c in chunks if c)
 
     async def _handle_tool_calls(
         self, client: httpx.AsyncClient, msg_url: str, conv_uuid: str, raw_response: str

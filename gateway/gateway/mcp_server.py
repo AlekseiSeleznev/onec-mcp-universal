@@ -565,7 +565,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     # --- BSL Search ---
     if name == "bsl_index":
         path = arguments.get("path", "").strip() or "/projects"
-        return [TextContent(type="text", text=bsl_search.build_index(path))]
+        active = registry.get_active()
+        container = active.lsp_container if active else ""
+        return [TextContent(type="text", text=bsl_search.build_index(path, container=container))]
     if name == "bsl_search_tool":
         results = bsl_search.search(
             arguments.get("query", ""),
