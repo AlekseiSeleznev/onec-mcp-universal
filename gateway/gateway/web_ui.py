@@ -122,8 +122,8 @@ _T = {
         "no_backends": "No backends",
         "no_databases": "No databases",
         "no_queries": "No queries yet",
-        "epf_ok": "Yes",
-        "epf_wait": "No",
+        "epf_ok": "Conn.",
+        "epf_wait": "Disconn.",
         "name": "Name",
         "connection": "Connection",
         "status": "EPF",
@@ -274,7 +274,7 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 </div>
 <p class="hint">{{config_edit_hint}}</p>
 </div>
-<div id="config-actions" style="margin-top:10px;padding-top:10px;border-top:1px solid #334155;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+<div id="config-actions" style="margin-top:10px;padding-top:10px;border-top:1px solid #334155;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
 <button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button>
 <span class="st">{{cache_status}}</span>
 <span class="st">|</span>
@@ -497,7 +497,7 @@ def render_dashboard(
         html = html.replace("{{" + key + "}}", val)
     # Status texts for action buttons
     cache_entries = cache_stats.get("entries", 0)
-    cache_status = f"{cache_entries} {t['entries'].lower()}" if cache_entries else "—"
+    cache_status = f"{cache_entries} {t['entries'].lower()}" if cache_entries else "0.0 MB"
     anon_status_text = f'<span class="dot {"ok" if anon_enabled else "warn"}" style="display:inline-block"></span> {anon_status}'
 
     replacements = {

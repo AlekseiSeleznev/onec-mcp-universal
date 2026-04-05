@@ -16,7 +16,12 @@
 					<Group>HorizontalIfPossible</Group>
 					<ExtendedTooltip name="СтраницаПодключениеРасширеннаяПодсказка" id="58"/>
 					<ChildItems>
-		<UsualGroup name="ГруппаПодключение" id="1">
+				<UsualGroup name="ГруппаЛеваяКолонка" id="360">
+			<Group>Vertical</Group>
+			<Representation>None</Representation>
+			<ExtendedTooltip name="ГруппаЛеваяКолонкаРасширеннаяПодсказка" id="361"/>
+			<ChildItems>
+<UsualGroup name="ГруппаПодключение" id="1">
 			<Title>
 				<v8:item>
 					<v8:lang>ru</v8:lang>
@@ -319,8 +324,6 @@
 					</ChildItems>
 				</UsualGroup>
 				<UsualGroup name="ГруппаАвтоРазрешение" id="24">
-					<Behavior>Collapsible</Behavior>
-					<Collapsed>true</Collapsed>
 					<Title>
 						<v8:item>
 							<v8:lang>ru</v8:lang>
@@ -328,7 +331,9 @@
 						</v8:item>
 					</Title>
 					<Group>Vertical</Group>
-					<Representation>None</Representation>
+					<Representation>NormalSeparation</Representation>
+					<Behavior>Collapsible</Behavior>
+					<Collapsed>true</Collapsed>
 					<ExtendedTooltip name="ГруппаАвтоРазрешениеРасширеннаяПодсказка" id="25"/>
 					<ChildItems>
 						<CheckBoxField name="ФлагАвтоЗаписать" id="26">
@@ -516,7 +521,9 @@
 				</UsualGroup>
 			</ChildItems>
 		</UsualGroup>
-		<UsualGroup name="ГруппаЛог" id="17">
+					</ChildItems>
+		</UsualGroup>
+<UsualGroup name="ГруппаЛог" id="17">
 			<Title>
 				<v8:item>
 					<v8:lang>ru</v8:lang>
