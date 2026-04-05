@@ -288,6 +288,31 @@ def _get_container_info() -> list[dict]:
         return []
 
 
+async def dashboard_diagnostics(request: Request) -> HTMLResponse:
+    """Full diagnostics page in a new browser tab."""
+    diag = _collect_diagnostics()
+    lang = request.query_params.get("lang", "ru")
+    title = "Диагностика" if lang == "ru" else "Diagnostics"
+    import json as _json
+    body = _json.dumps(diag, ensure_ascii=False, indent=2)
+    html = (
+        f'<!DOCTYPE html><html><head><meta charset="utf-8"><title>{title} — onec-mcp-universal</title>'
+        '<style>*{margin:0;padding:0;box-sizing:border-box}'
+        'body{font-family:monospace;background:#0f172a;color:#e2e8f0;padding:24px}'
+        'h1{font-size:1.2rem;color:#f8fafc;margin-bottom:12px}'
+        'a{color:#38bdf8}.back{margin-bottom:16px;display:inline-block;font-size:.85rem}'
+        'pre{background:#1e293b;padding:16px;border-radius:8px;border:1px solid #334155;'
+        'overflow:auto;font-size:.8rem;line-height:1.5;white-space:pre-wrap;word-break:break-all}'
+        '</style></head><body>'
+        f'<a class="back" href="/dashboard?lang={lang}">&larr; '
+        f'{"Назад к дашборду" if lang == "ru" else "Back to dashboard"}</a>'
+        f'<h1>{title}</h1>'
+        f'<pre>{body}</pre>'
+        '</body></html>'
+    )
+    return HTMLResponse(html)
+
+
 async def dashboard_docs(request: Request) -> HTMLResponse:
     from .web_ui import render_docs
     lang = request.query_params.get("lang", "ru")
@@ -547,6 +572,7 @@ _starlette = Starlette(
         Route("/health", health),
         Route("/dashboard", dashboard),
         Route("/dashboard/docs", dashboard_docs),
+        Route("/dashboard/diagnostics", dashboard_diagnostics),
         Route("/api/export-bsl", export_bsl_api, methods=["POST"]),
         Route("/api/register", register_epf_api, methods=["POST"]),
         Route("/api/action/{action}", action_api, methods=["GET", "POST"]),

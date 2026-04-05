@@ -239,10 +239,10 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <div class="grid">
 <div class="card"><h2>{{h_backends}}</h2>{{backends_html}}</div>
 <div class="card"><h2>{{h_databases}}</h2>{{databases_html}}</div>
-<div class="card"><h2>{{h_profiling}}</h2>{{profiling_html}}</div>
-<div class="card"><h2>{{h_cache}}</h2>{{cache_html}}</div>
-<div class="card"><h2>{{h_anon}}</h2><div class="sr"><div class="dot {{anon_dot}}"></div><span class="sn">{{anon_status}}</span></div></div>
 <div class="card"><h2>{{h_system}}</h2>{{docker_info_html}}{{system_html}}</div>
+<div class="card"><h2>{{h_profiling}}</h2>{{profiling_html}}</div>
+<div class="card"><h2>{{h_anon}}</h2><div class="sr"><div class="dot {{anon_dot}}"></div><span class="sn">{{anon_status}}</span></div></div>
+<div class="card"><h2>{{h_cache}}</h2>{{cache_html}}</div>
 </div>
 </div>
 <div class="tc" id="t-settings">
@@ -277,9 +277,7 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <div class="ag">
 <button class="btn btn-p" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button>
 <button class="btn" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button>
-<button class="btn" onclick="showDiag()">{{diagnostics}}</button>
 </div>
-<pre id="diag-output" style="display:none;margin-top:10px;max-height:400px;overflow:auto;font-size:.75rem"></pre>
 </div>
 </div>
 </div>
@@ -287,7 +285,7 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 {{title}} {{version}} &mdash;
 <a href="{{github_url}}">{{project}}</a> &mdash;
 <a href="{{github_url}}/blob/main/LICENSE">{{license}}: MIT</a> &mdash;
-<a href="/health">Health</a>
+<a href="/dashboard/diagnostics?lang={{lang}}" target="_blank">{{diagnostics}}</a>
 </div>
 <script>
 function stab(el,id){
@@ -331,12 +329,6 @@ var nc=prompt('{{add_db_conn}}:',conn);if(!nc)return;
 var np=prompt('{{add_db_path}}:',path);if(!np)return;
 fetch('/api/action/edit-db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,connection:nc,project_path:np})})
 .then(r=>r.json()).then(d=>{alert(d.message||d.error);setTimeout(reload,300)}).catch(e=>alert(e))
-}
-function showDiag(){
-var el=document.getElementById('diag-output');
-el.style.display='block';el.textContent='Loading...';
-fetch('/api/action/diagnostics',{method:'POST'}).then(r=>r.json()).then(d=>{
-el.textContent=JSON.stringify(d.data||d,null,2)}).catch(e=>{el.textContent='Error: '+e})
 }
 function editEnv(){
 fetch('/api/action/get-env',{method:'POST'}).then(r=>r.json()).then(d=>{
@@ -536,6 +528,7 @@ DOCS_HTML = {
 <li><a href="#tools-ru">MCP-инструменты</a> — полный список 29 инструментов</li>
 <li><a href="#api-ru">API-эндпоинты</a> — 13 эндпоинтов</li>
 <li><a href="#env-ru">Переменные окружения</a> — 16 параметров .env</li>
+<li><a href="#diagnostics-ru">Диагностика</a></li>
 <li><a href="#troubleshooting-ru">Устранение неполадок</a></li>
 </ul>
 
@@ -659,11 +652,35 @@ DOCS_HTML = {
 <li><b>Выгрузить BSL</b> — выгрузка исходников конфигурации для навигации по коду. Индексация крупных конфигураций (ERP, ЗУП) занимает 3-5 минут.</li>
 </ul>
 
+<h3>Автоматически разрешать операции</h3>
+<p>Чекбоксы управляют автоматическим подтверждением опасных операций при выполнении кода AI через <code>execute_code</code>:</p>
+<ul>
+<li><b>Записать объект</b> — разрешает AI выполнять запись данных (<code>.Записать()</code>) без ручного подтверждения. Если выключено — каждая попытка записи показывает диалог подтверждения.</li>
+<li><b>Привилегированный режим</b> — разрешает AI использовать <code>УстановитьПривилегированныйРежим(Истина)</code> без подтверждения. Привилегированный режим отключает проверку прав доступа — используйте с осторожностью.</li>
+</ul>
+<div class="warn"><p><b>Безопасность:</b> На production-базах рекомендуется оставить оба чекбокса выключенными. Каждая опасная операция будет требовать ручного подтверждения.</p></div>
+
 <h3>Журнал событий</h3>
 <p>Все операции, ошибки и статусы подключения отображаются в едином журнале внизу формы.</p>
 
 <h3>Вкладка «Анонимизация»</h3>
 <p>Настройка правил точной анонимизации (regex-паттерны, словари замен). Работает на стороне EPF независимо от серверной анонимизации шлюза.</p>
+
+<h2 id="diagnostics-ru">Диагностика</h2>
+<p>Ссылка «Диагностика» в нижней части дашборда открывает полный отчёт о состоянии системы в новой вкладке браузера. Отчёт включает:</p>
+<ul>
+<li><b>gateway</b> — версия, порт, количество активных сессий, idle timeout</li>
+<li><b>backends</b> — статус каждого бэкенда (аналог /health)</li>
+<li><b>databases</b> — список подключённых баз с параметрами</li>
+<li><b>profiling</b> — статистика execute_query</li>
+<li><b>cache</b> — состояние кеша метаданных</li>
+<li><b>anonymization</b> — включена ли маскировка</li>
+<li><b>docker</b> — версия Docker, CPU, RAM, размер образов</li>
+<li><b>containers</b> — список контейнеров проекта</li>
+<li><b>config</b> — все переменные окружения</li>
+<li><b>container_logs</b> — последние 10 строк логов каждого контейнера</li>
+</ul>
+<p>Используйте диагностику для поиска проблем и при обращении в поддержку.</p>
 
 <h2 id="tools-ru">MCP-инструменты (полный список)</h2>
 <table>
@@ -765,6 +782,7 @@ DOCS_HTML = {
 <li><a href="#tools-en">MCP Tools</a> — 29 tools</li>
 <li><a href="#api-en">API Endpoints</a></li>
 <li><a href="#env-en">Environment Variables</a></li>
+<li><a href="#diagnostics-en">Diagnostics</a></li>
 <li><a href="#troubleshooting-en">Troubleshooting</a></li>
 </ul>
 <p>Version: """ + VERSION + """ | <a href="https://github.com/AlekseiSeleznev/onec-mcp-universal">GitHub</a> | License: MIT</p>
@@ -850,11 +868,35 @@ DOCS_HTML = {
 <li><b>Export BSL</b> — exports configuration sources for code navigation. Large configs (ERP, HRM) take 3-5 minutes to index.</li>
 </ul>
 
+<h3>Auto-allow operations</h3>
+<p>Checkboxes control automatic approval of dangerous operations when AI executes code via <code>execute_code</code>:</p>
+<ul>
+<li><b>Write object</b> — allows AI to write data (<code>.Write()</code>) without manual confirmation. If disabled, each write attempt shows a confirmation dialog.</li>
+<li><b>Privileged mode</b> — allows AI to use <code>SetPrivilegedMode(True)</code> without confirmation. Privileged mode disables access rights checking — use with caution.</li>
+</ul>
+<div class="warn"><p><b>Security:</b> On production databases, keep both checkboxes disabled. Each dangerous operation will require manual confirmation.</p></div>
+
 <h3>Event Log</h3>
 <p>All operations, errors, and connection status are shown in a unified log at the bottom of the form.</p>
 
 <h3>Anonymization Tab</h3>
 <p>Configure precise anonymization rules (regex patterns, replacement dictionaries). Operates on the EPF side independently from the gateway's server-side anonymization.</p>
+
+<h2 id="diagnostics-en">Diagnostics</h2>
+<p>The "Diagnostics" link at the bottom of the dashboard opens a full system report in a new browser tab. The report includes:</p>
+<ul>
+<li><b>gateway</b> — version, port, active sessions, idle timeout</li>
+<li><b>backends</b> — each backend status (same as /health)</li>
+<li><b>databases</b> — connected databases with parameters</li>
+<li><b>profiling</b> — execute_query statistics</li>
+<li><b>cache</b> — metadata cache state</li>
+<li><b>anonymization</b> — PII masking status</li>
+<li><b>docker</b> — Docker version, CPU, RAM, image sizes</li>
+<li><b>containers</b> — project container list</li>
+<li><b>config</b> — all environment variables</li>
+<li><b>container_logs</b> — last 10 lines of each container's logs</li>
+</ul>
+<p>Use diagnostics for troubleshooting and when contacting support.</p>
 
 <h2 id="tools-en">MCP Tools (complete list)</h2>
 <table>

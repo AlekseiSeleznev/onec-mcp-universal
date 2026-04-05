@@ -334,7 +334,7 @@
 							<Title>
 								<v8:item>
 									<v8:lang>ru</v8:lang>
-									<v8:content>Записать</v8:content>
+									<v8:content>Записать объект</v8:content>
 								</v8:item>
 							</Title>
 							<ExtendedTooltip name="ФлагАвтоЗаписатьРасширеннаяПодсказка" id="27"/>
@@ -344,7 +344,7 @@
 							<Title>
 								<v8:item>
 									<v8:lang>ru</v8:lang>
-									<v8:content>УстановитьПривилегированныйРежим</v8:content>
+									<v8:content>Привилегированный режим</v8:content>
 								</v8:item>
 							</Title>
 							<ExtendedTooltip name="ФлагАвтоПривилегированныйРежимРасширеннаяПодсказка" id="29"/>
