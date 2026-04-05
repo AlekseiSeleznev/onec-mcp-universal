@@ -379,6 +379,35 @@
 						</Button>
 					</ChildItems>
 				</UsualGroup>
+				<UsualGroup name="ГруппаСсылки" id="350">
+					<Group>AlwaysHorizontal</Group>
+					<Representation>None</Representation>
+					<ExtendedTooltip name="ГруппаСсылкиРасширеннаяПодсказка" id="351"/>
+					<ChildItems>
+						<Button name="КнопкаДашборд" id="352">
+							<Type>Hyperlink</Type>
+							<Title>
+								<v8:item>
+									<v8:lang>ru</v8:lang>
+									<v8:content>Дашборд</v8:content>
+								</v8:item>
+							</Title>
+							<CommandName>Form.Command.ОткрытьДашборд</CommandName>
+							<ExtendedTooltip name="КнопкаДашбордРасширеннаяПодсказка" id="353"/>
+						</Button>
+						<Button name="КнопкаGitHub" id="354">
+							<Type>Hyperlink</Type>
+							<Title>
+								<v8:item>
+									<v8:lang>ru</v8:lang>
+									<v8:content>GitHub</v8:content>
+								</v8:item>
+							</Title>
+							<CommandName>Form.Command.ОткрытьGitHub</CommandName>
+							<ExtendedTooltip name="КнопкаGitHubРасширеннаяПодсказка" id="355"/>
+						</Button>
+					</ChildItems>
+				</UsualGroup>
 			</ChildItems>
 		</UsualGroup>
 		<UsualGroup name="ГруппаСтатус" id="11">
@@ -1243,6 +1272,24 @@
 				</v8:item>
 			</Title>
 			<Action>ЗарегистрироватьсяВШлюзе</Action>
+		</Command>
+		<Command name="ОткрытьДашборд" id="11">
+			<Title>
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Дашборд</v8:content>
+				</v8:item>
+			</Title>
+			<Action>ОткрытьДашборд</Action>
+		</Command>
+		<Command name="ОткрытьGitHub" id="12">
+			<Title>
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>GitHub</v8:content>
+				</v8:item>
+			</Title>
+			<Action>ОткрытьGitHub</Action>
 		</Command>
 	</Commands>
 	<Events>
