@@ -241,8 +241,8 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <div class="tc on" id="t-info">
 <div class="grid">
 <div class="card"><h2>{{h_databases}}</h2>{{databases_html}}</div>
-<div class="card"><h2>{{h_anon}}</h2><div class="sr"><div class="dot {{anon_dot}}"></div><span class="sn">{{anon_status}}</span></div></div>
 <div class="card"><h2>{{h_profiling}}</h2>{{profiling_html}}</div>
+<div class="card"><h2>{{h_anon}}</h2><div class="sr"><div class="dot {{anon_dot}}"></div><span class="sn">{{anon_status}}</span></div></div>
 <div class="card"><h2>{{h_cache}}</h2>{{cache_html}}</div>
 <div class="card"><h2>{{h_backends}}</h2>{{backends_html}}</div>
 <div class="card"><h2>{{h_system}}</h2>{{docker_info_html}}{{system_html}}</div>
