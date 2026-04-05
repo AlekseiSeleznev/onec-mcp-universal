@@ -1,7 +1,7 @@
 """
 Web UI dashboard for onec-mcp-universal gateway.
 Served at GET /dashboard. Supports Russian (default) and English.
-Two tabs: Info + Settings. Documentation opens in /dashboard/docs.
+Two tabs: Info + Parameters. Documentation opens in /dashboard/docs.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ _T = {
         "title": "onec-mcp-universal",
         "subtitle": "MCP-шлюз для 1С:Предприятие",
         "tab_info": "Информация",
-        "tab_settings": "Настройки",
+        "tab_settings": "Параметры",
         "btn_docs": "Документация",
         "btn_refresh": "Обновить",
         "h_backends": "Бэкенды",
@@ -61,7 +61,7 @@ _T = {
         "disconnect_db": "Отключить",
         "clear_cache": "Очистить кеш",
         "toggle_anon": "Анонимизация вкл/выкл",
-        "restart_hint": "Изменения .env применяются после: docker compose restart gateway",
+        "restart_hint": "Шлюз перезапустится автоматически после сохранения.",
         "add_db_name": "Имя базы",
         "add_db_conn": "Строка подключения",
         "add_db_path": "Путь к проекту",
@@ -94,7 +94,7 @@ _T = {
         "title": "onec-mcp-universal",
         "subtitle": "MCP Gateway for 1C:Enterprise",
         "tab_info": "Information",
-        "tab_settings": "Settings",
+        "tab_settings": "Parameters",
         "btn_docs": "Docs",
         "btn_refresh": "Refresh",
         "h_backends": "Backends",
@@ -133,7 +133,7 @@ _T = {
         "disconnect_db": "Disconnect",
         "clear_cache": "Clear Cache",
         "toggle_anon": "Toggle Anonymization",
-        "restart_hint": "Changes to .env require: docker compose restart gateway",
+        "restart_hint": "Gateway will restart automatically after saving.",
         "add_db_name": "DB name",
         "add_db_conn": "Connection string",
         "add_db_path": "Project path",
@@ -144,7 +144,7 @@ _T = {
         "edit_config": "Edit",
         "save_config": "Save",
         "cancel": "Cancel",
-        "config_edit_hint": "Edit .env and click Save. Gateway restart required.",
+        "config_edit_hint": "Gateway will restart automatically after saving.",
         "docker_version": "Docker",
         "docker_os": "OS",
         "docker_cpus": "CPUs",
@@ -566,7 +566,7 @@ DOCS_HTML = {
 <li><b>mcp-lsp-{db}</b> — BSL Language Server для каждой базы</li>
 </ul>
 
-<h2>Вкладка «Настройки»</h2>
+<h2>Вкладка «Параметры»</h2>
 
 <h3>Управление базами данных</h3>
 <p>Список подключённых баз с кнопками:</p>
@@ -715,15 +715,15 @@ DOCS_HTML = {
 <p>Automatic <code>execute_query</code> timing: count, avg/max duration, slow queries (&gt;5s). Each response includes <code>_profiling</code> field with optimization hints.</p>
 
 <h3>Metadata Cache</h3>
-<p>TTL cache for <code>get_metadata</code> (default: 10 min). Shows entries count, hit rate. Clear via Settings.</p>
+<p>TTL cache for <code>get_metadata</code> (default: 10 min). Shows entries count, hit rate. Clear via Parameters tab.</p>
 
 <h3>Anonymization</h3>
-<p>PII masking in query results: FIO, INN, SNILS, phones, emails, company names. Stable hash mapping (same input = same fake). Toggle in Settings or via <code>enable_anonymization</code> tool.</p>
+<p>PII masking in query results: FIO, INN, SNILS, phones, emails, company names. Stable hash mapping (same input = same fake). Toggle in Parameters tab or via <code>enable_anonymization</code> tool.</p>
 
 <h3>Docker Containers</h3>
 <p>Docker daemon info (version, CPU, RAM, disk usage) and project container list with status.</p>
 
-<h2>Settings Tab</h2>
+<h2>Parameters Tab</h2>
 <h3>Database Management</h3>
 <p>Connected databases with buttons:</p>
 <ul>

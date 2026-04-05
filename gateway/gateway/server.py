@@ -173,6 +173,7 @@ async def register_epf_api(request: Request) -> JSONResponse:
     """
     Called by MCPToolkit EPF when user presses 'Подключить к прокси'.
     Body: {"name": "Z01", "connection": "Srvr=as-hp;Ref=Z01;"}
+    If database is not yet connected, auto-connects it (creates containers).
     """
     try:
         body = await request.json()
@@ -180,14 +181,27 @@ async def register_epf_api(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
 
     db_name = body.get("name", "").strip()
+    connection = body.get("connection", "").strip()
     if not db_name:
         return JSONResponse({"error": "Field 'name' is required"}, status_code=400)
 
-    _registry.mark_epf_connected(db_name)
-    logger.info(f"EPF registered for database: {db_name}")
-
-    # Return toolkit poll URL for this database (host-accessible for 1C client)
+    # Auto-connect database if not yet registered
     db = _registry.get(db_name)
+    if not db and connection:
+        logger.info(f"Auto-connecting database '{db_name}' from EPF register")
+        from . import mcp_server as _ms
+        # Use /projects as default BSL workspace inside LSP container
+        project_path = f"/z/{db_name}"
+        result = await _ms._connect_database(db_name, connection, project_path)
+        if result.startswith("ERROR"):
+            return JSONResponse({"ok": False, "error": result}, status_code=500)
+        db = _registry.get(db_name)
+
+    if db:
+        _registry.mark_epf_connected(db_name)
+        logger.info(f"EPF registered for database: {db_name}")
+
+    # Return toolkit poll URL for this database
     poll_url = ""
     if db and db.toolkit_port:
         poll_url = f"http://localhost:{db.toolkit_port}/1c/poll"
