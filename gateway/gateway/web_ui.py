@@ -443,80 +443,206 @@ def render_dashboard(
 
 # --- Documentation page (separate URL) ---
 
+_DOC_STYLE = """*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f172a;color:#e2e8f0;padding:32px;max-width:900px;margin:0 auto;line-height:1.7}
+h1{color:#f8fafc;margin-bottom:8px;font-size:1.5rem}h2{color:#38bdf8;margin:28px 0 10px;font-size:1.15rem;border-bottom:1px solid #334155;padding-bottom:6px}h3{color:#94a3b8;margin:18px 0 6px;font-size:.95rem}
+p,li{color:#94a3b8;font-size:.88rem;margin-bottom:8px}ul,ol{padding-left:24px;margin-bottom:12px}code{background:#334155;padding:2px 6px;border-radius:3px;font-size:.82rem;color:#e2e8f0}
+pre{background:#1e293b;padding:12px 16px;border-radius:6px;overflow-x:auto;margin:10px 0;border:1px solid #334155}pre code{background:none;padding:0}
+a{color:#38bdf8}.back{display:inline-block;margin-bottom:20px;font-size:.85rem}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:.85rem}th,td{padding:8px 10px;border:1px solid #334155;text-align:left}th{background:#1e293b;color:#64748b}
+.note{background:#1e293b;border-left:3px solid #38bdf8;padding:10px 14px;margin:12px 0;border-radius:0 4px 4px 0}
+.warn{background:#1e293b;border-left:3px solid #eab308;padding:10px 14px;margin:12px 0;border-radius:0 4px 4px 0}"""
+
 DOCS_HTML = {
     "ru": r"""<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Документация — onec-mcp-universal</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f172a;color:#e2e8f0;padding:32px;max-width:860px;margin:0 auto;line-height:1.7}
-h1{color:#f8fafc;margin-bottom:8px;font-size:1.4rem}h2{color:#38bdf8;margin:24px 0 8px;font-size:1.1rem}h3{color:#94a3b8;margin:16px 0 6px;font-size:.95rem}
-p,li{color:#94a3b8;font-size:.88rem;margin-bottom:6px}ul{padding-left:20px}code{background:#334155;padding:2px 6px;border-radius:3px;font-size:.82rem;color:#e2e8f0}
-a{color:#38bdf8}.back{display:inline-block;margin-bottom:20px;font-size:.85rem}
-table{border-collapse:collapse;width:100%;margin:12px 0;font-size:.85rem}th,td{padding:6px 10px;border:1px solid #334155;text-align:left}th{background:#1e293b;color:#64748b}
-</style></head><body>
+<style>""" + _DOC_STYLE + """</style></head><body>
 <a class="back" href="/dashboard?lang=ru">&larr; Назад к дашборду</a>
 <h1>Документация onec-mcp-universal</h1>
-<p>Версия: """ + VERSION + """</p>
+<p>Версия: """ + VERSION + """ | <a href="https://github.com/AlekseiSeleznev/onec-mcp-universal">GitHub</a> | Лицензия: MIT</p>
+
+<h2>Обзор</h2>
+<p>onec-mcp-universal — единый MCP-шлюз для работы с 1С:Предприятие из AI-ассистентов (Claude Code, Cursor, Windsurf). Шлюз объединяет несколько бэкендов в один MCP-сервер по адресу <code>http://localhost:8080/mcp</code>.</p>
+<div class="note"><p><b>Как это работает:</b> AI-ассистент отправляет запросы на шлюз → шлюз маршрутизирует их к нужному бэкенду (данные 1С, навигация по коду, документация платформы) → результат возвращается AI.</p></div>
 
 <h2>Вкладка «Информация»</h2>
-<p>Показывает текущее состояние шлюза в реальном времени.</p>
+
 <h3>Бэкенды</h3>
-<p>Статус каждого MCP-бэкенда: <span style="color:#22c55e">зелёный</span> — работает, <span style="color:#ef4444">красный</span> — недоступен. Указано количество инструментов. Для per-database бэкендов показан признак «активная» — через какую базу маршрутизируются запросы.</p>
+<p>Каждый бэкенд — отдельный MCP-сервер, который предоставляет набор инструментов:</p>
+<ul>
+<li><b>onec-toolkit</b> (8 инструментов) — запросы к БД, выполнение кода, метаданные, журнал регистрации, права доступа. Работает через обработку MCPToolkit.epf в клиенте 1С.</li>
+<li><b>platform-context</b> (5 инструментов) — документация API платформы 1С: поиск методов, описания типов, конструкторы.</li>
+<li><b>bsl-lsp-bridge</b> (14 инструментов) — навигация по BSL-коду: поиск символов, определения, граф вызовов, диагностика, переименование.</li>
+</ul>
+<p>Статус: <span style="color:#22c55e">зелёный</span> = работает, <span style="color:#ef4444">красный</span> = недоступен. При подключении базы создаются дополнительные per-database бэкенды (onec-toolkit-{db} + mcp-lsp-{db}).</p>
+
 <h3>Базы данных</h3>
-<p>Подключённые информационные базы 1С. Статус EPF — подключена ли обработка MCPToolkit в клиенте 1С.</p>
-<h3>Профилирование</h3>
-<p>Статистика execute_query: количество выполненных запросов, среднее и максимальное время, количество медленных (&gt;5 секунд).</p>
+<p>Список подключённых информационных баз 1С. Каждая база имеет:</p>
+<ul>
+<li><b>Имя</b> — идентификатор (латиница, используется в именах контейнеров)</li>
+<li><b>Подключение</b> — строка подключения 1С (<code>Srvr=сервер;Ref=база;</code>)</li>
+<li><b>Статус EPF</b> — подключена ли обработка MCPToolkit в клиенте 1С. «Ожид. EPF» означает, что обработку нужно открыть и нажать «Подключить к прокси».</li>
+</ul>
+<p>База с меткой <span style="background:#164e63;color:#22d3ee;padding:1px 6px;border-radius:3px;font-size:.75rem">активная</span> — через неё маршрутизируются все запросы (execute_query, symbol_explore и т.д.).</p>
+
+<h3>Профилирование запросов</h3>
+<p>Автоматический замер времени каждого <code>execute_query</code>:</p>
+<ul>
+<li><b>Запросов</b> — общее количество выполненных запросов с момента запуска шлюза</li>
+<li><b>Среднее</b> — среднее время выполнения в миллисекундах</li>
+<li><b>Макс</b> — максимальное время выполнения</li>
+<li><b>Медленных (&gt;5с)</b> — количество запросов, выполнявшихся более 5 секунд</li>
+</ul>
+<p>Каждый ответ execute_query автоматически получает поле <code>_profiling</code> с длительностью и подсказками по оптимизации (SELECT *, отсутствие WHERE, много JOIN и т.д.).</p>
+
 <h3>Кеш метаданных</h3>
-<p>TTL-кеш для get_metadata. Количество записей, процент попаданий. Очистка — кнопка в настройках.</p>
+<p>Результаты <code>get_metadata</code> кешируются на 10 минут (настраивается через <code>METADATA_CACHE_TTL</code>). Повторный запрос тех же метаданных возвращается мгновенно. Очистить кеш можно кнопкой в настройках или через MCP-инструмент <code>invalidate_metadata_cache</code>.</p>
+
 <h3>Анонимизация</h3>
-<p>Маскировка ПД (ФИО, ИНН, СНИЛС, телефоны, email) в ответах execute_query. Включается/выключается из настроек или через MCP-инструмент <code>enable_anonymization</code>.</p>
+<p>Маскировка персональных данных в ответах execute_query, execute_code, get_object_by_link, get_event_log:</p>
+<ul>
+<li>ФИО (Иванов Иван Иванович → Петров Сергей Александрович)</li>
+<li>ИНН (10 и 12 цифр)</li>
+<li>СНИЛС (XXX-XXX-XXX XX)</li>
+<li>Телефоны (+7 ...)</li>
+<li>Email</li>
+<li>Названия компаний (ООО "Ромашка" → ООО "Альфа")</li>
+</ul>
+<p>Маппинг стабильный: одно и то же значение всегда заменяется одним и тем же фейком. Включается кнопкой в настройках или через MCP-инструмент <code>enable_anonymization</code>.</p>
+
 <h3>Docker-контейнеры</h3>
-<p>Все контейнеры проекта с их статусом: onec-mcp-gw, onec-mcp-toolkit, onec-mcp-platform, onec-toolkit-{db}, mcp-lsp-{db}.</p>
+<p>Информация о Docker-демоне (версия, CPU, RAM, размер образов/томов) и список контейнеров проекта:</p>
+<ul>
+<li><b>onec-mcp-gw</b> — MCP-шлюз (этот сервер)</li>
+<li><b>onec-mcp-toolkit</b> — статический бэкенд данных (порт 6003)</li>
+<li><b>onec-mcp-platform</b> — документация платформы (порт 8081)</li>
+<li><b>onec-toolkit-{db}</b> — динамический бэкенд данных для каждой базы</li>
+<li><b>mcp-lsp-{db}</b> — BSL Language Server для каждой базы</li>
+</ul>
 
 <h2>Вкладка «Настройки»</h2>
+
 <h3>Управление базами данных</h3>
-<p>Список подключённых баз с кнопкой «Отключить». Форма подключения новой базы — укажите имя (латиница), строку подключения 1С (<code>Srvr=сервер;Ref=база;</code>) и путь к каталогу проекта на хосте.</p>
-<h3>Конфигурация шлюза</h3>
-<p>Текущие значения переменных окружения. Для изменения:</p>
+<p>Список подключённых баз с кнопками:</p>
 <ul>
-<li>Отредактируйте файл <code>.env</code> в корне проекта</li>
-<li>Перезапустите шлюз: <code>docker compose restart gateway</code></li>
+<li><b>Настроить</b> — переключение активной базы (через MCP-инструмент <code>switch_database</code>)</li>
+<li><b>Отключить</b> — остановка и удаление Docker-контейнеров базы. Данные базы 1С и BSL-исходники не затрагиваются.</li>
 </ul>
+<p><b>Добавить базу</b> — форма подключения новой базы:</p>
+<ul>
+<li><b>Имя базы</b> — уникальный идентификатор (латиница, цифры, дефис, подчёркивание). Примеры: ERP, ZUP_TEST, buh-main</li>
+<li><b>Строка подключения</b> — формат 1С: <code>Srvr=имя_сервера;Ref=имя_базы;</code> или <code>File=/путь/к/базе</code></li>
+<li><b>Путь к проекту</b> — абсолютный путь на хосте, куда будут выгружены BSL-исходники</li>
+</ul>
+<div class="warn"><p><b>После подключения базы:</b> откройте обработку <code>1c/MCPToolkit.epf</code> в клиенте 1С и нажмите «Подключить к прокси». Для навигации по коду также нажмите «Выгрузить BSL».</p></div>
+
+<h3>Конфигурация шлюза</h3>
+<p>Текущие значения переменных окружения из файла <code>.env</code>. Нажмите <b>«Редактировать»</b> для изменения:</p>
+<ol>
+<li>Откроется текстовый редактор с содержимым .env</li>
+<li>Внесите изменения (формат: <code>ПЕРЕМЕННАЯ=значение</code>, по одной на строку)</li>
+<li>Нажмите «Сохранить»</li>
+<li>Перезапустите шлюз: <code>docker compose restart gateway</code></li>
+</ol>
+<div class="note"><p>На Linux файл .env монтируется в контейнер. На Windows используйте <code>docker compose -f docker-compose.yml -f docker-compose.windows.yml up -d</code>.</p></div>
+
 <h3>Действия</h3>
 <ul>
-<li><b>Очистить кеш</b> — удаляет все закешированные результаты get_metadata</li>
-<li><b>Анонимизация вкл/выкл</b> — переключает маскировку ПД в ответах</li>
+<li><b>Очистить кеш</b> — удаляет все закешированные результаты get_metadata. Используйте после изменения структуры конфигурации 1С.</li>
+<li><b>Анонимизация вкл/выкл</b> — переключает маскировку персональных данных в ответах. Не требует перезапуска.</li>
 </ul>
+
+<h2>Обработка MCPToolkit.epf</h2>
+<p>Внешняя обработка для клиента 1С:Предприятие. Является посредником между шлюзом и информационной базой.</p>
+<h3>Элементы интерфейса</h3>
+<ul>
+<li><b>Адрес сервера</b> — URL toolkit-бэкенда (заполняется автоматически при подключении к прокси)</li>
+<li><b>Подключиться / Отключиться</b> — управление long-polling соединением с toolkit</li>
+<li><b>Определить базу</b> — автоопределение параметров текущей базы (сервер, имя)</li>
+<li><b>Подключить к прокси</b> — регистрация в шлюзе (отправляет /api/register, получает toolkit_poll_url)</li>
+<li><b>Выгрузить BSL</b> — выгрузка исходников конфигурации для навигации по коду</li>
+<li><b>Журнал событий</b> — лог операций, ошибок, статусов подключения</li>
+</ul>
+<h3>Вкладка «Анонимизация»</h3>
+<p>Настройка правил точной анонимизации (regex-паттерны, словари замен). Работает на стороне EPF независимо от серверной анонимизации шлюза.</p>
+
+<h2>MCP-инструменты (полный список)</h2>
+<table>
+<tr><th>Инструмент</th><th>Описание</th></tr>
+<tr><td><code>execute_query</code></td><td>Запрос к БД на языке 1С с параметрами и лимитами</td></tr>
+<tr><td><code>execute_code</code></td><td>Выполнение произвольного кода 1С (сервер или клиент)</td></tr>
+<tr><td><code>get_metadata</code></td><td>Структура конфигурации: реквизиты, типы, табличные части</td></tr>
+<tr><td><code>get_event_log</code></td><td>Чтение журнала регистрации с фильтрацией</td></tr>
+<tr><td><code>get_object_by_link</code></td><td>Получение объекта по навигационной ссылке</td></tr>
+<tr><td><code>get_link_of_object</code></td><td>Генерация ссылки из результатов запроса</td></tr>
+<tr><td><code>find_references_to_object</code></td><td>Поиск использований объекта в документах и регистрах</td></tr>
+<tr><td><code>get_access_rights</code></td><td>Анализ ролей и прав на объекты метаданных</td></tr>
+<tr><td><code>symbol_explore</code></td><td>Семантический поиск символов в BSL-коде</td></tr>
+<tr><td><code>definition</code></td><td>Переход к определению символа</td></tr>
+<tr><td><code>hover</code></td><td>Информация о символе (тип, параметры)</td></tr>
+<tr><td><code>call_hierarchy</code></td><td>Дерево вызовов (кто вызывает / что вызывает)</td></tr>
+<tr><td><code>call_graph</code></td><td>Граф вызовов с определением точек входа</td></tr>
+<tr><td><code>document_diagnostics</code></td><td>Ошибки и предупреждения в BSL-файле</td></tr>
+<tr><td><code>project_analysis</code></td><td>Анализ проекта: символы, связи, структура</td></tr>
+<tr><td><code>validate_query</code></td><td>Проверка синтаксиса запроса (статика + сервер)</td></tr>
+<tr><td><code>its_search</code></td><td>Поиск по ИТС через API 1С:Напарник</td></tr>
+<tr><td><code>bsl_index</code></td><td>Построение индекса BSL-функций</td></tr>
+<tr><td><code>bsl_search_tool</code></td><td>Поиск функций в индексе BSL</td></tr>
+<tr><td><code>write_bsl</code></td><td>Запись BSL-модуля в проект</td></tr>
+<tr><td><code>enable_anonymization</code></td><td>Включить маскировку ПД</td></tr>
+<tr><td><code>disable_anonymization</code></td><td>Выключить маскировку ПД</td></tr>
+<tr><td><code>query_stats</code></td><td>Статистика производительности запросов</td></tr>
+<tr><td><code>invalidate_metadata_cache</code></td><td>Очистить кеш метаданных</td></tr>
+<tr><td><code>reindex_bsl</code></td><td>Принудительная переиндексация BSL</td></tr>
+<tr><td><code>connect_database</code></td><td>Подключить базу 1С</td></tr>
+<tr><td><code>disconnect_database</code></td><td>Отключить базу 1С</td></tr>
+<tr><td><code>switch_database</code></td><td>Переключить активную базу</td></tr>
+<tr><td><code>list_databases</code></td><td>Список подключённых баз</td></tr>
+<tr><td><code>get_server_status</code></td><td>Статус бэкендов</td></tr>
+</table>
 
 <h2>API-эндпоинты</h2>
 <table>
 <tr><th>Путь</th><th>Метод</th><th>Описание</th></tr>
 <tr><td><code>/mcp</code></td><td>POST/GET</td><td>MCP Streamable HTTP — основной вход для AI-ассистентов</td></tr>
-<tr><td><code>/health</code></td><td>GET</td><td>JSON-статус бэкендов</td></tr>
-<tr><td><code>/dashboard</code></td><td>GET</td><td>Web UI дашборд (этот интерфейс)</td></tr>
-<tr><td><code>/dashboard/docs</code></td><td>GET</td><td>Документация (эта страница)</td></tr>
+<tr><td><code>/health</code></td><td>GET</td><td>JSON-статус всех бэкендов</td></tr>
+<tr><td><code>/dashboard</code></td><td>GET</td><td>Web UI дашборд</td></tr>
+<tr><td><code>/dashboard/docs</code></td><td>GET</td><td>Эта страница документации</td></tr>
 <tr><td><code>/api/export-bsl</code></td><td>POST</td><td>REST для выгрузки BSL (вызывается EPF)</td></tr>
-<tr><td><code>/api/register</code></td><td>POST</td><td>REST для регистрации EPF</td></tr>
-<tr><td><code>/api/action/{action}</code></td><td>POST</td><td>Действия дашборда (clear-cache, toggle-anon, disconnect, connect-db)</td></tr>
+<tr><td><code>/api/register</code></td><td>POST</td><td>REST для регистрации EPF в шлюзе</td></tr>
+<tr><td><code>/api/action/connect-db</code></td><td>POST</td><td>Подключить базу данных</td></tr>
+<tr><td><code>/api/action/disconnect</code></td><td>POST</td><td>Отключить базу данных</td></tr>
+<tr><td><code>/api/action/clear-cache</code></td><td>POST</td><td>Очистить кеш метаданных</td></tr>
+<tr><td><code>/api/action/toggle-anon</code></td><td>POST</td><td>Включить/выключить анонимизацию</td></tr>
+<tr><td><code>/api/action/get-env</code></td><td>POST</td><td>Прочитать содержимое .env</td></tr>
+<tr><td><code>/api/action/save-env</code></td><td>POST</td><td>Сохранить содержимое .env</td></tr>
 </table>
 
 <h2>Переменные окружения (.env)</h2>
 <table>
 <tr><th>Переменная</th><th>По умолч.</th><th>Описание</th></tr>
 <tr><td><code>GW_PORT</code></td><td>8080</td><td>Порт шлюза</td></tr>
-<tr><td><code>LOG_LEVEL</code></td><td>INFO</td><td>Уровень логирования</td></tr>
-<tr><td><code>ENABLED_BACKENDS</code></td><td>onec-toolkit,platform-context,bsl-lsp-bridge</td><td>Включённые бэкенды</td></tr>
-<tr><td><code>NAPARNIK_API_KEY</code></td><td>—</td><td>Ключ API 1С:Напарник (code.1c.ai)</td></tr>
-<tr><td><code>METADATA_CACHE_TTL</code></td><td>600</td><td>TTL кеша метаданных (сек)</td></tr>
-<tr><td><code>EXPORT_HOST_URL</code></td><td>http://localhost:8082</td><td>URL сервиса выгрузки BSL</td></tr>
-<tr><td><code>PLATFORM_PATH</code></td><td>/opt/1cv8/...</td><td>Путь к платформе 1С</td></tr>
+<tr><td><code>LOG_LEVEL</code></td><td>INFO</td><td>Уровень логирования (DEBUG, INFO, WARNING, ERROR)</td></tr>
+<tr><td><code>ENABLED_BACKENDS</code></td><td>onec-toolkit,platform-context,bsl-lsp-bridge</td><td>Включённые бэкенды (через запятую). Добавьте test-runner для тестов YaXUnit.</td></tr>
+<tr><td><code>NAPARNIK_API_KEY</code></td><td>—</td><td>Ключ API 1С:Напарник. Получить: <a href="https://code.1c.ai">code.1c.ai</a> → Профиль → API-токен.</td></tr>
+<tr><td><code>METADATA_CACHE_TTL</code></td><td>600</td><td>TTL кеша метаданных в секундах (0 = отключить)</td></tr>
+<tr><td><code>EXPORT_HOST_URL</code></td><td>http://localhost:8082</td><td>URL сервиса выгрузки BSL. На Windows: <code>http://host.docker.internal:8082</code></td></tr>
+<tr><td><code>PLATFORM_PATH</code></td><td>/opt/1cv8/x86_64/8.3.27.2074</td><td>Путь к каталогу платформы 1С</td></tr>
+<tr><td><code>HOST_PLATFORM_PATH</code></td><td>/opt/1cv8</td><td>Корневой путь к платформе на хосте (монтируется в platform-context)</td></tr>
+<tr><td><code>ONEC_TIMEOUT</code></td><td>180</td><td>Таймаут выполнения команд в 1С (секунды)</td></tr>
 </table>
+
+<h2>Устранение неполадок</h2>
+<h3>Бэкенд показывает красный статус</h3>
+<p>Проверьте логи контейнера: <code>docker logs onec-mcp-gw -f</code>. Убедитесь, что все контейнеры запущены: <code>docker compose ps</code>.</p>
+<h3>EPF не подключается</h3>
+<p>Проверьте, что шлюз запущен (<code>curl http://localhost:8080/health</code>). Убедитесь, что обработка открыта в клиенте 1С и нажата кнопка «Подключить к прокси».</p>
+<h3>BSL-навигация не работает</h3>
+<p>Нажмите «Выгрузить BSL» в обработке. Дождитесь завершения индексации (3-5 минут для ERP). Проверьте статус: инструмент <code>lsp_status</code>.</p>
+<h3>Ошибка .env при редактировании в дашборде</h3>
+<p>Файл .env монтируется с хоста (<code>./.env:/data/.env:rw</code>). Убедитесь, что файл .env существует в корне проекта. Создайте: <code>cp .env.example .env</code>.</p>
 </body></html>""",
 
     "en": r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Documentation — onec-mcp-universal</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f172a;color:#e2e8f0;padding:32px;max-width:860px;margin:0 auto;line-height:1.7}
-h1{color:#f8fafc;margin-bottom:8px;font-size:1.4rem}h2{color:#38bdf8;margin:24px 0 8px;font-size:1.1rem}h3{color:#94a3b8;margin:16px 0 6px;font-size:.95rem}
-p,li{color:#94a3b8;font-size:.88rem;margin-bottom:6px}ul{padding-left:20px}code{background:#334155;padding:2px 6px;border-radius:3px;font-size:.82rem;color:#e2e8f0}
-a{color:#38bdf8}.back{display:inline-block;margin-bottom:20px;font-size:.85rem}
-table{border-collapse:collapse;width:100%;margin:12px 0;font-size:.85rem}th,td{padding:6px 10px;border:1px solid #334155;text-align:left}th{background:#1e293b;color:#64748b}
-</style></head><body>
+<style>""" + _DOC_STYLE + """</style></head><body>
 <a class="back" href="/dashboard?lang=en">&larr; Back to dashboard</a>
 <h1>onec-mcp-universal Documentation</h1>
 <p>Version: """ + VERSION + """</p>
