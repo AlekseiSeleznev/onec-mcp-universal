@@ -471,14 +471,20 @@ def render_dashboard(
                 f'{t["disconnect_db"]}</button>'
             )
             db_lines.append(
-                f'<div class="sr" style="gap:6px;flex-wrap:wrap">'
-                f'<span class="sn">{db["name"]}{badge}</span>'
-                f'<span class="st">{conn_short} — {epf_st}</span>'
-                f'<span style="margin-left:auto;display:flex;gap:4px">'
-                f'{edit_btn}{default_btn}{disc_btn}'
-                f'</span></div>'
+                f'<tr>'
+                f'<td style="white-space:nowrap">{db["name"]}{badge}</td>'
+                f'<td><code style="font-size:.72rem">{conn_short}</code></td>'
+                f'<td>{epf_st}</td>'
+                f'<td style="white-space:nowrap;text-align:right">{edit_btn}{default_btn}{disc_btn}</td>'
+                f'</tr>'
             )
-        db_mgmt_html = "\n".join(db_lines)
+        db_mgmt_html = (
+            f'<table><colgroup><col style="width:20%"><col style="width:35%">'
+            f'<col style="width:15%"><col style="width:30%"></colgroup>'
+            f'<tr><th>{t["name"]}</th><th>{t["connection"]}</th>'
+            f'<th>{t["status"]}</th><th></th></tr>'
+            + "\n".join(db_lines) + '</table>'
+        )
     else:
         db_mgmt_html = f'<span class="st">{t["no_databases"]}</span>'
 
