@@ -509,8 +509,22 @@ async def list_tools() -> list[Tool]:
     return GW_TOOLS + manager.get_all_tools()
 
 
+def _get_session_id() -> str | None:
+    """Extract MCP session ID from the current request context."""
+    try:
+        from mcp.server.lowlevel.server import request_ctx
+        ctx = request_ctx.get()
+        if ctx.request:
+            return ctx.request.headers.get("mcp-session-id")
+    except (LookupError, AttributeError):
+        pass
+    return None
+
+
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    session_id = _get_session_id()
+
     if name == "get_server_status":
         return [TextContent(type="text", text=json.dumps(manager.status(), ensure_ascii=False, indent=2))]
 
@@ -521,9 +535,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=result)]
 
     if name == "connect_database":
-        return [TextContent(type="text", text=await _connect_database(
+        result = await _connect_database(
             arguments["name"], arguments["connection"], arguments["project_path"]
-        ))]
+        )
+        # Set new DB as active for this session
+        if not result.startswith("ERROR") and session_id:
+            manager.switch_db(arguments["name"], session_id=session_id)
+        return [TextContent(type="text", text=result)]
 
     if name == "list_databases":
         dbs = registry.list()
@@ -531,7 +549,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     if name == "switch_database":
         db_name = arguments["name"]
-        if manager.switch_db(db_name) and registry.switch(db_name):
+        if manager.switch_db(db_name, session_id=session_id):
             return [TextContent(type="text", text=f"Switched to database: {db_name}")]
         return [TextContent(type="text", text=f"ERROR: Database '{db_name}' not found. Use list_databases() to see registered databases.")]
 
@@ -610,7 +628,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     # --- Proxy to backend with profiling + anonymization ---
     t0 = time.monotonic()
-    result: CallToolResult = await manager.call_tool(name, arguments)
+    result: CallToolResult = await manager.call_tool(name, arguments, session_id=session_id)
     elapsed_ms = (time.monotonic() - t0) * 1000
 
     # Profiling for execute_query
@@ -736,7 +754,7 @@ async def _validate_query(query: str) -> str:
     try:
         active = registry.get_active()
         if active:
-            toolkit = manager.get_backend_for_tool("execute_query")
+            toolkit = manager.get_backend_for_tool("execute_query", session_id=_get_session_id())
             if toolkit:
                 limited_query = _add_limit_zero(query)
                 call_result = await toolkit.call_tool("execute_query", {"query": limited_query})

@@ -201,7 +201,7 @@ async def test_status(mgr):
     status = mgr.status()
     assert status["static"]["ok"] is True
     assert status["sdb/toolkit"]["ok"] is True
-    assert status["sdb/lsp"]["active"] is True
+    assert status["sdb/lsp"]["default"] is True
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 
 from mcp.types import CallToolResult, Tool
 
@@ -19,6 +20,10 @@ LSP_TOOL_NAMES = {
     "prepare_rename", "get_range_content", "selection_range",
     "did_change_watched_files", "lsp_status",
 }
+DB_TOOL_NAMES = TOOLKIT_TOOL_NAMES | LSP_TOOL_NAMES
+
+_SESSION_CLEANUP_INTERVAL = 3600  # cleanup stale sessions every hour
+_SESSION_MAX_AGE = 28800  # 8 hours idle timeout
 
 
 class BackendManager:
@@ -28,7 +33,10 @@ class BackendManager:
 
         # Per-database backends: {db_name: {"toolkit": backend, "lsp": backend}}
         self._db_backends: dict[str, dict[str, BackendBase]] = {}
-        self._active_db: str | None = None
+        self._default_db: str | None = None  # global default for new sessions
+
+        # Per-session active DB: {session_id: (db_name, last_access_time)}
+        self._session_db: dict[str, tuple[str, float]] = {}
 
     async def start_all(self, backends: list[BackendBase]) -> None:
         async def _safe_start(b: BackendBase) -> None:
@@ -68,10 +76,9 @@ class BackendManager:
         await asyncio.gather(_safe_start(toolkit), _safe_start(lsp))
         self._db_backends[db_name] = {"toolkit": toolkit, "lsp": lsp}
 
-        # If no active db yet — set this one
-        if self._active_db is None:
-            self._active_db = db_name
-            self._update_db_tool_map(db_name)
+        # If no default db yet — set this one
+        if self._default_db is None:
+            self._default_db = db_name
 
     async def remove_db_backends(self, db_name: str) -> None:
         if db_name not in self._db_backends:
@@ -82,46 +89,71 @@ class BackendManager:
                 await b.stop()
             except Exception:
                 pass
-        if self._active_db == db_name:
-            self._active_db = next(iter(self._db_backends), None)
-            if self._active_db:
-                self._update_db_tool_map(self._active_db)
+        # Clean session references to this DB
+        stale = [sid for sid, (dn, _) in self._session_db.items() if dn == db_name]
+        for sid in stale:
+            del self._session_db[sid]
+        if self._default_db == db_name:
+            self._default_db = next(iter(self._db_backends), None)
 
-    def switch_db(self, db_name: str) -> bool:
+    def switch_db(self, db_name: str, session_id: str | None = None) -> bool:
+        """Switch active DB. If session_id given, only for that session."""
         if db_name not in self._db_backends:
             return False
-        self._active_db = db_name
-        self._update_db_tool_map(db_name)
-        logger.info(f"Active database switched to: {db_name}")
+        if session_id:
+            self._session_db[session_id] = (db_name, time.monotonic())
+            logger.info(f"Session {session_id[:8]}... switched to: {db_name}")
+        else:
+            self._default_db = db_name
+            logger.info(f"Default database switched to: {db_name}")
         return True
 
-    def _update_db_tool_map(self, db_name: str) -> None:
-        db = self._db_backends.get(db_name, {})
-        toolkit = db.get("toolkit")
-        lsp = db.get("lsp")
-        if toolkit:
-            for name in TOOLKIT_TOOL_NAMES:
-                self._tool_map[name] = toolkit
-        if lsp:
-            for name in LSP_TOOL_NAMES:
-                self._tool_map[name] = lsp
+    def set_default_db(self, db_name: str) -> bool:
+        """Set global default DB (for new sessions and dashboard)."""
+        if db_name not in self._db_backends:
+            return False
+        self._default_db = db_name
+        return True
+
+    def get_active_db(self, session_id: str | None = None) -> str | None:
+        """Get active DB for a session, falling back to default."""
+        if session_id and session_id in self._session_db:
+            db_name, _ = self._session_db[session_id]
+            self._session_db[session_id] = (db_name, time.monotonic())
+            if db_name in self._db_backends:
+                return db_name
+        return self._default_db
 
     def get_all_tools(self) -> list[Tool]:
+        """Return tools from static backends + one set of DB tools (from any connected DB)."""
         tools = [t for b in self._backends for t in b.tools if b.available]
-        if self._active_db and self._active_db in self._db_backends:
-            for b in self._db_backends[self._active_db].values():
+        # Add DB-specific tools from any connected DB (schemas are identical across DBs)
+        if self._db_backends:
+            sample_db = next(iter(self._db_backends.values()))
+            for b in sample_db.values():
                 if b.available:
                     tools.extend(b.tools)
         return tools
 
     def has_tool(self, name: str) -> bool:
-        return name in self._tool_map
+        if name in self._tool_map:
+            return True
+        return name in DB_TOOL_NAMES and bool(self._db_backends)
 
-    def get_backend_for_tool(self, name: str) -> BackendBase | None:
+    def get_backend_for_tool(self, name: str, session_id: str | None = None) -> BackendBase | None:
+        """Get backend for a tool, routing DB tools to the session's active DB."""
+        if name in DB_TOOL_NAMES:
+            db_name = self.get_active_db(session_id)
+            if db_name and db_name in self._db_backends:
+                db = self._db_backends[db_name]
+                if name in TOOLKIT_TOOL_NAMES:
+                    return db.get("toolkit")
+                if name in LSP_TOOL_NAMES:
+                    return db.get("lsp")
         return self._tool_map.get(name)
 
-    async def call_tool(self, name: str, arguments: dict) -> CallToolResult:
-        backend = self._tool_map.get(name)
+    async def call_tool(self, name: str, arguments: dict, session_id: str | None = None) -> CallToolResult:
+        backend = self.get_backend_for_tool(name, session_id)
         if backend is None:
             raise ValueError(f"Unknown tool: {name!r}")
         return await backend.call_tool(name, arguments)
@@ -136,10 +168,23 @@ class BackendManager:
                 result[f"{db_name}/{role}"] = {
                     "ok": b.available,
                     "tools": len(b.tools),
-                    "active": db_name == self._active_db,
+                    "default": db_name == self._default_db,
                 }
         return result
 
+    def cleanup_stale_sessions(self) -> int:
+        """Remove sessions idle for more than _SESSION_MAX_AGE."""
+        now = time.monotonic()
+        stale = [sid for sid, (_, ts) in self._session_db.items()
+                 if now - ts > _SESSION_MAX_AGE]
+        for sid in stale:
+            del self._session_db[sid]
+        return len(stale)
+
     @property
     def active_db(self) -> str | None:
-        return self._active_db
+        return self._default_db
+
+    @property
+    def session_count(self) -> int:
+        return len(self._session_db)

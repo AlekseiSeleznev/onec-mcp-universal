@@ -82,8 +82,13 @@ _T = {
         "docker_vols_size": "Размер томов",
         "running": "запущен",
         "stopped": "остановлен",
-        "configure": "Активировать",
+        "configure": "По умолч.",
         "add_db": "Добавить базу",
+        "edit_db": "Изменить",
+        "confirm_disconnect": "Отключить базу",
+        "default_badge": "по умолч.",
+        "edit_db_title": "Редактирование базы",
+        "save": "Сохранить",
     },
     "en": {
         "title": "onec-mcp-universal",
@@ -149,8 +154,13 @@ _T = {
         "docker_vols_size": "Volumes size",
         "running": "running",
         "stopped": "stopped",
-        "configure": "Activate",
+        "configure": "Default",
         "add_db": "Add Database",
+        "edit_db": "Edit",
+        "confirm_disconnect": "Disconnect database",
+        "default_badge": "default",
+        "edit_db_title": "Edit Database",
+        "save": "Save",
     },
 }
 
@@ -281,8 +291,18 @@ document.querySelectorAll('.tc').forEach(e=>e.classList.remove('on'));
 document.querySelectorAll('.tab').forEach(e=>e.classList.remove('on'));
 document.getElementById('t-'+id).classList.add('on');
 el.classList.add('on');
+location.hash=id;
 }
-function act(u){fetch(u,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message||d.error||JSON.stringify(d));location.reload()}).catch(e=>alert(e))}
+// Restore tab from hash on load
+(function(){var h=location.hash.replace('#','');if(h){
+var tab=document.querySelector('.tab');
+document.querySelectorAll('.tc').forEach(e=>e.classList.remove('on'));
+document.querySelectorAll('.tab').forEach(e=>e.classList.remove('on'));
+var el=document.getElementById('t-'+h);if(el){el.classList.add('on');
+document.querySelectorAll('.tab').forEach(t=>{if(t.textContent&&t.onclick&&t.onclick.toString().includes(h))t.classList.add('on')})
+}else{document.querySelector('.tc').classList.add('on');document.querySelector('.tab').classList.add('on')}
+}})();
+function act(u){fetch(u,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message||d.error||JSON.stringify(d));location.hash=location.hash;location.reload()}).catch(e=>alert(e))}
 function connectDb(){
 var n=document.getElementById('db-name').value.trim();
 var c=document.getElementById('db-conn').value.trim();
@@ -290,6 +310,12 @@ var p=document.getElementById('db-path').value.trim();
 if(!n||!c||!p){alert('Fill all fields');return}
 fetch('/api/action/connect-db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,connection:c,project_path:p})})
 .then(r=>r.json()).then(d=>{alert(d.message||d.error||JSON.stringify(d));if(d.ok)location.reload()}).catch(e=>alert(e))
+}
+function editDb(name,conn,path){
+var nc=prompt('{{add_db_conn}}:',conn);if(!nc)return;
+var np=prompt('{{add_db_path}}:',path);if(!np)return;
+fetch('/api/action/edit-db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,connection:nc,project_path:np})})
+.then(r=>r.json()).then(d=>{alert(d.message||d.error);location.hash='settings';location.reload()}).catch(e=>alert(e))
 }
 function editEnv(){
 fetch('/api/action/get-env',{method:'POST'}).then(r=>r.json()).then(d=>{
@@ -343,7 +369,7 @@ def render_dashboard(
         rows = [f'<table><colgroup><col style="width:25%"><col style="width:45%"><col style="width:30%"></colgroup>'
                 f'<tr><th>{t["name"]}</th><th>{t["connection"]}</th><th>{t["status"]}</th></tr>']
         for db in databases:
-            badge = f' <span class="badge">{t["active"]}</span>' if db.get("active") else ""
+            badge = f' <span class="badge">{t["default_badge"]}</span>' if db.get("active") else ""
             epf = t["epf_ok"] if db.get("epf_connected") else t["epf_wait"]
             conn = db.get("connection", "")[:40]
             rows.append(f'<tr><td>{db["name"]}{badge}</td><td><code style="font-size:.72rem">{conn}</code></td><td>{epf}</td></tr>')
@@ -405,24 +431,34 @@ def render_dashboard(
     if databases:
         db_lines = []
         for db in databases:
-            badge = f' <span class="badge">{t["active"]}</span>' if db.get("active") else ""
+            is_default = db.get("active", False)
+            badge = f' <span class="badge">{t["default_badge"]}</span>' if is_default else ""
             epf_st = t["epf_ok"] if db.get("epf_connected") else t["epf_wait"]
-            conn = db.get("connection", "")[:40]
-            activate_btn = ""
-            if not db.get("active"):
-                activate_btn = (
+            conn = db.get("connection", "")
+            proj = db.get("project_path", "")
+            conn_short = conn[:40]
+            # Buttons
+            default_btn = ""
+            if not is_default:
+                default_btn = (
                     f'<button class="btn" style="font-size:.68rem;padding:2px 8px" '
                     f'onclick="act(\'/api/action/switch?name={db["name"]}\')">{t["configure"]}</button>'
                 )
+            edit_btn = (
+                f'<button class="btn" style="font-size:.68rem;padding:2px 8px" '
+                f'onclick="editDb(\'{db["name"]}\',\'{conn}\',\'{proj}\')">{t["edit_db"]}</button>'
+            )
+            disc_btn = (
+                f'<button class="btn-d" '
+                f'onclick="if(confirm(\'{t["confirm_disconnect"]} {db["name"]}?\'))act(\'/api/action/disconnect?name={db["name"]}\')">'
+                f'{t["disconnect_db"]}</button>'
+            )
             db_lines.append(
                 f'<div class="sr" style="gap:6px;flex-wrap:wrap">'
                 f'<span class="sn">{db["name"]}{badge}</span>'
-                f'<span class="st">{conn} — {epf_st}</span>'
+                f'<span class="st">{conn_short} — {epf_st}</span>'
                 f'<span style="margin-left:auto;display:flex;gap:4px">'
-                f'{activate_btn}'
-                f'<button class="btn-d" '
-                f'onclick="if(confirm(\'Disconnect {db["name"]}?\'))act(\'/api/action/disconnect?name={db["name"]}\')">'
-                f'{t["disconnect_db"]}</button>'
+                f'{edit_btn}{default_btn}{disc_btn}'
                 f'</span></div>'
             )
         db_mgmt_html = "\n".join(db_lines)
@@ -652,37 +688,149 @@ DOCS_HTML = {
 <style>""" + _DOC_STYLE + """</style></head><body>
 <a class="back" href="/dashboard?lang=en">&larr; Back to dashboard</a>
 <h1>onec-mcp-universal Documentation</h1>
-<p>Version: """ + VERSION + """</p>
+<p>Version: """ + VERSION + """ | <a href="https://github.com/AlekseiSeleznev/onec-mcp-universal">GitHub</a> | License: MIT</p>
+
+<h2>Overview</h2>
+<p>onec-mcp-universal is a unified MCP gateway for 1C:Enterprise integration with AI assistants (Claude Code, Cursor, Windsurf). Single endpoint <code>http://localhost:8080/mcp</code> routes requests to multiple backends.</p>
+<div class="note"><p><b>Per-session routing:</b> Each AI assistant session works with its own active database independently. All databases remain connected simultaneously.</p></div>
 
 <h2>Information Tab</h2>
-<p>Real-time gateway monitoring.</p>
-<h3>Backends</h3><p>MCP backend status: <span style="color:#22c55e">green</span>=OK, <span style="color:#ef4444">red</span>=down. Tool count shown. Per-DB backends show "active" badge.</p>
-<h3>Databases</h3><p>Connected 1C databases. EPF status — whether MCPToolkit EPF is running in the 1C client.</p>
-<h3>Profiling</h3><p>execute_query stats: count, avg/max duration, slow queries (&gt;5s).</p>
-<h3>Metadata Cache</h3><p>TTL cache for get_metadata. Clear via Settings tab.</p>
-<h3>Anonymization</h3><p>PII masking (FIO, INN, SNILS, phones, emails). Toggle in Settings or via <code>enable_anonymization</code> tool.</p>
+<h3>Backends</h3>
+<p>MCP backend status: <span style="color:#22c55e">green</span>=OK, <span style="color:#ef4444">red</span>=unavailable. Tool count shown.</p>
+<ul>
+<li><b>onec-toolkit</b> (8 tools) — DB queries, code execution, metadata, event log, access rights</li>
+<li><b>platform-context</b> (5 tools) — 1C platform API documentation</li>
+<li><b>bsl-lsp-bridge</b> (14 tools) — BSL code navigation, diagnostics, call graphs</li>
+</ul>
+
+<h3>Databases</h3>
+<p>Connected 1C databases. EPF status shows whether MCPToolkit EPF is running in the 1C client. Database marked "default" is used for new AI sessions.</p>
+
+<h3>Profiling</h3>
+<p>Automatic <code>execute_query</code> timing: count, avg/max duration, slow queries (&gt;5s). Each response includes <code>_profiling</code> field with optimization hints.</p>
+
+<h3>Metadata Cache</h3>
+<p>TTL cache for <code>get_metadata</code> (default: 10 min). Shows entries count, hit rate. Clear via Settings.</p>
+
+<h3>Anonymization</h3>
+<p>PII masking in query results: FIO, INN, SNILS, phones, emails, company names. Stable hash mapping (same input = same fake). Toggle in Settings or via <code>enable_anonymization</code> tool.</p>
+
+<h3>Docker Containers</h3>
+<p>Docker daemon info (version, CPU, RAM, disk usage) and project container list with status.</p>
 
 <h2>Settings Tab</h2>
-<h3>Database Management</h3><p>Connect/disconnect databases. Provide name (latin), connection string, and host project path.</p>
-<h3>Configuration</h3><p>Current .env values. To change: edit <code>.env</code>, then <code>docker compose restart gateway</code>.</p>
+<h3>Database Management</h3>
+<p>Connected databases with buttons:</p>
+<ul>
+<li><b>Edit</b> — change connection string or project path</li>
+<li><b>Default</b> — set as default for new AI sessions</li>
+<li><b>Disconnect</b> — stop and remove containers (data untouched)</li>
+</ul>
+<p><b>Add Database</b> — name (latin), connection string (<code>Srvr=server;Ref=db;</code>), host project path.</p>
+<div class="warn"><p><b>After connecting:</b> open <code>1c/MCPToolkit.epf</code> in 1C client, click "Connect to proxy", then "Export BSL".</p></div>
+
+<h3>Gateway Configuration</h3>
+<p>Current .env values. Click <b>"Edit"</b> to modify:</p>
+<ol>
+<li>Edit values in the text editor</li>
+<li>Click "Save"</li>
+<li>Restart: <code>docker compose restart gateway</code></li>
+</ol>
+<div class="note"><p>On Linux, .env is mounted into the container. On Windows, use <code>docker compose -f docker-compose.yml -f docker-compose.windows.yml up -d</code>.</p></div>
+
+<h3>Actions</h3>
+<ul>
+<li><b>Clear Cache</b> — remove all cached get_metadata results</li>
+<li><b>Toggle Anonymization</b> — enable/disable PII masking (no restart needed)</li>
+</ul>
+
+<h2>MCPToolkit EPF</h2>
+<p>External data processor for 1C:Enterprise client. Acts as a bridge between the gateway and the 1C database.</p>
+<ul>
+<li><b>Connect / Disconnect</b> — manage long-polling connection to toolkit</li>
+<li><b>Detect DB</b> — auto-detect current database parameters</li>
+<li><b>Connect to proxy</b> — register with gateway (sends /api/register)</li>
+<li><b>Export BSL</b> — export configuration sources for code navigation</li>
+<li><b>Event log</b> — operation log, errors, connection status</li>
+</ul>
+
+<h2>MCP Tools (complete list)</h2>
+<table>
+<tr><th>Tool</th><th>Description</th></tr>
+<tr><td><code>execute_query</code></td><td>1C query language with parameters and limits</td></tr>
+<tr><td><code>execute_code</code></td><td>Execute arbitrary 1C code (server or client)</td></tr>
+<tr><td><code>get_metadata</code></td><td>Configuration structure: attributes, types, tabular sections</td></tr>
+<tr><td><code>get_event_log</code></td><td>Read event log with filtering</td></tr>
+<tr><td><code>get_object_by_link</code></td><td>Get object by navigation link</td></tr>
+<tr><td><code>get_link_of_object</code></td><td>Generate link from query results</td></tr>
+<tr><td><code>find_references_to_object</code></td><td>Find object usage in documents and registers</td></tr>
+<tr><td><code>get_access_rights</code></td><td>Analyze roles and permissions</td></tr>
+<tr><td><code>symbol_explore</code></td><td>Semantic BSL symbol search</td></tr>
+<tr><td><code>definition</code></td><td>Go to symbol definition</td></tr>
+<tr><td><code>hover</code></td><td>Symbol info (type, parameters)</td></tr>
+<tr><td><code>call_hierarchy</code></td><td>Call tree (callers / callees)</td></tr>
+<tr><td><code>call_graph</code></td><td>Call graph with entry point detection</td></tr>
+<tr><td><code>document_diagnostics</code></td><td>Errors and warnings in BSL file</td></tr>
+<tr><td><code>project_analysis</code></td><td>Project analysis: symbols, relationships</td></tr>
+<tr><td><code>validate_query</code></td><td>Query syntax validation (static + server)</td></tr>
+<tr><td><code>its_search</code></td><td>ITS search via 1C:Naparnik API</td></tr>
+<tr><td><code>bsl_index</code></td><td>Build BSL function index</td></tr>
+<tr><td><code>bsl_search_tool</code></td><td>Search BSL function index</td></tr>
+<tr><td><code>write_bsl</code></td><td>Write BSL module to project</td></tr>
+<tr><td><code>enable_anonymization</code></td><td>Enable PII masking</td></tr>
+<tr><td><code>disable_anonymization</code></td><td>Disable PII masking</td></tr>
+<tr><td><code>query_stats</code></td><td>Query performance statistics</td></tr>
+<tr><td><code>invalidate_metadata_cache</code></td><td>Clear metadata cache</td></tr>
+<tr><td><code>reindex_bsl</code></td><td>Force BSL re-indexing</td></tr>
+<tr><td><code>connect_database</code></td><td>Connect 1C database</td></tr>
+<tr><td><code>disconnect_database</code></td><td>Disconnect 1C database</td></tr>
+<tr><td><code>switch_database</code></td><td>Switch active database (per-session)</td></tr>
+<tr><td><code>list_databases</code></td><td>List connected databases</td></tr>
+<tr><td><code>get_server_status</code></td><td>Backend health status</td></tr>
+</table>
 
 <h2>API Endpoints</h2>
 <table>
 <tr><th>Path</th><th>Method</th><th>Description</th></tr>
-<tr><td><code>/mcp</code></td><td>POST/GET</td><td>MCP Streamable HTTP endpoint</td></tr>
+<tr><td><code>/mcp</code></td><td>POST/GET</td><td>MCP Streamable HTTP — main entry for AI assistants</td></tr>
 <tr><td><code>/health</code></td><td>GET</td><td>Backend health JSON</td></tr>
-<tr><td><code>/dashboard</code></td><td>GET</td><td>This dashboard</td></tr>
-<tr><td><code>/api/action/{action}</code></td><td>POST</td><td>Dashboard actions</td></tr>
+<tr><td><code>/dashboard</code></td><td>GET</td><td>Web UI dashboard</td></tr>
+<tr><td><code>/dashboard/docs</code></td><td>GET</td><td>This documentation page</td></tr>
+<tr><td><code>/api/export-bsl</code></td><td>POST</td><td>BSL export REST (called by EPF)</td></tr>
+<tr><td><code>/api/register</code></td><td>POST</td><td>EPF registration REST</td></tr>
+<tr><td><code>/api/action/connect-db</code></td><td>POST</td><td>Connect database</td></tr>
+<tr><td><code>/api/action/disconnect</code></td><td>POST</td><td>Disconnect database</td></tr>
+<tr><td><code>/api/action/edit-db</code></td><td>POST</td><td>Edit database parameters</td></tr>
+<tr><td><code>/api/action/switch</code></td><td>POST</td><td>Set default database</td></tr>
+<tr><td><code>/api/action/clear-cache</code></td><td>POST</td><td>Clear metadata cache</td></tr>
+<tr><td><code>/api/action/toggle-anon</code></td><td>POST</td><td>Toggle anonymization</td></tr>
+<tr><td><code>/api/action/get-env</code></td><td>POST</td><td>Read .env file</td></tr>
+<tr><td><code>/api/action/save-env</code></td><td>POST</td><td>Save .env file</td></tr>
 </table>
 
 <h2>Environment Variables (.env)</h2>
 <table>
 <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
 <tr><td><code>GW_PORT</code></td><td>8080</td><td>Gateway port</td></tr>
-<tr><td><code>ENABLED_BACKENDS</code></td><td>onec-toolkit,platform-context,bsl-lsp-bridge</td><td>Enabled backends</td></tr>
-<tr><td><code>NAPARNIK_API_KEY</code></td><td>—</td><td>1C:Naparnik API key</td></tr>
-<tr><td><code>METADATA_CACHE_TTL</code></td><td>600</td><td>Metadata cache TTL (sec)</td></tr>
+<tr><td><code>LOG_LEVEL</code></td><td>INFO</td><td>Log level (DEBUG, INFO, WARNING, ERROR)</td></tr>
+<tr><td><code>ENABLED_BACKENDS</code></td><td>onec-toolkit,platform-context,bsl-lsp-bridge</td><td>Enabled backends (comma-separated)</td></tr>
+<tr><td><code>NAPARNIK_API_KEY</code></td><td>—</td><td>1C:Naparnik API key (<a href="https://code.1c.ai">code.1c.ai</a>)</td></tr>
+<tr><td><code>METADATA_CACHE_TTL</code></td><td>600</td><td>Metadata cache TTL in seconds (0=disabled)</td></tr>
+<tr><td><code>EXPORT_HOST_URL</code></td><td>http://localhost:8082</td><td>BSL export service URL. Windows: <code>http://host.docker.internal:8082</code></td></tr>
+<tr><td><code>PLATFORM_PATH</code></td><td>/opt/1cv8/...</td><td>1C platform path</td></tr>
+<tr><td><code>HOST_PLATFORM_PATH</code></td><td>/opt/1cv8</td><td>Host platform path (mounted to platform-context)</td></tr>
+<tr><td><code>ONEC_TIMEOUT</code></td><td>180</td><td>1C command timeout (seconds)</td></tr>
 </table>
+
+<h2>Troubleshooting</h2>
+<h3>Backend shows red status</h3>
+<p>Check container logs: <code>docker logs onec-mcp-gw -f</code>. Verify all containers running: <code>docker compose ps</code>.</p>
+<h3>EPF not connecting</h3>
+<p>Verify gateway is up (<code>curl http://localhost:8080/health</code>). Open EPF in 1C client and click "Connect to proxy".</p>
+<h3>BSL navigation not working</h3>
+<p>Click "Export BSL" in EPF. Wait for indexing (3-5 min for ERP). Check status: <code>lsp_status</code> tool.</p>
+<h3>.env edit error in dashboard</h3>
+<p>Ensure .env file exists in project root. Create: <code>cp .env.example .env</code>. File must be mounted: <code>./.env:/data/.env:rw</code> in docker-compose.yml.</p>
 </body></html>""",
 }
 

@@ -28,7 +28,8 @@ mcp_server.registry = _registry
 
 session_manager = StreamableHTTPSessionManager(
     app=mcp_server.server,
-    stateless=True,
+    stateless=False,
+    session_idle_timeout=28800,  # 8 hours
 )
 
 
@@ -103,9 +104,9 @@ async def _restore_databases() -> None:
             logger.error(f"Failed to auto-reconnect database '{name}': {exc}")
             _registry.remove(name)
 
-    if saved_active and _manager.switch_db(saved_active):
+    if saved_active and _manager.set_default_db(saved_active):
         _registry.switch(saved_active)
-        logger.info(f"Restored active database: {saved_active}")
+        logger.info(f"Restored default database: {saved_active}")
 
 
 @asynccontextmanager
@@ -315,9 +316,29 @@ async def action_api(request: Request) -> JSONResponse:
         db_name = request.query_params.get("name", "")
         if not db_name:
             return JSONResponse({"error": "name parameter required"}, status_code=400)
-        if _manager.switch_db(db_name) and _registry.switch(db_name):
-            return JSONResponse({"ok": True, "message": f"База '{db_name}' активирована."})
+        if _manager.set_default_db(db_name) and _registry.switch(db_name):
+            return JSONResponse({"ok": True, "message": f"База '{db_name}' — по умолчанию."})
         return JSONResponse({"ok": False, "error": f"База '{db_name}' не найдена."})
+
+    if path == "edit-db":
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+        db_name = body.get("name", "").strip()
+        new_conn = body.get("connection", "").strip()
+        new_path = body.get("project_path", "").strip()
+        if not db_name:
+            return JSONResponse({"error": "name required"}, status_code=400)
+        db = _registry.get(db_name)
+        if not db:
+            return JSONResponse({"ok": False, "error": f"База '{db_name}' не найдена."})
+        if new_conn:
+            db.connection = new_conn
+        if new_path:
+            db.project_path = new_path
+        _registry._save_state()
+        return JSONResponse({"ok": True, "message": f"Параметры базы '{db_name}' обновлены. Переподключите базу для применения."})
 
     if path == "disconnect":
         db_name = request.query_params.get("name", "")
