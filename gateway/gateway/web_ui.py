@@ -510,6 +510,7 @@ DOCS_HTML = {
 <h2>Обзор</h2>
 <p>onec-mcp-universal — единый MCP-шлюз для работы с 1С:Предприятие из AI-ассистентов (Claude Code, Cursor, Windsurf). Шлюз объединяет несколько бэкендов в один MCP-сервер по адресу <code>http://localhost:8080/mcp</code>.</p>
 <div class="note"><p><b>Как это работает:</b> AI-ассистент отправляет запросы на шлюз → шлюз маршрутизирует их к нужному бэкенду (данные 1С, навигация по коду, документация платформы) → результат возвращается AI.</p></div>
+<div class="note"><p><b>Per-session routing:</b> Каждый сеанс AI-ассистента (Claude Code, Cursor) работает со своей активной базой данных независимо. Все базы остаются подключёнными одновременно. Idle timeout сессий — 8 часов.</p></div>
 
 <h2>Вкладка «Информация»</h2>
 
@@ -525,11 +526,12 @@ DOCS_HTML = {
 <h3>Базы данных</h3>
 <p>Список подключённых информационных баз 1С. Каждая база имеет:</p>
 <ul>
-<li><b>Имя</b> — идентификатор (латиница, используется в именах контейнеров)</li>
+<li><b>Имя</b> — идентификатор (латиница, используется в именах Docker-контейнеров)</li>
 <li><b>Подключение</b> — строка подключения 1С (<code>Srvr=сервер;Ref=база;</code>)</li>
-<li><b>Статус EPF</b> — подключена ли обработка MCPToolkit в клиенте 1С. «Ожид. EPF» означает, что обработку нужно открыть и нажать «Подключить к прокси».</li>
+<li><b>Обработка</b> — статус подключения MCPToolkit.epf: <span style="color:#22c55e">Подключена</span> (зелёный) или <span style="color:#eab308">Отключена</span> (жёлтый)</li>
 </ul>
-<p>База с меткой <span style="background:#164e63;color:#22d3ee;padding:1px 6px;border-radius:3px;font-size:.75rem">активная</span> — через неё маршрутизируются все запросы (execute_query, symbol_explore и т.д.).</p>
+<p>База с меткой <span style="background:#164e63;color:#22d3ee;padding:1px 6px;border-radius:3px;font-size:.75rem">по умолч.</span> используется для новых сеансов AI. Каждый сеанс Claude Code/Cursor может переключиться на свою базу командой <code>switch_database</code>.</p>
+<div class="note"><p><b>Автоподключение:</b> При нажатии «Подключиться» в обработке MCPToolkit, если база ещё не подключена к шлюзу — она подключается автоматически (создаются Docker-контейнеры).</p></div>
 
 <h3>Профилирование запросов</h3>
 <p>Автоматический замер времени каждого <code>execute_query</code>:</p>
@@ -542,7 +544,7 @@ DOCS_HTML = {
 <p>Каждый ответ execute_query автоматически получает поле <code>_profiling</code> с длительностью и подсказками по оптимизации (SELECT *, отсутствие WHERE, много JOIN и т.д.).</p>
 
 <h3>Кеш метаданных</h3>
-<p>Результаты <code>get_metadata</code> кешируются на 10 минут (настраивается через <code>METADATA_CACHE_TTL</code>). Повторный запрос тех же метаданных возвращается мгновенно. Очистить кеш можно кнопкой в настройках или через MCP-инструмент <code>invalidate_metadata_cache</code>.</p>
+<p>Результаты <code>get_metadata</code> кешируются на 10 минут (настраивается через <code>METADATA_CACHE_TTL</code>). Повторный запрос тех же метаданных возвращается мгновенно. Очистить кеш можно кнопкой во вкладке «Параметры» или через MCP-инструмент <code>invalidate_metadata_cache</code>.</p>
 
 <h3>Анонимизация</h3>
 <p>Маскировка персональных данных в ответах execute_query, execute_code, get_object_by_link, get_event_log:</p>
@@ -554,7 +556,7 @@ DOCS_HTML = {
 <li>Email</li>
 <li>Названия компаний (ООО "Ромашка" → ООО "Альфа")</li>
 </ul>
-<p>Маппинг стабильный: одно и то же значение всегда заменяется одним и тем же фейком. Включается кнопкой в настройках или через MCP-инструмент <code>enable_anonymization</code>.</p>
+<p>Маппинг стабильный: одно и то же значение всегда заменяется одним и тем же фейком. Включается кнопкой во вкладке «Параметры» или через MCP-инструмент <code>enable_anonymization</code>.</p>
 
 <h3>Docker-контейнеры</h3>
 <p>Информация о Docker-демоне (версия, CPU, RAM, размер образов/томов) и список контейнеров проекта:</p>
@@ -571,7 +573,8 @@ DOCS_HTML = {
 <h3>Управление базами данных</h3>
 <p>Список подключённых баз с кнопками:</p>
 <ul>
-<li><b>Настроить</b> — переключение активной базы (через MCP-инструмент <code>switch_database</code>)</li>
+<li><b>Изменить</b> — редактирование строки подключения и пути к проекту базы</li>
+<li><b>По умолч.</b> — установить базу по умолчанию для новых сеансов AI (показывается только для неактивных баз)</li>
 <li><b>Отключить</b> — остановка и удаление Docker-контейнеров базы. Данные базы 1С и BSL-исходники не затрагиваются.</li>
 </ul>
 <p><b>Добавить базу</b> — форма подключения новой базы:</p>
@@ -580,17 +583,16 @@ DOCS_HTML = {
 <li><b>Строка подключения</b> — формат 1С: <code>Srvr=имя_сервера;Ref=имя_базы;</code> или <code>File=/путь/к/базе</code></li>
 <li><b>Путь к проекту</b> — абсолютный путь на хосте, куда будут выгружены BSL-исходники</li>
 </ul>
-<div class="warn"><p><b>После подключения базы:</b> откройте обработку <code>1c/MCPToolkit.epf</code> в клиенте 1С и нажмите «Подключить к прокси». Для навигации по коду также нажмите «Выгрузить BSL».</p></div>
+<div class="note"><p><b>Автоподключение из EPF:</b> Базу можно подключить и из обработки MCPToolkit — при нажатии «Подключиться» обработка автоматически зарегистрирует базу в шлюзе и создаст контейнеры.</p></div>
 
 <h3>Конфигурация шлюза</h3>
-<p>Текущие значения переменных окружения из файла <code>.env</code>. Нажмите <b>«Редактировать»</b> для изменения:</p>
+<p>Текущие значения всех переменных окружения. Нажмите <b>«Редактировать»</b> для изменения:</p>
 <ol>
 <li>Откроется текстовый редактор с содержимым .env</li>
 <li>Внесите изменения (формат: <code>ПЕРЕМЕННАЯ=значение</code>, по одной на строку)</li>
-<li>Нажмите «Сохранить»</li>
-<li>Перезапустите шлюз: <code>docker compose restart gateway</code></li>
+<li>Нажмите «Сохранить» — шлюз перезапустится автоматически</li>
 </ol>
-<div class="note"><p>На Linux файл .env монтируется в контейнер. На Windows используйте <code>docker compose -f docker-compose.yml -f docker-compose.windows.yml up -d</code>.</p></div>
+<div class="note"><p>Файл .env монтируется в контейнер (<code>./.env:/data/.env:rw</code>). Работает на Linux и Windows (через <code>docker-compose.windows.yml</code>).</p></div>
 
 <h3>Действия</h3>
 <ul>
@@ -599,16 +601,28 @@ DOCS_HTML = {
 </ul>
 
 <h2>Обработка MCPToolkit.epf</h2>
-<p>Внешняя обработка для клиента 1С:Предприятие. Является посредником между шлюзом и информационной базой.</p>
-<h3>Элементы интерфейса</h3>
+<p>Внешняя обработка для клиента 1С:Предприятие. Является посредником между шлюзом и информационной базой 1С.</p>
+
+<h3>Поля интерфейса</h3>
 <ul>
-<li><b>Адрес сервера</b> — URL toolkit-бэкенда (заполняется автоматически при подключении к прокси)</li>
-<li><b>Подключиться / Отключиться</b> — управление long-polling соединением с toolkit</li>
-<li><b>Определить базу</b> — автоопределение параметров текущей базы (сервер, имя)</li>
-<li><b>Подключить к прокси</b> — регистрация в шлюзе (отправляет /api/register, получает toolkit_poll_url)</li>
-<li><b>Выгрузить BSL</b> — выгрузка исходников конфигурации для навигации по коду</li>
-<li><b>Журнал событий</b> — лог операций, ошибок, статусов подключения</li>
+<li><b>Адрес сервера</b> — URL toolkit-бэкенда (заполняется автоматически при подключении)</li>
+<li><b>Адрес шлюза</b> — URL MCP-шлюза (по умолчанию <code>http://localhost:8080</code>)</li>
+<li><b>Имя базы</b> — определяется автоматически из текущей ИБ (только чтение)</li>
+<li><b>Сервер 1С</b> — определяется автоматически (только чтение)</li>
+<li><b>Пользователь</b> — определяется автоматически из текущего сеанса (только чтение)</li>
+<li><b>Пароль</b> — для выгрузки BSL через DESIGNER (вводится вручную)</li>
 </ul>
+
+<h3>Кнопки</h3>
+<ul>
+<li><b>Подключиться</b> — регистрирует базу в шлюзе (если не подключена — создаёт Docker-контейнеры автоматически) и запускает long-polling соединение с toolkit</li>
+<li><b>Отключиться</b> — прекращает long-polling соединение</li>
+<li><b>Выгрузить BSL</b> — выгрузка исходников конфигурации для навигации по коду. Индексация крупных конфигураций (ERP, ЗУП) занимает 3-5 минут.</li>
+</ul>
+
+<h3>Журнал событий</h3>
+<p>Все операции, ошибки и статусы подключения отображаются в едином журнале внизу формы.</p>
+
 <h3>Вкладка «Анонимизация»</h3>
 <p>Настройка правил точной анонимизации (regex-паттерны, словари замен). Работает на стороне EPF независимо от серверной анонимизации шлюза.</p>
 
@@ -667,14 +681,23 @@ DOCS_HTML = {
 <h2>Переменные окружения (.env)</h2>
 <table>
 <tr><th>Переменная</th><th>По умолч.</th><th>Описание</th></tr>
-<tr><td><code>GW_PORT</code></td><td>8080</td><td>Порт шлюза</td></tr>
+<tr><td><code>PORT</code></td><td>8080</td><td>Порт MCP-шлюза</td></tr>
 <tr><td><code>LOG_LEVEL</code></td><td>INFO</td><td>Уровень логирования (DEBUG, INFO, WARNING, ERROR)</td></tr>
-<tr><td><code>ENABLED_BACKENDS</code></td><td>onec-toolkit,platform-context,bsl-lsp-bridge</td><td>Включённые бэкенды (через запятую). Добавьте test-runner для тестов YaXUnit.</td></tr>
+<tr><td><code>ONEC_TOOLKIT_URL</code></td><td>http://onec-toolkit:6003/mcp</td><td>URL статического бэкенда onec-toolkit</td></tr>
+<tr><td><code>PLATFORM_CONTEXT_URL</code></td><td>http://platform-context:8080/sse</td><td>URL бэкенда документации платформы</td></tr>
+<tr><td><code>ENABLED_BACKENDS</code></td><td>onec-toolkit,platform-context,bsl-lsp-bridge</td><td>Включённые бэкенды (через запятую). Добавьте <code>test-runner</code> для YaXUnit.</td></tr>
+<tr><td><code>EXPORT_HOST_URL</code></td><td>http://localhost:8082</td><td>URL сервиса выгрузки BSL. Windows: <code>http://host.docker.internal:8082</code></td></tr>
+<tr><td><code>IBCMD_PATH</code></td><td>/opt/1cv8/.../ibcmd</td><td>Путь к ibcmd (для выгрузки BSL внутри контейнера)</td></tr>
+<tr><td><code>BSL_WORKSPACE</code></td><td>/projects</td><td>Рабочий каталог BSL внутри LSP-контейнера</td></tr>
+<tr><td><code>BSL_HOST_WORKSPACE</code></td><td>—</td><td>Путь к BSL на хосте (для преобразования путей)</td></tr>
+<tr><td><code>LSP_DOCKER_CONTAINER</code></td><td>mcp-lsp-zup</td><td>Имя статического LSP-контейнера (устаревш., динамические создаются автоматически)</td></tr>
+<tr><td><code>BSL_LSP_COMMAND</code></td><td>—</td><td>Прямой запуск LSP (all-in-one режим, вместо docker exec)</td></tr>
 <tr><td><code>NAPARNIK_API_KEY</code></td><td>—</td><td>Ключ API 1С:Напарник. Получить: <a href="https://code.1c.ai">code.1c.ai</a> → Профиль → API-токен.</td></tr>
-<tr><td><code>METADATA_CACHE_TTL</code></td><td>600</td><td>TTL кеша метаданных в секундах (0 = отключить)</td></tr>
-<tr><td><code>EXPORT_HOST_URL</code></td><td>http://localhost:8082</td><td>URL сервиса выгрузки BSL. На Windows: <code>http://host.docker.internal:8082</code></td></tr>
+<tr><td><code>METADATA_CACHE_TTL</code></td><td>600</td><td>TTL кеша метаданных (секунды, 0 = отключить)</td></tr>
+<tr><td><code>TEST_RUNNER_URL</code></td><td>http://localhost:8000/sse</td><td>URL mcp-onec-test-runner (опционально)</td></tr>
+<tr><td><code>BSL_GRAPH_URL</code></td><td>http://localhost:8888</td><td>URL bsl-graph (опционально, требует NebulaGraph)</td></tr>
 <tr><td><code>PLATFORM_PATH</code></td><td>/opt/1cv8/x86_64/8.3.27.2074</td><td>Путь к каталогу платформы 1С</td></tr>
-<tr><td><code>HOST_PLATFORM_PATH</code></td><td>/opt/1cv8</td><td>Корневой путь к платформе на хосте (монтируется в platform-context)</td></tr>
+<tr><td><code>HOST_PLATFORM_PATH</code></td><td>/opt/1cv8</td><td>Корневой путь к платформе на хосте</td></tr>
 <tr><td><code>ONEC_TIMEOUT</code></td><td>180</td><td>Таймаут выполнения команд в 1С (секунды)</td></tr>
 </table>
 
@@ -709,7 +732,8 @@ DOCS_HTML = {
 </ul>
 
 <h3>Databases</h3>
-<p>Connected 1C databases. EPF status shows whether MCPToolkit EPF is running in the 1C client. Database marked "default" is used for new AI sessions.</p>
+<p>Connected 1C databases. EPF column shows connection status: <span style="color:#22c55e">Connected</span> (green) or <span style="color:#eab308">Disconnected</span> (yellow). Database marked <span style="background:#164e63;color:#22d3ee;padding:1px 6px;border-radius:3px;font-size:.75rem">default</span> is used for new AI sessions. Each session can switch to its own DB via <code>switch_database</code>.</p>
+<div class="note"><p><b>Auto-connect from EPF:</b> When clicking "Connect" in MCPToolkit EPF, if the database is not yet registered — containers are created automatically.</p></div>
 
 <h3>Profiling</h3>
 <p>Automatic <code>execute_query</code> timing: count, avg/max duration, slow queries (&gt;5s). Each response includes <code>_profiling</code> field with optimization hints.</p>
@@ -728,36 +752,51 @@ DOCS_HTML = {
 <p>Connected databases with buttons:</p>
 <ul>
 <li><b>Edit</b> — change connection string or project path</li>
-<li><b>Default</b> — set as default for new AI sessions</li>
-<li><b>Disconnect</b> — stop and remove containers (data untouched)</li>
+<li><b>Default</b> — set as default database for new AI sessions (only shown for non-default DBs)</li>
+<li><b>Disconnect</b> — stop and remove Docker containers (1C data and BSL sources untouched)</li>
 </ul>
 <p><b>Add Database</b> — name (latin), connection string (<code>Srvr=server;Ref=db;</code>), host project path.</p>
-<div class="warn"><p><b>After connecting:</b> open <code>1c/MCPToolkit.epf</code> in 1C client, click "Connect to proxy", then "Export BSL".</p></div>
+<div class="note"><p><b>Auto-connect from EPF:</b> You can also connect a database directly from MCPToolkit EPF — clicking "Connect" will auto-register the database and create containers.</p></div>
 
 <h3>Gateway Configuration</h3>
-<p>Current .env values. Click <b>"Edit"</b> to modify:</p>
+<p>All environment variables from <code>.env</code> file. Click <b>"Edit"</b> to modify:</p>
 <ol>
-<li>Edit values in the text editor</li>
-<li>Click "Save"</li>
-<li>Restart: <code>docker compose restart gateway</code></li>
+<li>Edit values in the text editor (format: <code>VARIABLE=value</code>, one per line)</li>
+<li>Click "Save" — gateway restarts automatically</li>
 </ol>
-<div class="note"><p>On Linux, .env is mounted into the container. On Windows, use <code>docker compose -f docker-compose.yml -f docker-compose.windows.yml up -d</code>.</p></div>
+<div class="note"><p>The .env file is mounted into the container (<code>./.env:/data/.env:rw</code>). Works on both Linux and Windows (via <code>docker-compose.windows.yml</code>).</p></div>
 
 <h3>Actions</h3>
 <ul>
-<li><b>Clear Cache</b> — remove all cached get_metadata results</li>
-<li><b>Toggle Anonymization</b> — enable/disable PII masking (no restart needed)</li>
+<li><b>Clear Cache</b> — remove all cached get_metadata results. Use after 1C configuration changes.</li>
+<li><b>Toggle Anonymization</b> — enable/disable PII masking in query results. No restart needed.</li>
 </ul>
 
 <h2>MCPToolkit EPF</h2>
 <p>External data processor for 1C:Enterprise client. Acts as a bridge between the gateway and the 1C database.</p>
+
+<h3>Interface Fields</h3>
 <ul>
-<li><b>Connect / Disconnect</b> — manage long-polling connection to toolkit</li>
-<li><b>Detect DB</b> — auto-detect current database parameters</li>
-<li><b>Connect to proxy</b> — register with gateway (sends /api/register)</li>
-<li><b>Export BSL</b> — export configuration sources for code navigation</li>
-<li><b>Event log</b> — operation log, errors, connection status</li>
+<li><b>Server address</b> — toolkit backend URL (auto-filled on connect)</li>
+<li><b>Gateway address</b> — MCP gateway URL (default: <code>http://localhost:8080</code>)</li>
+<li><b>Database name</b> — auto-detected from current infobase (read-only)</li>
+<li><b>1C Server</b> — auto-detected (read-only)</li>
+<li><b>User</b> — auto-detected from current session (read-only)</li>
+<li><b>Password</b> — for BSL export via DESIGNER (enter manually)</li>
 </ul>
+
+<h3>Buttons</h3>
+<ul>
+<li><b>Connect</b> — registers database in gateway (creates Docker containers if needed) and starts long-polling connection to toolkit</li>
+<li><b>Disconnect</b> — stops long-polling connection</li>
+<li><b>Export BSL</b> — exports configuration sources for code navigation. Large configs (ERP, HRM) take 3-5 minutes to index.</li>
+</ul>
+
+<h3>Event Log</h3>
+<p>All operations, errors, and connection status are shown in a unified log at the bottom of the form.</p>
+
+<h3>Anonymization Tab</h3>
+<p>Configure precise anonymization rules (regex patterns, replacement dictionaries). Operates on the EPF side independently from the gateway's server-side anonymization.</p>
 
 <h2>MCP Tools (complete list)</h2>
 <table>
@@ -816,14 +855,23 @@ DOCS_HTML = {
 <h2>Environment Variables (.env)</h2>
 <table>
 <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
-<tr><td><code>GW_PORT</code></td><td>8080</td><td>Gateway port</td></tr>
+<tr><td><code>PORT</code></td><td>8080</td><td>MCP gateway port</td></tr>
 <tr><td><code>LOG_LEVEL</code></td><td>INFO</td><td>Log level (DEBUG, INFO, WARNING, ERROR)</td></tr>
-<tr><td><code>ENABLED_BACKENDS</code></td><td>onec-toolkit,platform-context,bsl-lsp-bridge</td><td>Enabled backends (comma-separated)</td></tr>
+<tr><td><code>ONEC_TOOLKIT_URL</code></td><td>http://onec-toolkit:6003/mcp</td><td>Static onec-toolkit URL</td></tr>
+<tr><td><code>PLATFORM_CONTEXT_URL</code></td><td>http://platform-context:8080/sse</td><td>Platform docs URL</td></tr>
+<tr><td><code>ENABLED_BACKENDS</code></td><td>onec-toolkit,platform-context,bsl-lsp-bridge</td><td>Enabled backends. Add <code>test-runner</code> for YaXUnit.</td></tr>
+<tr><td><code>EXPORT_HOST_URL</code></td><td>http://localhost:8082</td><td>BSL export service. Windows: <code>http://host.docker.internal:8082</code></td></tr>
+<tr><td><code>IBCMD_PATH</code></td><td>/opt/1cv8/.../ibcmd</td><td>ibcmd path for BSL export</td></tr>
+<tr><td><code>BSL_WORKSPACE</code></td><td>/projects</td><td>BSL workspace in LSP container</td></tr>
+<tr><td><code>BSL_HOST_WORKSPACE</code></td><td>—</td><td>BSL host path (for path mapping)</td></tr>
+<tr><td><code>LSP_DOCKER_CONTAINER</code></td><td>mcp-lsp-zup</td><td>Static LSP container (legacy)</td></tr>
+<tr><td><code>BSL_LSP_COMMAND</code></td><td>—</td><td>Direct LSP binary (all-in-one mode)</td></tr>
 <tr><td><code>NAPARNIK_API_KEY</code></td><td>—</td><td>1C:Naparnik API key (<a href="https://code.1c.ai">code.1c.ai</a>)</td></tr>
-<tr><td><code>METADATA_CACHE_TTL</code></td><td>600</td><td>Metadata cache TTL in seconds (0=disabled)</td></tr>
-<tr><td><code>EXPORT_HOST_URL</code></td><td>http://localhost:8082</td><td>BSL export service URL. Windows: <code>http://host.docker.internal:8082</code></td></tr>
-<tr><td><code>PLATFORM_PATH</code></td><td>/opt/1cv8/...</td><td>1C platform path</td></tr>
-<tr><td><code>HOST_PLATFORM_PATH</code></td><td>/opt/1cv8</td><td>Host platform path (mounted to platform-context)</td></tr>
+<tr><td><code>METADATA_CACHE_TTL</code></td><td>600</td><td>Metadata cache TTL (seconds, 0=disabled)</td></tr>
+<tr><td><code>TEST_RUNNER_URL</code></td><td>http://localhost:8000/sse</td><td>mcp-onec-test-runner URL (optional)</td></tr>
+<tr><td><code>BSL_GRAPH_URL</code></td><td>http://localhost:8888</td><td>bsl-graph URL (optional)</td></tr>
+<tr><td><code>PLATFORM_PATH</code></td><td>/opt/1cv8/...</td><td>1C platform directory</td></tr>
+<tr><td><code>HOST_PLATFORM_PATH</code></td><td>/opt/1cv8</td><td>Host platform path</td></tr>
 <tr><td><code>ONEC_TIMEOUT</code></td><td>180</td><td>1C command timeout (seconds)</td></tr>
 </table>
 
