@@ -192,7 +192,7 @@ a{color:#38bdf8;text-decoration:none}a:hover{text-decoration:underline}
 .tab{padding:10px 18px;font-size:.82rem;color:#64748b;cursor:pointer;border-bottom:2px solid transparent}
 .tab:hover{color:#94a3b8}.tab.on{color:#38bdf8;border-bottom-color:#38bdf8}
 .tc{display:none;padding:20px 24px}.tc.on{display:block}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:14px;margin-bottom:16px}
 .card{background:#1e293b;border-radius:8px;padding:16px;border:1px solid #334155;overflow:hidden}
 .card h2{font-size:.68rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;font-weight:600}
 .sr{display:flex;align-items:center;gap:7px;margin-bottom:6px;font-size:.85rem}
@@ -237,10 +237,10 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 </div>
 <div class="tc on" id="t-info">
 <div class="grid">
-<div class="card"><h2>{{h_backends}}</h2>{{backends_html}}</div>
 <div class="card"><h2>{{h_databases}}</h2>{{databases_html}}</div>
-<div class="card"><h2>{{h_system}}</h2>{{docker_info_html}}{{system_html}}</div>
 <div class="card"><h2>{{h_profiling}}</h2>{{profiling_html}}</div>
+<div class="card"><h2>{{h_backends}}</h2>{{backends_html}}</div>
+<div class="card"><h2>{{h_system}}</h2>{{docker_info_html}}{{system_html}}</div>
 <div class="card"><h2>{{h_anon}}</h2><div class="sr"><div class="dot {{anon_dot}}"></div><span class="sn">{{anon_status}}</span></div></div>
 <div class="card"><h2>{{h_cache}}</h2>{{cache_html}}</div>
 </div>
@@ -274,9 +274,9 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 </div>
 <div class="card">
 <h2>{{h_actions}}</h2>
-<div class="ag">
-<button class="btn btn-p" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button>
-<button class="btn" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div class="sr"><button class="btn btn-p" style="min-width:160px" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button><span class="st">{{cache_status}}</span></div>
+<div class="sr"><button class="btn" style="min-width:160px" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button><span class="st">{{anon_status_text}}</span></div>
 </div>
 </div>
 </div>
@@ -379,15 +379,15 @@ def render_dashboard(
 
     # Databases — fixed table layout
     if databases:
-        rows = [f'<table><colgroup><col style="width:25%"><col style="width:45%"><col style="width:30%"></colgroup>'
+        rows = [f'<table style="table-layout:auto">'
                 f'<tr><th>{t["name"]}</th><th>{t["connection"]}</th><th>{t["status"]}</th></tr>']
         for db in databases:
-            badge = f' <span class="badge">{t["default_badge"]}</span>' if db.get("active") else ""
+            badge = f'<br><span class="badge">{t["default_badge"]}</span>' if db.get("active") else ""
             epf_connected = db.get("epf_connected", False)
             epf_dot = "ok" if epf_connected else "warn"
             epf = t["epf_ok"] if epf_connected else t["epf_wait"]
-            conn = db.get("connection", "")[:40]
-            rows.append(f'<tr><td>{db["name"]}{badge}</td><td><code style="font-size:.72rem">{conn}</code></td><td><span class="sr" style="margin:0;gap:5px"><span class="dot {epf_dot}"></span>{epf}</span></td></tr>')
+            conn = db.get("connection", "")
+            rows.append(f'<tr><td><b>{db["name"]}</b>{badge}</td><td style="font-size:.78rem">{conn}</td><td><span class="sr" style="margin:0;gap:5px"><span class="dot {epf_dot}"></span>{epf}</span></td></tr>')
         rows.append("</table>")
         databases_html = "\n".join(rows)
     else:
@@ -447,7 +447,7 @@ def render_dashboard(
         db_lines = []
         for db in databases:
             is_default = db.get("active", False)
-            badge = f' <span class="badge">{t["default_badge"]}</span>' if is_default else ""
+            badge = f'<br><span class="badge">{t["default_badge"]}</span>' if is_default else ""
             epf_connected = db.get("epf_connected", False)
             epf_dot = "ok" if epf_connected else "warn"
             epf_st = f'<span class="sr" style="margin:0;gap:5px"><span class="dot {epf_dot}"></span>{t["epf_ok"] if epf_connected else t["epf_wait"]}</span>'
@@ -472,15 +472,14 @@ def render_dashboard(
             )
             db_lines.append(
                 f'<tr>'
-                f'<td style="white-space:nowrap">{db["name"]}{badge}</td>'
-                f'<td><code style="font-size:.72rem">{conn_short}</code></td>'
+                f'<td><b>{db["name"]}</b>{badge}</td>'
+                f'<td style="font-size:.78rem">{conn}</td>'
                 f'<td>{epf_st}</td>'
-                f'<td style="white-space:nowrap;text-align:right">{edit_btn}{default_btn}{disc_btn}</td>'
+                f'<td style="white-space:nowrap;text-align:right">{edit_btn} {default_btn} {disc_btn}</td>'
                 f'</tr>'
             )
         db_mgmt_html = (
-            f'<table><colgroup><col style="width:20%"><col style="width:35%">'
-            f'<col style="width:15%"><col style="width:30%"></colgroup>'
+            f'<table style="table-layout:auto">'
             f'<tr><th>{t["name"]}</th><th>{t["connection"]}</th>'
             f'<th>{t["status"]}</th><th></th></tr>'
             + "\n".join(db_lines) + '</table>'
@@ -491,10 +490,16 @@ def render_dashboard(
     html = HTML_TEMPLATE
     for key, val in t.items():
         html = html.replace("{{" + key + "}}", val)
+    # Status texts for action buttons
+    cache_entries = cache_stats.get("entries", 0)
+    cache_status = f"{cache_entries} {t['entries'].lower()}" if cache_entries else "—"
+    anon_status_text = f'<span class="dot {"ok" if anon_enabled else "warn"}" style="display:inline-block"></span> {anon_status}'
+
     replacements = {
         "backends_html": backends_html, "databases_html": databases_html, "docker_info_html": docker_info_html,
         "profiling_html": profiling_html, "cache_html": cache_html,
         "anon_dot": anon_dot, "anon_status": anon_status,
+        "cache_status": cache_status, "anon_status_text": anon_status_text,
         "system_html": system_html, "config_html": config_html,
         "db_mgmt_html": db_mgmt_html, "version": VERSION,
         "github_url": GITHUB_URL, "lang": lang,
