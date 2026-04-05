@@ -48,8 +48,8 @@ _T = {
         "no_backends": "Нет бэкендов",
         "no_databases": "Нет подключённых баз",
         "no_queries": "Нет запросов",
-        "epf_ok": "Да",
-        "epf_wait": "Нет",
+        "epf_ok": "Подкл.",
+        "epf_wait": "Не подкл.",
         "name": "Имя",
         "connection": "Подключение",
         "status": "Обработка",
@@ -90,6 +90,7 @@ _T = {
         "edit_db_title": "Редактирование базы",
         "save": "Сохранить",
         "diagnostics": "Диагностика",
+        "fill_all_fields": "Заполните все поля",
     },
     "en": {
         "title": "onec-mcp-universal",
@@ -163,6 +164,7 @@ _T = {
         "edit_db_title": "Edit Database",
         "save": "Save",
         "diagnostics": "Diagnostics",
+        "fill_all_fields": "Fill all fields",
     },
 }
 
@@ -272,12 +274,12 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 </div>
 <p class="hint">{{config_edit_hint}}</p>
 </div>
-<div style="margin-top:10px;padding-top:10px;border-top:1px solid #334155;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-<span class="st" style="display:flex;align-items:center;gap:4px"><span class="dot {{anon_dot}}"></span>{{anon_status}}</span>
-<button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button>
-<span class="st">|</span>
-<span class="st">{{cache_status}}</span>
+<div id="config-actions" style="margin-top:10px;padding-top:10px;border-top:1px solid #334155;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
 <button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button>
+<span class="st">{{cache_status}}</span>
+<span class="st">|</span>
+<button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button>
+<span class="st" style="display:flex;align-items:center;gap:4px"><span class="dot {{anon_dot}}"></span>{{anon_status}}</span>
 </div>
 </div>
 </div>
@@ -321,7 +323,7 @@ function connectDb(){
 var n=document.getElementById('db-name').value.trim();
 var c=document.getElementById('db-conn').value.trim();
 var p=document.getElementById('db-path').value.trim();
-if(!n||!c||!p){alert('Fill all fields');return}
+if(!n||!c||!p){alert('{{fill_all_fields}}');return}
 fetch('/api/action/connect-db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,connection:c,project_path:p})})
 .then(r=>r.json()).then(d=>{alert(d.message||d.error||JSON.stringify(d));if(d.ok)setTimeout(reload,300)}).catch(e=>alert(e))
 }
@@ -335,6 +337,7 @@ function editEnv(){
 fetch('/api/action/get-env',{method:'POST'}).then(r=>r.json()).then(d=>{
 document.getElementById('env-editor').value=d.env||'';
 document.getElementById('config-view').style.display='none';
+document.getElementById('config-actions').style.display='none';
 document.getElementById('config-edit').style.display='block';
 }).catch(e=>alert(e))
 }
@@ -345,6 +348,7 @@ fetch('/api/action/save-env',{method:'POST',headers:{'Content-Type':'application
 }
 function cancelEnv(){
 document.getElementById('config-view').style.display='block';
+document.getElementById('config-actions').style.display='flex';
 document.getElementById('config-edit').style.display='none';
 }
 </script>
@@ -476,7 +480,7 @@ def render_dashboard(
                 f'<td><b>{db["name"]}</b>{badge}</td>'
                 f'<td style="font-size:.75rem;word-break:break-all">{conn}</td>'
                 f'<td style="white-space:nowrap">{epf_st}</td>'
-                f'<td style="white-space:nowrap">{default_btn}{edit_btn} {disc_btn}</td>'
+                f'<td style="white-space:nowrap;text-align:right">{default_btn}{edit_btn} {disc_btn}</td>'
                 f'</tr>'
             )
         db_mgmt_html = (
