@@ -211,9 +211,10 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 .footer a{color:#64748b}.footer a:hover{color:#94a3b8}
 .ag{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .hint{color:#64748b;font-size:.72rem;margin-top:10px;font-style:italic}
-.form-row{display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap}
-.form-row label{font-size:.75rem;color:#94a3b8;min-width:100px}
-.form-row input{flex:1;min-width:150px;padding:5px 8px;border-radius:4px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:.8rem}
+@media(max-width:900px){.grid{grid-template-columns:1fr}.card{font-size:.8rem}table{font-size:.75rem}.btn,.btn-d{font-size:.7rem;padding:3px 6px}}
+.form-row{display:grid;grid-template-columns:140px 1fr;gap:8px;margin-bottom:8px;align-items:center}
+.form-row label{font-size:.78rem;color:#94a3b8;text-align:right}
+.form-row input{padding:5px 8px;border-radius:4px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:.8rem;width:100%}
 .form-row input:focus{outline:none;border-color:#38bdf8}
 </style>
 </head>
@@ -471,13 +472,13 @@ def render_dashboard(
             db_lines.append(
                 f'<tr>'
                 f'<td><b>{db["name"]}</b>{badge}</td>'
-                f'<td style="font-size:.78rem">{conn}</td>'
-                f'<td>{epf_st}</td>'
-                f'<td style="white-space:nowrap;text-align:right">{edit_btn} {default_btn} {disc_btn}</td>'
+                f'<td style="font-size:.75rem;word-break:break-all">{conn}</td>'
+                f'<td style="white-space:nowrap">{epf_st}</td>'
+                f'<td style="white-space:nowrap">{default_btn}{edit_btn} {disc_btn}</td>'
                 f'</tr>'
             )
         db_mgmt_html = (
-            f'<table style="table-layout:auto">'
+            f'<table style="table-layout:auto;font-size:.82rem">'
             f'<tr><th>{t["name"]}</th><th>{t["connection"]}</th>'
             f'<th>{t["status"]}</th><th></th></tr>'
             + "\n".join(db_lines) + '</table>'
