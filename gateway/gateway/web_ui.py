@@ -272,10 +272,12 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 </div>
 <p class="hint">{{config_edit_hint}}</p>
 </div>
-<h2 style="margin-top:16px">{{h_actions}}</h2>
-<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-<div class="sr" style="gap:6px"><button class="btn btn-p" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button><span class="st">{{cache_status}}</span></div>
-<div class="sr" style="gap:6px"><button class="btn" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button><span class="st">{{anon_status_text}}</span></div>
+</div>
+<div class="card">
+<h2>{{h_actions}}</h2>
+<div style="display:flex;flex-direction:column;gap:10px">
+<div class="sr" style="gap:8px"><button class="btn btn-p" style="min-width:180px" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button><span class="st">{{cache_status}}</span></div>
+<div class="sr" style="gap:8px"><button class="btn" style="min-width:180px" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button><span class="st">{{anon_status_text}}</span></div>
 </div>
 </div>
 </div>
