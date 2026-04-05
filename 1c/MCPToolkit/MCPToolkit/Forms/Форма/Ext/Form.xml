@@ -286,6 +286,17 @@
 							<CommandName>Form.Command.Отключиться</CommandName>
 							<ExtendedTooltip name="КнопкаОтключитьсяРасширеннаяПодсказка" id="10"/>
 						</Button>
+						<Button name="КнопкаВыгрузитьBSLОсновная" id="320">
+							<Type>UsualButton</Type>
+							<Title>
+								<v8:item>
+									<v8:lang>ru</v8:lang>
+									<v8:content>Выгрузить BSL</v8:content>
+								</v8:item>
+							</Title>
+							<CommandName>Form.Command.ВыгрузитьBSL</CommandName>
+							<ExtendedTooltip name="КнопкаВыгрузитьBSLОсновнаяРасширеннаяПодсказка" id="321"/>
+						</Button>
 					</ChildItems>
 				</UsualGroup>
 			</ChildItems>
@@ -330,6 +341,7 @@
 			</Title>
 			<Group>Vertical</Group>
 			<Representation>NormalSeparation</Representation>
+			<Visible>false</Visible>
 			<ExtendedTooltip name="ГруппаBSLНаГлавнойРасширеннаяПодсказка" id="301"/>
 			<ChildItems>
 				<UsualGroup name="ГруппаBSLАвторизация" id="310">
