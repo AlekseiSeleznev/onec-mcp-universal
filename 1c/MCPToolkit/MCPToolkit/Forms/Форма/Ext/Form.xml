@@ -533,6 +533,7 @@
 			</Title>
 			<Group>Vertical</Group>
 			<Representation>NormalSeparation</Representation>
+			<VerticalStretch>true</VerticalStretch>
 			<ExtendedTooltip name="ГруппаЛогРасширеннаяПодсказка" id="18"/>
 			<ChildItems>
 				<InputField name="ЛогПоле" id="19">
@@ -540,8 +541,9 @@
 					<TitleLocation>None</TitleLocation>
 					<ReadOnly>true</ReadOnly>
 					<MultiLine>true</MultiLine>
-					<Height>15</Height>
+					<Height>20</Height>
 					<Width>25</Width>
+					<VerticalStretch>true</VerticalStretch>
 					<ExtendedTooltip name="ЛогПолеРасширеннаяПодсказка" id="20"/>
 				</InputField>
 				<Button name="КнопкаОчиститьЖурнал" id="30">
