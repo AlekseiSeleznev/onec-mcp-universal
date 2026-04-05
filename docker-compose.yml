@@ -26,6 +26,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - gw-data:/data
+      - ./.env:/data/.env:rw
     depends_on:
       onec-toolkit:
         condition: service_healthy

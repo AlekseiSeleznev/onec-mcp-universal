@@ -242,20 +242,21 @@ def _get_container_info() -> list[dict]:
         from .docker_manager import _docker
         client = _docker()
         result = []
+        # Show only running project containers + stopped per-DB containers
         for c in client.containers.list(all=True):
             name = c.name or ""
-            if not any(name.startswith(p) for p in ("onec-", "mcp-lsp-")):
+            if not any(name.startswith(p) for p in ("onec-mcp-", "onec-toolkit-", "mcp-lsp-")):
                 continue
             try:
                 image_name = c.image.tags[0] if c.image and c.image.tags else ""
             except Exception:
-                image_name = ""
+                # Image may have been removed (dangling)
+                image_name = c.attrs.get("Config", {}).get("Image", "")
             result.append({
                 "name": name,
                 "image": image_name,
                 "status": c.status or "unknown",
                 "running": c.status == "running",
-                "size": "",
             })
         return sorted(result, key=lambda x: x["name"])
     except Exception as exc:
@@ -367,11 +368,20 @@ def _get_docker_system_info() -> dict:
         from .docker_manager import _docker
         client = _docker()
         info = client.info()
-        df = client.df()
-        # Calculate total image/container size
-        images_size = sum(img.get("Size", 0) for img in df.get("Images", []))
-        containers_size = sum(c.get("SizeRw", 0) or 0 for c in df.get("Containers", []))
-        volumes_size = sum(v.get("UsageData", {}).get("Size", 0) or 0 for v in df.get("Volumes", []))
+
+        # df() can fail if images are dangling — wrap safely
+        images_size = 0
+        volumes_size = 0
+        try:
+            df = client.df()
+            images_size = sum(img.get("Size", 0) or 0 for img in df.get("Images", []))
+            volumes_size = sum(
+                (v.get("UsageData") or {}).get("Size", 0) or 0
+                for v in df.get("Volumes", [])
+            )
+        except Exception:
+            pass
+
         return {
             "version": info.get("ServerVersion", ""),
             "os": info.get("OperatingSystem", ""),
@@ -382,7 +392,6 @@ def _get_docker_system_info() -> dict:
             "containers_total": info.get("Containers", 0),
             "images_total": info.get("Images", 0),
             "images_size_gb": round(images_size / 1073741824, 2),
-            "containers_size_mb": round(containers_size / 1048576, 1),
             "volumes_size_gb": round(volumes_size / 1073741824, 2),
         }
     except Exception as exc:

@@ -208,7 +208,6 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <body>
 <div class="header">
 <div class="header-left">
-{{logo}}
 <div><h1>{{title}}</h1><span class="sub">{{subtitle}}</span></div>
 </div>
 <div class="header-right">
