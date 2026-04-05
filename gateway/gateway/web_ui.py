@@ -89,6 +89,7 @@ _T = {
         "default_badge": "по умолч.",
         "edit_db_title": "Редактирование базы",
         "save": "Сохранить",
+        "diagnostics": "Диагностика",
     },
     "en": {
         "title": "onec-mcp-universal",
@@ -161,6 +162,7 @@ _T = {
         "default_badge": "default",
         "edit_db_title": "Edit Database",
         "save": "Save",
+        "diagnostics": "Diagnostics",
     },
 }
 
@@ -275,7 +277,9 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <div class="ag">
 <button class="btn btn-p" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button>
 <button class="btn" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button>
+<button class="btn" onclick="showDiag()">{{diagnostics}}</button>
 </div>
+<pre id="diag-output" style="display:none;margin-top:10px;max-height:400px;overflow:auto;font-size:.75rem"></pre>
 </div>
 </div>
 </div>
@@ -283,7 +287,7 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 {{title}} {{version}} &mdash;
 <a href="{{github_url}}">{{project}}</a> &mdash;
 <a href="{{github_url}}/blob/main/LICENSE">{{license}}: MIT</a> &mdash;
-<a href="/health">Health</a> &mdash; MCP: <code>http://localhost:8080/mcp</code>
+<a href="/health">Health</a>
 </div>
 <script>
 function stab(el,id){
@@ -303,7 +307,17 @@ document.querySelectorAll('.tab').forEach(t=>{if(t.textContent&&t.onclick&&t.onc
 }else{document.querySelector('.tc').classList.add('on');document.querySelector('.tab').classList.add('on')}
 }})();
 function reload(){var h=location.hash;location.href=location.pathname+'?lang={{lang}}'+h}
-function act(u){fetch(u,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message||d.error||JSON.stringify(d));reload()}).catch(e=>alert(e))}
+function act(u){fetch(u,{method:'POST'}).then(r=>r.json()).then(d=>{
+var msg=d.message||d.error||'OK';
+var h=location.hash||'';
+location.href=location.pathname+'?lang={{lang}}&msg='+encodeURIComponent(msg)+h;
+}).catch(e=>alert(e))}
+// Show message from URL param after reload
+(function(){var p=new URLSearchParams(location.search);var m=p.get('msg');if(m){
+var d=document.createElement('div');d.style.cssText='position:fixed;top:12px;right:12px;background:#164e63;color:#22d3ee;padding:10px 16px;border-radius:6px;font-size:.85rem;z-index:999;max-width:400px';
+d.textContent=m;document.body.appendChild(d);setTimeout(function(){d.remove()},4000);
+history.replaceState(null,'',location.pathname+'?lang='+p.get('lang')+(location.hash||''));
+}})();
 function connectDb(){
 var n=document.getElementById('db-name').value.trim();
 var c=document.getElementById('db-conn').value.trim();
@@ -317,6 +331,12 @@ var nc=prompt('{{add_db_conn}}:',conn);if(!nc)return;
 var np=prompt('{{add_db_path}}:',path);if(!np)return;
 fetch('/api/action/edit-db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,connection:nc,project_path:np})})
 .then(r=>r.json()).then(d=>{alert(d.message||d.error);setTimeout(reload,300)}).catch(e=>alert(e))
+}
+function showDiag(){
+var el=document.getElementById('diag-output');
+el.style.display='block';el.textContent='Loading...';
+fetch('/api/action/diagnostics',{method:'POST'}).then(r=>r.json()).then(d=>{
+el.textContent=JSON.stringify(d.data||d,null,2)}).catch(e=>{el.textContent='Error: '+e})
 }
 function editEnv(){
 fetch('/api/action/get-env',{method:'POST'}).then(r=>r.json()).then(d=>{
@@ -507,12 +527,24 @@ DOCS_HTML = {
 <h1>Документация onec-mcp-universal</h1>
 <p>Версия: """ + VERSION + """ | <a href="https://github.com/AlekseiSeleznev/onec-mcp-universal">GitHub</a> | Лицензия: MIT</p>
 
-<h2>Обзор</h2>
+<h2>Содержание</h2>
+<ul>
+<li><a href="#overview-ru">Обзор</a></li>
+<li><a href="#info-ru">Вкладка «Информация»</a> — бэкенды, базы данных, профилирование, кеш, анонимизация, Docker</li>
+<li><a href="#params-ru">Вкладка «Параметры»</a> — управление базами, конфигурация, действия</li>
+<li><a href="#epf-ru">Обработка MCPToolkit.epf</a> — интерфейс, кнопки, журнал</li>
+<li><a href="#tools-ru">MCP-инструменты</a> — полный список 29 инструментов</li>
+<li><a href="#api-ru">API-эндпоинты</a> — 13 эндпоинтов</li>
+<li><a href="#env-ru">Переменные окружения</a> — 16 параметров .env</li>
+<li><a href="#troubleshooting-ru">Устранение неполадок</a></li>
+</ul>
+
+<h2 id="overview-ru">Обзор</h2>
 <p>onec-mcp-universal — единый MCP-шлюз для работы с 1С:Предприятие из AI-ассистентов (Claude Code, Cursor, Windsurf). Шлюз объединяет несколько бэкендов в один MCP-сервер по адресу <code>http://localhost:8080/mcp</code>.</p>
 <div class="note"><p><b>Как это работает:</b> AI-ассистент отправляет запросы на шлюз → шлюз маршрутизирует их к нужному бэкенду (данные 1С, навигация по коду, документация платформы) → результат возвращается AI.</p></div>
 <div class="note"><p><b>Per-session routing:</b> Каждый сеанс AI-ассистента (Claude Code, Cursor) работает со своей активной базой данных независимо. Все базы остаются подключёнными одновременно. Idle timeout сессий — 8 часов.</p></div>
 
-<h2>Вкладка «Информация»</h2>
+<h2 id="info-ru">Вкладка «Информация»</h2>
 
 <h3>Бэкенды</h3>
 <p>Каждый бэкенд — отдельный MCP-сервер, который предоставляет набор инструментов:</p>
@@ -568,7 +600,7 @@ DOCS_HTML = {
 <li><b>mcp-lsp-{db}</b> — BSL Language Server для каждой базы</li>
 </ul>
 
-<h2>Вкладка «Параметры»</h2>
+<h2 id="params-ru">Вкладка «Параметры»</h2>
 
 <h3>Управление базами данных</h3>
 <p>Список подключённых баз с кнопками:</p>
@@ -607,7 +639,7 @@ DOCS_HTML = {
 <li><b>Анонимизация вкл/выкл</b> — переключает маскировку персональных данных в ответах. Не требует перезапуска.</li>
 </ul>
 
-<h2>Обработка MCPToolkit.epf</h2>
+<h2 id="epf-ru">Обработка MCPToolkit.epf</h2>
 <p>Внешняя обработка для клиента 1С:Предприятие. Является посредником между шлюзом и информационной базой 1С.</p>
 
 <h3>Поля интерфейса</h3>
@@ -633,7 +665,7 @@ DOCS_HTML = {
 <h3>Вкладка «Анонимизация»</h3>
 <p>Настройка правил точной анонимизации (regex-паттерны, словари замен). Работает на стороне EPF независимо от серверной анонимизации шлюза.</p>
 
-<h2>MCP-инструменты (полный список)</h2>
+<h2 id="tools-ru">MCP-инструменты (полный список)</h2>
 <table>
 <tr><th>Инструмент</th><th>Описание</th></tr>
 <tr><td><code>execute_query</code></td><td>Запрос к БД на языке 1С с параметрами и лимитами</td></tr>
@@ -668,7 +700,7 @@ DOCS_HTML = {
 <tr><td><code>get_server_status</code></td><td>Статус бэкендов</td></tr>
 </table>
 
-<h2>API-эндпоинты</h2>
+<h2 id="api-ru">API-эндпоинты</h2>
 <table>
 <tr><th>Путь</th><th>Метод</th><th>Описание</th></tr>
 <tr><td><code>/mcp</code></td><td>POST/GET</td><td>MCP Streamable HTTP — основной вход для AI-ассистентов</td></tr>
@@ -685,7 +717,7 @@ DOCS_HTML = {
 <tr><td><code>/api/action/save-env</code></td><td>POST</td><td>Сохранить содержимое .env</td></tr>
 </table>
 
-<h2>Переменные окружения (.env)</h2>
+<h2 id="env-ru">Переменные окружения (.env)</h2>
 <table>
 <tr><th>Переменная</th><th>По умолч.</th><th>Описание</th></tr>
 <tr><td><code>PORT</code></td><td>8080</td><td>Порт MCP-шлюза</td></tr>
@@ -708,7 +740,7 @@ DOCS_HTML = {
 <tr><td><code>ONEC_TIMEOUT</code></td><td>180</td><td>Таймаут выполнения команд в 1С (секунды)</td></tr>
 </table>
 
-<h2>Устранение неполадок</h2>
+<h2 id="troubleshooting-ru">Устранение неполадок</h2>
 <h3>Бэкенд показывает красный статус</h3>
 <p>Проверьте логи контейнера: <code>docker logs onec-mcp-gw -f</code>. Убедитесь, что все контейнеры запущены: <code>docker compose ps</code>.</p>
 <h3>EPF не подключается</h3>
@@ -723,13 +755,25 @@ DOCS_HTML = {
 <style>""" + _DOC_STYLE + """</style></head><body>
 <a class="back" href="/dashboard?lang=en">&larr; Back to dashboard</a>
 <h1>onec-mcp-universal Documentation</h1>
+
+<h2>Contents</h2>
+<ul>
+<li><a href="#overview-en">Overview</a></li>
+<li><a href="#info-en">Information Tab</a></li>
+<li><a href="#params-en">Parameters Tab</a></li>
+<li><a href="#epf-en">MCPToolkit EPF</a></li>
+<li><a href="#tools-en">MCP Tools</a> — 29 tools</li>
+<li><a href="#api-en">API Endpoints</a></li>
+<li><a href="#env-en">Environment Variables</a></li>
+<li><a href="#troubleshooting-en">Troubleshooting</a></li>
+</ul>
 <p>Version: """ + VERSION + """ | <a href="https://github.com/AlekseiSeleznev/onec-mcp-universal">GitHub</a> | License: MIT</p>
 
-<h2>Overview</h2>
+<h2 id="overview-en">Overview</h2>
 <p>onec-mcp-universal is a unified MCP gateway for 1C:Enterprise integration with AI assistants (Claude Code, Cursor, Windsurf). Single endpoint <code>http://localhost:8080/mcp</code> routes requests to multiple backends.</p>
 <div class="note"><p><b>Per-session routing:</b> Each AI assistant session works with its own active database independently. All databases remain connected simultaneously.</p></div>
 
-<h2>Information Tab</h2>
+<h2 id="info-en">Information Tab</h2>
 <h3>Backends</h3>
 <p>MCP backend status: <span style="color:#22c55e">green</span>=OK, <span style="color:#ef4444">red</span>=unavailable. Tool count shown.</p>
 <ul>
@@ -754,7 +798,7 @@ DOCS_HTML = {
 <h3>Docker Containers</h3>
 <p>Docker daemon info (version, CPU, RAM, disk usage) and project container list with status.</p>
 
-<h2>Parameters Tab</h2>
+<h2 id="params-en">Parameters Tab</h2>
 <h3>Database Management</h3>
 <p>Connected databases with buttons:</p>
 <ul>
@@ -786,7 +830,7 @@ DOCS_HTML = {
 <li><b>Toggle Anonymization</b> — enable/disable PII masking in query results. No restart needed.</li>
 </ul>
 
-<h2>MCPToolkit EPF</h2>
+<h2 id="epf-en">MCPToolkit EPF</h2>
 <p>External data processor for 1C:Enterprise client. Acts as a bridge between the gateway and the 1C database.</p>
 
 <h3>Interface Fields</h3>
@@ -812,7 +856,7 @@ DOCS_HTML = {
 <h3>Anonymization Tab</h3>
 <p>Configure precise anonymization rules (regex patterns, replacement dictionaries). Operates on the EPF side independently from the gateway's server-side anonymization.</p>
 
-<h2>MCP Tools (complete list)</h2>
+<h2 id="tools-en">MCP Tools (complete list)</h2>
 <table>
 <tr><th>Tool</th><th>Description</th></tr>
 <tr><td><code>execute_query</code></td><td>1C query language with parameters and limits</td></tr>
@@ -847,7 +891,7 @@ DOCS_HTML = {
 <tr><td><code>get_server_status</code></td><td>Backend health status</td></tr>
 </table>
 
-<h2>API Endpoints</h2>
+<h2 id="api-en">API Endpoints</h2>
 <table>
 <tr><th>Path</th><th>Method</th><th>Description</th></tr>
 <tr><td><code>/mcp</code></td><td>POST/GET</td><td>MCP Streamable HTTP — main entry for AI assistants</td></tr>
@@ -866,7 +910,7 @@ DOCS_HTML = {
 <tr><td><code>/api/action/save-env</code></td><td>POST</td><td>Save .env file</td></tr>
 </table>
 
-<h2>Environment Variables (.env)</h2>
+<h2 id="env-en">Environment Variables (.env)</h2>
 <table>
 <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
 <tr><td><code>PORT</code></td><td>8080</td><td>MCP gateway port</td></tr>
@@ -889,7 +933,7 @@ DOCS_HTML = {
 <tr><td><code>ONEC_TIMEOUT</code></td><td>180</td><td>1C command timeout (seconds)</td></tr>
 </table>
 
-<h2>Troubleshooting</h2>
+<h2 id="troubleshooting-en">Troubleshooting</h2>
 <h3>Backend shows red status</h3>
 <p>Check container logs: <code>docker logs onec-mcp-gw -f</code>. Verify all containers running: <code>docker compose ps</code>.</p>
 <h3>EPF not connecting</h3>

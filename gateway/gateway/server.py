@@ -392,6 +392,9 @@ async def action_api(request: Request) -> JSONResponse:
     if path == "docker-info":
         return JSONResponse({"ok": True, "data": _get_docker_system_info()})
 
+    if path == "diagnostics":
+        return JSONResponse({"ok": True, "data": _collect_diagnostics()})
+
     return JSONResponse({"error": f"Unknown action: {path}"}, status_code=404)
 
 
@@ -427,6 +430,64 @@ def _write_env_file(content: str) -> dict:
         except (PermissionError, OSError):
             continue
     return {"ok": False, "error": "Cannot write .env inside container. Edit on host manually."}
+
+
+def _collect_diagnostics() -> dict:
+    """Collect full diagnostic info about the gateway."""
+    from .anonymizer import anonymizer
+    from .metadata_cache import metadata_cache
+    from .profiler import profiler
+
+    diag = {
+        "gateway": {
+            "version": "v0.4",
+            "port": settings.port,
+            "log_level": settings.log_level,
+            "stateful_sessions": True,
+            "session_idle_timeout": 28800,
+            "active_sessions": _manager.session_count,
+        },
+        "backends": _manager.status(),
+        "databases": _registry.list(),
+        "default_db": _manager.active_db,
+        "profiling": profiler.get_stats(),
+        "cache": metadata_cache.stats(),
+        "anonymization": {"enabled": anonymizer.enabled},
+        "docker": _get_docker_system_info(),
+        "containers": _get_container_info(),
+        "config": {
+            "ENABLED_BACKENDS": settings.enabled_backends,
+            "ONEC_TOOLKIT_URL": settings.onec_toolkit_url,
+            "PLATFORM_CONTEXT_URL": settings.platform_context_url,
+            "EXPORT_HOST_URL": settings.export_host_url,
+            "IBCMD_PATH": settings.ibcmd_path,
+            "BSL_WORKSPACE": settings.bsl_workspace,
+            "BSL_HOST_WORKSPACE": settings.bsl_host_workspace,
+            "LSP_DOCKER_CONTAINER": settings.lsp_docker_container,
+            "BSL_LSP_COMMAND": settings.bsl_lsp_command,
+            "NAPARNIK_API_KEY": "***" if settings.naparnik_api_key else "",
+            "METADATA_CACHE_TTL": settings.metadata_cache_ttl,
+            "TEST_RUNNER_URL": settings.test_runner_url,
+            "BSL_GRAPH_URL": settings.bsl_graph_url,
+        },
+    }
+
+    # Container logs (last 10 lines each)
+    try:
+        from .docker_manager import _docker
+        client = _docker()
+        logs = {}
+        for c in client.containers.list():
+            if any(c.name.startswith(p) for p in ("onec-mcp-", "onec-toolkit-", "mcp-lsp-")):
+                try:
+                    logs[c.name] = c.logs(tail=10).decode("utf-8", errors="replace")
+                except Exception:
+                    logs[c.name] = "error reading logs"
+        diag["container_logs"] = logs
+    except Exception as exc:
+        diag["container_logs"] = {"error": str(exc)}
+
+    return diag
 
 
 def _restart_gateway() -> None:
