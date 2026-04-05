@@ -158,6 +158,26 @@ GW_TOOLS = [
         },
     ),
     Tool(
+        name="reindex_bsl",
+        description=(
+            "Trigger BSL Language Server re-indexing for the active database. "
+            "Use after editing BSL files outside the LSP (e.g. manual file changes, "
+            "git pull, or external export). Notifies the LSP about changed files "
+            "so code navigation stays up to date."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Path to re-index. Default: the project_path of the active database."
+                    ),
+                },
+            },
+        },
+    ),
+    Tool(
         name="graph_stats",
         description=(
             "Get statistics of the BSL dependency graph: total number of nodes, edges, "
@@ -370,6 +390,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         result_text = await _validate_query(arguments.get("query", ""))
         return [TextContent(type="text", text=result_text)]
 
+    if name == "reindex_bsl":
+        return [TextContent(type="text", text=await _reindex_bsl(arguments.get("path", "")))]
+
     if name == "graph_stats":
         return [TextContent(type="text", text=await _graph_request("GET", "/api/graph/stats"))]
 
@@ -430,7 +453,7 @@ def _validate_query_static(query: str) -> tuple[bool, list[str], list[str]]:
             "это снижает производительность. Фильтруйте внутри .Остатки(...)"
         )
 
-    if re.search(r'ВЫБРАТЬ\s+(\w+\s+)*\*', upper):
+    if re.search(r'ВЫБРАТЬ\s+(РАЗЛИЧНЫЕ\s+)?(ПЕРВЫЕ\s+\d+\s+)?\*', upper, re.DOTALL):
         warnings.append("Рекомендуется выбирать конкретные поля вместо *")
 
     return len(errors) == 0, errors, warnings
@@ -442,14 +465,18 @@ def _add_limit_zero(query: str) -> str:
         return query
     pos = match.end()
     tail = query[pos:]
-    diff_match = re.match(r'\s+РАЗЛИЧНЫЕ\b', tail, re.IGNORECASE)
+
+    # Skip optional РАЗЛИЧНЫЕ
+    diff_match = re.match(r'(\s+РАЗЛИЧНЫЕ)\b', tail, re.IGNORECASE)
     if diff_match:
         pos += diff_match.end()
-    tail = query[pos:]
-    first_match = re.match(r'\s+ПЕРВЫЕ\s+\d+\b', tail, re.IGNORECASE)
+        tail = query[pos:]
+
+    # Replace existing ПЕРВЫЕ N or insert ПЕРВЫЕ 0
+    first_match = re.match(r'(\s+ПЕРВЫЕ\s+)\d+', tail, re.IGNORECASE)
     if first_match:
-        return query[:pos] + re.sub(r'(\s+ПЕРВЫЕ\s+)\d+', r'\g<1>0', tail, count=1, flags=re.IGNORECASE)
-    return query[:pos] + ' ПЕРВЫЕ 0 ' + tail
+        return query[:pos] + first_match.group(1) + '0' + tail[first_match.end():]
+    return query[:pos] + ' ПЕРВЫЕ 0' + tail
 
 
 async def _validate_query(query: str) -> str:
@@ -495,6 +522,28 @@ async def _validate_query(query: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# BSL re-indexing
+# ---------------------------------------------------------------------------
+
+async def _reindex_bsl(path: str) -> str:
+    active = registry.get_active()
+    if not active:
+        return "ERROR: No active database. Connect a database first."
+
+    reindex_path = path.strip() if path else "/projects"
+
+    if not manager.has_tool("did_change_watched_files"):
+        return "ERROR: LSP backend not available — cannot trigger re-index."
+
+    try:
+        result = await manager.call_tool("did_change_watched_files", {"path": reindex_path})
+        response_text = result.content[0].text if result.content else ""
+        return f"Re-indexing triggered for '{active.name}' at {reindex_path}.\n{response_text}"
+    except Exception as exc:
+        return f"ERROR triggering re-index: {exc}"
+
+
+# ---------------------------------------------------------------------------
 # bsl-graph REST wrapper
 # ---------------------------------------------------------------------------
 
@@ -533,7 +582,7 @@ async def _connect_database(name: str, connection: str, project_path: str) -> st
     try:
         db_info = registry.register(name, connection, project_path)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             toolkit_port, toolkit_container = await asyncio.wait_for(
                 loop.run_in_executor(None, start_toolkit, name), timeout=120
@@ -582,7 +631,7 @@ async def _disconnect_database(name: str) -> str:
         return f"ERROR: Database '{name}' not found."
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await asyncio.wait_for(
             loop.run_in_executor(None, stop_db_containers, name), timeout=30
         )

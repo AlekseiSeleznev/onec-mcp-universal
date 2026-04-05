@@ -83,7 +83,7 @@ def run_export(connection: str, output_dir: str) -> tuple[bool, str]:
     except subprocess.TimeoutExpired:
         return False, "Export timed out (30 min)"
     except FileNotFoundError:
-        return False, f"1cv8c not found at {V8_PATH}/1cv8c"
+        return False, f"1cv8 not found at {V8_PATH}/1cv8"
 
     log_content = ""
     try:

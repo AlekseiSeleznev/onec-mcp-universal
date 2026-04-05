@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -56,6 +57,57 @@ def _build_backends() -> list:
     return backends
 
 
+async def _restore_databases() -> None:
+    """Reconnect databases saved from previous gateway session."""
+    from .docker_manager import start_toolkit, start_lsp
+
+    saved = _registry.load_saved_state()
+    if not saved:
+        return
+
+    saved_active = _registry.get_saved_active()
+    loop = asyncio.get_running_loop()
+
+    for db_cfg in saved:
+        name = db_cfg.get("name", "")
+        connection = db_cfg.get("connection", "")
+        project_path = db_cfg.get("project_path", "")
+        if not name or not connection:
+            continue
+
+        try:
+            logger.info(f"Auto-reconnecting database: {name}")
+            db_info = _registry.register(name, connection, project_path)
+
+            toolkit_port, toolkit_container = await asyncio.wait_for(
+                loop.run_in_executor(None, start_toolkit, name), timeout=120
+            )
+            lsp_container = await asyncio.wait_for(
+                loop.run_in_executor(None, start_lsp, name, project_path), timeout=60
+            )
+
+            db_info.toolkit_port = toolkit_port
+            db_info.toolkit_url = f"http://localhost:{toolkit_port}/mcp"
+            db_info.lsp_container = lsp_container
+
+            toolkit_backend = HttpBackend(
+                f"onec-toolkit-{name}", db_info.toolkit_url, "streamable"
+            )
+            lsp_backend = StdioBackend(
+                f"mcp-lsp-{name}", "docker",
+                ["exec", "-w", "/projects", "-i", lsp_container, "mcp-lsp-bridge"],
+            )
+            await _manager.add_db_backends(name, toolkit_backend, lsp_backend)
+            logger.info(f"Auto-reconnected database: {name}")
+        except Exception as exc:
+            logger.error(f"Failed to auto-reconnect database '{name}': {exc}")
+            _registry.remove(name)
+
+    if saved_active and _manager.switch_db(saved_active):
+        _registry.switch(saved_active)
+        logger.info(f"Restored active database: {saved_active}")
+
+
 @asynccontextmanager
 async def lifespan(app: Starlette):
     # Patch static onec-toolkit container (disables outputSchema generation in FastMCP)
@@ -71,6 +123,10 @@ async def lifespan(app: Starlette):
     status = _manager.status()
     ok_count = sum(1 for v in status.values() if v["ok"])
     logger.info(f"Backends ready: {ok_count}/{len(backends)} — {status}")
+
+    # Auto-reconnect databases from previous session
+    await _restore_databases()
+
     async with session_manager.run():
         yield
     logger.info("Shutting down backends...")

@@ -16,3 +16,4 @@ htmlcov/
 *.swp
 *.swo
 test-runner/application.yml
+.v8-project.json

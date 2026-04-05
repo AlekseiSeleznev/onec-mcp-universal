@@ -50,7 +50,12 @@ class HttpBackend(BackendBase):
 
     async def stop(self) -> None:
         if self._exit_stack:
-            await self._exit_stack.aclose()
+            try:
+                await self._exit_stack.aclose()
+            except Exception:
+                pass
+        self._exit_stack = None
+        self._session = None
         self.available = False
 
     async def call_tool(self, name: str, arguments: dict) -> CallToolResult:

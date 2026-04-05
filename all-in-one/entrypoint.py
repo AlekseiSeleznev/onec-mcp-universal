@@ -137,11 +137,12 @@ def stop_all(services: list[Service]) -> None:
 
 def main() -> None:
     enabled = {s.strip() for s in ENABLED_BACKENDS.split(",")}
-    services_to_start = [s for s in SERVICES if s.name.split("-")[0] == "bsl" or s.name in enabled
-                         or s.name == "bsl-session-manager"]
-    # always start bsl-session-manager if bsl-lsp-bridge backend is enabled
-    if "bsl-lsp-bridge" not in enabled:
-        services_to_start = [s for s in services_to_start if s.name != "bsl-session-manager"]
+    services_to_start = []
+    for svc in SERVICES:
+        if svc.name in enabled:
+            services_to_start.append(svc)
+        elif svc.name == "bsl-session-manager" and "bsl-lsp-bridge" in enabled:
+            services_to_start.append(svc)
 
     shutdown = [False]
 

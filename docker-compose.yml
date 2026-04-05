@@ -22,6 +22,7 @@ services:
       EXPORT_HOST_URL: ${EXPORT_HOST_URL:-http://localhost:8082}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
+      - gw-data:/data
     depends_on:
       onec-toolkit:
         condition: service_healthy
@@ -190,6 +191,7 @@ networks:
     driver: bridge
 
 volumes:
+  gw-data:
   nebula-meta-data:
   nebula-meta-logs:
   nebula-storage-data:
