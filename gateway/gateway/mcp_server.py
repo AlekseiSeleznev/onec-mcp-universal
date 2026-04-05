@@ -3,15 +3,21 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 
 import httpx
 from mcp.server import Server
 from mcp.types import CallToolResult, Resource, TextContent, Tool
 
+from .anonymizer import anonymizer
 from .backends.manager import BackendManager
+from .bsl_search import bsl_search
 from .config import settings
 from .db_registry import DatabaseRegistry
+from .metadata_cache import metadata_cache
+from .napilnik_client import NapilnikClient
+from .profiler import profiler
 
 log = logging.getLogger(__name__)
 
@@ -242,6 +248,152 @@ GW_TOOLS = [
             "required": ["object_id"],
         },
     ),
+    # --- Write BSL ---
+    Tool(
+        name="write_bsl",
+        description=(
+            "Write BSL code to a module file in the active database's BSL workspace. "
+            "Use this to modify 1C configuration source code (e.g. common modules, "
+            "object modules, form modules). After writing, the LSP will automatically "
+            "re-index the changed file."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "file": {
+                    "type": "string",
+                    "description": (
+                        "Relative path to BSL file within the project, "
+                        "e.g. 'CommonModules/МойМодуль/Ext/Module.bsl'"
+                    ),
+                },
+                "content": {
+                    "type": "string",
+                    "description": "BSL code to write to the file",
+                },
+            },
+            "required": ["file", "content"],
+        },
+    ),
+    # --- BSL Search ---
+    Tool(
+        name="bsl_index",
+        description=(
+            "Build a full-text search index over BSL source files in the active database's project. "
+            "Indexes all procedures and functions with their parameters, comments, and module paths. "
+            "Run this once after BSL export, then use bsl_search to find functions."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to BSL files root. Default: /projects (LSP container workspace).",
+                },
+            },
+        },
+    ),
+    Tool(
+        name="bsl_search_tool",
+        description=(
+            "Search for procedures and functions in the BSL source code index. "
+            "Find BSP functions by name or description, search exported API, "
+            "locate code patterns across the configuration. "
+            "Run bsl_index first to build the index."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search term: function name, module name, or keyword from comments",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results (default 20)",
+                    "default": 20,
+                },
+                "export_only": {
+                    "type": "boolean",
+                    "description": "Only show exported (public API) symbols",
+                    "default": False,
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    # --- Anonymization ---
+    Tool(
+        name="enable_anonymization",
+        description=(
+            "Enable PII anonymization for query results. "
+            "Masks personal data (FIO, INN, SNILS, phones, emails, company names) "
+            "with stable fake replacements. Same original value always maps to same fake. "
+            "Use this before working with production databases containing personal data."
+        ),
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="disable_anonymization",
+        description="Disable PII anonymization. Query results will contain original data.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    # --- ITS Search ---
+    Tool(
+        name="its_search",
+        description=(
+            "Search 1C ITS documentation and standard configurations via 1C:Napilnik API. "
+            "Ask questions about 1C platform, BSP (Standard Subsystem Library), "
+            "typical configurations, and best practices. "
+            "Requires NAPILNIK_API_KEY in .env file (get at https://code.1c.ai)."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Question about 1C platform, BSP, or standard configurations",
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    # --- Metadata cache ---
+    Tool(
+        name="invalidate_metadata_cache",
+        description=(
+            "Clear the metadata cache. Use after configuration changes "
+            "to ensure get_metadata returns fresh data."
+        ),
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    # --- Query profiling ---
+    Tool(
+        name="query_stats",
+        description=(
+            "Show execute_query performance statistics: total queries, avg/max/min duration, "
+            "slow queries count, error rate."
+        ),
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    # --- Form screenshot ---
+    Tool(
+        name="capture_form",
+        description=(
+            "Request a screenshot of the currently open form in the 1C client. "
+            "The EPF must be running and connected. Returns the screenshot as a base64 image."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "description": "Image format: png or jpg (default: png)",
+                    "default": "png",
+                },
+            },
+        },
+    ),
 ]
 
 _SYNTAX_RESOURCE_PATH = Path(__file__).parent.parent / "resources" / "syntax_1c.txt"
@@ -404,7 +556,96 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         oid = arguments.get("object_id", "")
         return [TextContent(type="text", text=await _graph_request("GET", f"/api/graph/related/{oid}", params={"depth": arguments.get("depth", 1)}))]
 
+    # --- Write BSL ---
+    if name == "write_bsl":
+        return [TextContent(type="text", text=await _write_bsl(
+            arguments.get("file", ""), arguments.get("content", ""),
+        ))]
+
+    # --- BSL Search ---
+    if name == "bsl_index":
+        path = arguments.get("path", "").strip() or "/projects"
+        return [TextContent(type="text", text=bsl_search.build_index(path))]
+    if name == "bsl_search_tool":
+        results = bsl_search.search(
+            arguments.get("query", ""),
+            limit=arguments.get("limit", 20),
+            export_only=arguments.get("export_only", False),
+        )
+        if not results:
+            if not bsl_search.indexed:
+                return [TextContent(type="text", text="Index not built. Run bsl_index first.")]
+            return [TextContent(type="text", text="No results found.")]
+        return [TextContent(type="text", text=json.dumps(results, ensure_ascii=False, indent=2))]
+
+    # --- Anonymization ---
+    if name == "enable_anonymization":
+        return [TextContent(type="text", text=anonymizer.enable())]
+    if name == "disable_anonymization":
+        return [TextContent(type="text", text=anonymizer.disable())]
+
+    # --- ITS Search ---
+    if name == "its_search":
+        return [TextContent(type="text", text=await _its_search(arguments.get("query", "")))]
+
+    # --- Metadata cache ---
+    if name == "invalidate_metadata_cache":
+        return [TextContent(type="text", text=metadata_cache.invalidate())]
+
+    # --- Query profiling ---
+    if name == "query_stats":
+        return [TextContent(type="text", text=json.dumps(profiler.get_stats(), ensure_ascii=False, indent=2))]
+
+    # --- Form screenshot ---
+    if name == "capture_form":
+        return [TextContent(type="text", text=await _capture_form(arguments.get("format", "png")))]
+
+    # --- Metadata cache check ---
+    if name == "get_metadata" and settings.metadata_cache_ttl > 0:
+        cached = metadata_cache.get(arguments)
+        if cached is not None:
+            return [TextContent(type="text", text=cached)]
+
+    # --- Proxy to backend with profiling + anonymization ---
+    t0 = time.monotonic()
     result: CallToolResult = await manager.call_tool(name, arguments)
+    elapsed_ms = (time.monotonic() - t0) * 1000
+
+    # Profiling for execute_query
+    if name == "execute_query":
+        query_text = arguments.get("query", "")
+        response_text = result.content[0].text if result.content else ""
+        try:
+            rdata = json.loads(response_text)
+            row_count = len(rdata.get("data", [])) if isinstance(rdata.get("data"), list) else 0
+            success = rdata.get("success", True)
+        except (json.JSONDecodeError, TypeError):
+            row_count = 0
+            success = True
+        profiler.record(query_text, elapsed_ms, success, row_count)
+        response_text = profiler.format_profiling_result(query_text, elapsed_ms, response_text)
+        response_text = anonymizer.process_tool_response(name, response_text)
+        return [TextContent(type="text", text=response_text)]
+
+    # Metadata caching for get_metadata
+    if name == "get_metadata":
+        response_text = result.content[0].text if result.content else ""
+        metadata_cache.put(arguments, response_text)
+        return result.content
+
+    # Anonymization for data tools
+    if anonymizer.enabled and result.content:
+        processed = []
+        for content in result.content:
+            if hasattr(content, "text"):
+                processed.append(TextContent(
+                    type="text",
+                    text=anonymizer.process_tool_response(name, content.text),
+                ))
+            else:
+                processed.append(content)
+        return processed
+
     return result.content
 
 
@@ -563,6 +804,97 @@ async def _graph_request(method: str, path: str, body: dict | None = None, param
                 return resp.text
     except httpx.ConnectError:
         return f"ERROR: bsl-graph service not available at {base_url}. Start it with: docker compose --profile bsl-graph up -d"
+    except Exception as exc:
+        return f"ERROR: {exc}"
+
+
+# ---------------------------------------------------------------------------
+# Write BSL
+# ---------------------------------------------------------------------------
+
+async def _write_bsl(file: str, content: str) -> str:
+    active = registry.get_active()
+    if not active:
+        return "ERROR: No active database. Connect a database first."
+
+    # Write to LSP container via docker exec
+    container = active.lsp_container
+    if not container:
+        return "ERROR: No LSP container for active database."
+
+    file_path = f"/projects/{file.lstrip('/')}"
+    try:
+        import subprocess
+        # Ensure directory exists
+        dir_path = str(Path(file_path).parent)
+        subprocess.run(
+            ["docker", "exec", container, "mkdir", "-p", dir_path],
+            check=True, capture_output=True, timeout=10,
+        )
+        # Write file via stdin
+        proc = subprocess.run(
+            ["docker", "exec", "-i", container, "tee", file_path],
+            input=content.encode("utf-8-sig"),
+            capture_output=True, timeout=10,
+        )
+        if proc.returncode != 0:
+            return f"ERROR writing file: {proc.stderr.decode()}"
+
+        # Notify LSP about changed file
+        if manager.has_tool("did_change_watched_files"):
+            try:
+                await manager.call_tool("did_change_watched_files", {"path": dir_path})
+            except Exception:
+                pass
+
+        return f"Written {len(content)} chars to {file_path} in container {container}."
+    except Exception as exc:
+        return f"ERROR: {exc}"
+
+
+# ---------------------------------------------------------------------------
+# ITS Search via 1C:Napilnik
+# ---------------------------------------------------------------------------
+
+async def _its_search(query: str) -> str:
+    if not settings.napilnik_api_key:
+        return (
+            "ERROR: NAPILNIK_API_KEY not configured.\n"
+            "Get your API key at https://code.1c.ai (Profile → API token).\n"
+            "Add to .env: NAPILNIK_API_KEY=your-key-here"
+        )
+    client = NapilnikClient(settings.napilnik_api_key)
+    return await client.search(query)
+
+
+# ---------------------------------------------------------------------------
+# Form screenshot
+# ---------------------------------------------------------------------------
+
+async def _capture_form(fmt: str) -> str:
+    active = registry.get_active()
+    if not active:
+        return "ERROR: No active database. Connect a database first."
+    if not active.toolkit_url:
+        return "ERROR: No toolkit URL for active database."
+
+    # Request screenshot from toolkit via its REST API
+    base_url = active.toolkit_url.replace("/mcp", "")
+    url = f"{base_url}/1c/screenshot"
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(url, json={"format": fmt})
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("ok"):
+                    return json.dumps(data, ensure_ascii=False)
+                return f"ERROR: {data.get('error', 'Unknown error')}"
+            if resp.status_code == 404:
+                return (
+                    "ERROR: Screenshot endpoint not available. "
+                    "Update MCPToolkit.epf to the latest version."
+                )
+            return f"ERROR: Screenshot request failed: {resp.status_code}"
     except Exception as exc:
         return f"ERROR: {exc}"
 

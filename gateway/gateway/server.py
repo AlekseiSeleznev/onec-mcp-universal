@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -199,9 +199,33 @@ async def register_epf_api(request: Request) -> JSONResponse:
     })
 
 
+async def dashboard(request: Request) -> HTMLResponse:
+    from .anonymizer import anonymizer
+    from .metadata_cache import metadata_cache
+    from .profiler import profiler
+    from .web_ui import render_dashboard
+
+    config_items = [
+        ("Port", str(settings.port)),
+        ("Enabled backends", settings.enabled_backends),
+        ("1C:Napilnik", "configured" if settings.napilnik_api_key else "not configured"),
+        ("Metadata cache TTL", f"{settings.metadata_cache_ttl}s"),
+    ]
+    html = render_dashboard(
+        backends_status=_manager.status(),
+        databases=_registry.list(),
+        profiling_stats=profiler.get_stats(),
+        cache_stats=metadata_cache.stats(),
+        anon_enabled=anonymizer.enabled,
+        config_items=config_items,
+    )
+    return HTMLResponse(html)
+
+
 _starlette = Starlette(
     routes=[
         Route("/health", health),
+        Route("/dashboard", dashboard),
         Route("/api/export-bsl", export_bsl_api, methods=["POST"]),
         Route("/api/register", register_epf_api, methods=["POST"]),
     ],
