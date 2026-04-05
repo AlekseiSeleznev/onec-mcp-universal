@@ -302,20 +302,21 @@ var el=document.getElementById('t-'+h);if(el){el.classList.add('on');
 document.querySelectorAll('.tab').forEach(t=>{if(t.textContent&&t.onclick&&t.onclick.toString().includes(h))t.classList.add('on')})
 }else{document.querySelector('.tc').classList.add('on');document.querySelector('.tab').classList.add('on')}
 }})();
-function act(u){fetch(u,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message||d.error||JSON.stringify(d));location.hash=location.hash;location.reload()}).catch(e=>alert(e))}
+function reload(){var h=location.hash;location.href=location.pathname+'?lang={{lang}}'+h}
+function act(u){fetch(u,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message||d.error||JSON.stringify(d));setTimeout(reload,300)}).catch(e=>alert(e))}
 function connectDb(){
 var n=document.getElementById('db-name').value.trim();
 var c=document.getElementById('db-conn').value.trim();
 var p=document.getElementById('db-path').value.trim();
 if(!n||!c||!p){alert('Fill all fields');return}
 fetch('/api/action/connect-db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,connection:c,project_path:p})})
-.then(r=>r.json()).then(d=>{alert(d.message||d.error||JSON.stringify(d));if(d.ok)location.reload()}).catch(e=>alert(e))
+.then(r=>r.json()).then(d=>{alert(d.message||d.error||JSON.stringify(d));if(d.ok)setTimeout(reload,300)}).catch(e=>alert(e))
 }
 function editDb(name,conn,path){
 var nc=prompt('{{add_db_conn}}:',conn);if(!nc)return;
 var np=prompt('{{add_db_path}}:',path);if(!np)return;
 fetch('/api/action/edit-db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,connection:nc,project_path:np})})
-.then(r=>r.json()).then(d=>{alert(d.message||d.error);location.hash='settings';location.reload()}).catch(e=>alert(e))
+.then(r=>r.json()).then(d=>{alert(d.message||d.error);setTimeout(reload,300)}).catch(e=>alert(e))
 }
 function editEnv(){
 fetch('/api/action/get-env',{method:'POST'}).then(r=>r.json()).then(d=>{
@@ -327,7 +328,7 @@ document.getElementById('config-edit').style.display='block';
 function saveEnv(){
 var c=document.getElementById('env-editor').value;
 fetch('/api/action/save-env',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:c})})
-.then(r=>r.json()).then(d=>{alert(d.message||d.error);cancelEnv()}).catch(e=>alert(e))
+.then(r=>r.json()).then(d=>{alert(d.message||d.error);setTimeout(function(){location.href=location.pathname+'?lang={{lang}}#settings'},3000)}).catch(e=>alert(e))
 }
 function cancelEnv(){
 document.getElementById('config-view').style.display='block';

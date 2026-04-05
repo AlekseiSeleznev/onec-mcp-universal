@@ -213,12 +213,20 @@ async def dashboard(request: Request) -> HTMLResponse:
 
     config_items = [
         ("PORT", str(settings.port)),
+        ("LOG_LEVEL", settings.log_level),
+        ("ONEC_TOOLKIT_URL", settings.onec_toolkit_url),
+        ("PLATFORM_CONTEXT_URL", settings.platform_context_url),
         ("ENABLED_BACKENDS", settings.enabled_backends),
+        ("EXPORT_HOST_URL", settings.export_host_url or "not set"),
+        ("IBCMD_PATH", settings.ibcmd_path),
+        ("BSL_WORKSPACE", settings.bsl_workspace),
+        ("BSL_HOST_WORKSPACE", settings.bsl_host_workspace or "not set"),
+        ("LSP_DOCKER_CONTAINER", settings.lsp_docker_container),
+        ("BSL_LSP_COMMAND", settings.bsl_lsp_command or "not set"),
         ("NAPARNIK_API_KEY", "***" if settings.naparnik_api_key else "not configured"),
         ("METADATA_CACHE_TTL", f"{settings.metadata_cache_ttl}s"),
-        ("EXPORT_HOST_URL", settings.export_host_url or "not set"),
-        ("BSL_WORKSPACE", settings.bsl_workspace),
-        ("LOG_LEVEL", settings.log_level),
+        ("TEST_RUNNER_URL", settings.test_runner_url),
+        ("BSL_GRAPH_URL", settings.bsl_graph_url),
     ]
 
     container_info = _get_container_info()
