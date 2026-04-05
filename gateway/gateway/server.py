@@ -288,6 +288,21 @@ def _get_container_info() -> list[dict]:
         return []
 
 
+async def unregister_epf_api(request: Request) -> JSONResponse:
+    """Called by MCPToolkit EPF when user clicks 'Отключиться'."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    db_name = body.get("name", "").strip()
+    if db_name:
+        db = _registry.get(db_name)
+        if db:
+            db.connected = False
+            logger.info(f"EPF unregistered for database: {db_name}")
+    return JSONResponse({"ok": True})
+
+
 async def dashboard_diagnostics(request: Request) -> HTMLResponse:
     """Full diagnostics page in a new browser tab."""
     diag = _collect_diagnostics()
@@ -574,6 +589,7 @@ _starlette = Starlette(
         Route("/dashboard/docs", dashboard_docs),
         Route("/dashboard/diagnostics", dashboard_diagnostics),
         Route("/api/export-bsl", export_bsl_api, methods=["POST"]),
+        Route("/api/unregister", unregister_epf_api, methods=["POST"]),
         Route("/api/register", register_epf_api, methods=["POST"]),
         Route("/api/action/{action}", action_api, methods=["GET", "POST"]),
     ],

@@ -21,7 +21,7 @@ _T = {
     "ru": {
         "title": "onec-mcp-universal",
         "subtitle": "MCP-шлюз для 1С:Предприятие",
-        "tab_info": "Информация",
+        "tab_info": "Статус",
         "tab_settings": "Параметры",
         "btn_docs": "Документация",
         "btn_refresh": "Обновить",
@@ -48,8 +48,8 @@ _T = {
         "no_backends": "Нет бэкендов",
         "no_databases": "Нет подключённых баз",
         "no_queries": "Нет запросов",
-        "epf_ok": "Подключена",
-        "epf_wait": "Отключена",
+        "epf_ok": "Да",
+        "epf_wait": "Нет",
         "name": "Имя",
         "connection": "Подключение",
         "status": "Обработка",
@@ -94,7 +94,7 @@ _T = {
     "en": {
         "title": "onec-mcp-universal",
         "subtitle": "MCP Gateway for 1C:Enterprise",
-        "tab_info": "Information",
+        "tab_info": "Status",
         "tab_settings": "Parameters",
         "btn_docs": "Docs",
         "btn_refresh": "Refresh",
@@ -121,8 +121,8 @@ _T = {
         "no_backends": "No backends",
         "no_databases": "No databases",
         "no_queries": "No queries yet",
-        "epf_ok": "Connected",
-        "epf_wait": "Disconnected",
+        "epf_ok": "Yes",
+        "epf_wait": "No",
         "name": "Name",
         "connection": "Connection",
         "status": "EPF",
@@ -271,12 +271,10 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 </div>
 <p class="hint">{{config_edit_hint}}</p>
 </div>
-</div>
-<div class="card">
-<h2>{{h_actions}}</h2>
-<div style="display:flex;flex-direction:column;gap:8px">
-<div class="sr"><button class="btn btn-p" style="min-width:160px" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button><span class="st">{{cache_status}}</span></div>
-<div class="sr"><button class="btn" style="min-width:160px" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button><span class="st">{{anon_status_text}}</span></div>
+<h2 style="margin-top:16px">{{h_actions}}</h2>
+<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+<div class="sr" style="gap:6px"><button class="btn btn-p" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button><span class="st">{{cache_status}}</span></div>
+<div class="sr" style="gap:6px"><button class="btn" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button><span class="st">{{anon_status_text}}</span></div>
 </div>
 </div>
 </div>

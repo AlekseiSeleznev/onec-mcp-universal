@@ -16,10 +16,10 @@
 			<Synonym>
 				<v8:item>
 					<v8:lang>ru</v8:lang>
-					<v8:content>MCP Toolkit</v8:content>
+					<v8:content>1С Универсальный MCP</v8:content>
 				</v8:item>
 			</Synonym>
-			<Comment>MCP Toolkit — интеграция 1С с MCP/REST</Comment>
+			<Comment>1С Универсальный MCP — https://github.com/AlekseiSeleznev/onec-mcp-universal</Comment>
 			<DefaultForm>ExternalDataProcessor.MCPToolkit.Form.Форма</DefaultForm>
 			<AuxiliaryForm/>
 		</Properties>
