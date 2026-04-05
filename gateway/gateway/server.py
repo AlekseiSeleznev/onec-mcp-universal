@@ -359,7 +359,12 @@ async def action_api(request: Request) -> JSONResponse:
         content = body.get("content", "")
         if not content:
             return JSONResponse({"error": "content required"}, status_code=400)
-        return JSONResponse(_write_env_file(content))
+        result = _write_env_file(content)
+        if result.get("ok"):
+            # Auto-restart gateway container
+            _restart_gateway()
+            result["message"] = result.get("message", "") + "\nШлюз перезапускается..."
+        return JSONResponse(result)
 
     if path == "docker-info":
         return JSONResponse({"ok": True, "data": _get_docker_system_info()})
@@ -399,6 +404,22 @@ def _write_env_file(content: str) -> dict:
         except (PermissionError, OSError):
             continue
     return {"ok": False, "error": "Cannot write .env inside container. Edit on host manually."}
+
+
+def _restart_gateway() -> None:
+    """Restart the gateway container via Docker API."""
+    import threading
+    def _do_restart():
+        import time
+        time.sleep(1)  # let the HTTP response finish
+        try:
+            from .docker_manager import _docker
+            client = _docker()
+            container = client.containers.get("onec-mcp-gw")
+            container.restart(timeout=10)
+        except Exception as exc:
+            logger.error(f"Auto-restart failed: {exc}")
+    threading.Thread(target=_do_restart, daemon=True).start()
 
 
 def _get_docker_system_info() -> dict:
