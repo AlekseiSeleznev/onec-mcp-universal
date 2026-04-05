@@ -272,12 +272,12 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 </div>
 <p class="hint">{{config_edit_hint}}</p>
 </div>
-</div>
-<div class="card">
-<h2>{{h_actions}}</h2>
-<div style="display:flex;flex-direction:column;gap:10px">
-<div class="sr" style="gap:8px"><button class="btn btn-p" style="min-width:180px" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button><span class="st">{{cache_status}}</span></div>
-<div class="sr" style="gap:8px"><button class="btn" style="min-width:180px" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button><span class="st">{{anon_status_text}}</span></div>
+<div style="margin-top:10px;padding-top:10px;border-top:1px solid #334155;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+<span class="st" style="display:flex;align-items:center;gap:4px"><span class="dot {{anon_dot}}"></span>{{anon_status}}</span>
+<button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="act('/api/action/toggle-anon')">{{toggle_anon}}</button>
+<span class="st">|</span>
+<span class="st">{{cache_status}}</span>
+<button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="act('/api/action/clear-cache')">{{clear_cache}}</button>
 </div>
 </div>
 </div>
