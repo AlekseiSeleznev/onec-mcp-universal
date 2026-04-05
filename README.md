@@ -373,7 +373,7 @@ http://localhost:8080/mcp
 2. Добавить в `.env`:
 
 ```env
-NAPILNIK_API_KEY=ваш-ключ-api
+NAPARNIK_API_KEY=ваш-ключ-api
 ```
 
 3. Перезапустить шлюз:
@@ -570,7 +570,7 @@ Claude Code / Cursor / Windsurf
 │  ├─ metadata_cache  — кеш метаданных    │
 │  ├─ profiler        — замер запросов    │
 │  ├─ bsl_search      — индекс BSL        │
-│  ├─ napilnik_client — API 1С:Напарника  │
+│  ├─ naparnik_client — API 1С:Напарника  │
 │  └─ web_ui          — /dashboard        │
 │                                          │
 │  /data/db_state.json ← persistence      │

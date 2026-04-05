@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     # Enabled backends (comma-separated)
     enabled_backends: str = "onec-toolkit,platform-context,bsl-lsp-bridge"
 
-    # 1C:Napilnik (1C:Naparnik) API key for ITS search
-    napilnik_api_key: str = ""
+    # 1C:Naparnik (1C:Naparnik) API key for ITS search
+    naparnik_api_key: str = ""
 
     # Metadata cache TTL in seconds (0 = disabled)
     metadata_cache_ttl: int = 600

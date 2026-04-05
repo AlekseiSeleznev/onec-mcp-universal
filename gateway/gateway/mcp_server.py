@@ -16,7 +16,7 @@ from .bsl_search import bsl_search
 from .config import settings
 from .db_registry import DatabaseRegistry
 from .metadata_cache import metadata_cache
-from .napilnik_client import NapilnikClient
+from .naparnik_client import NaparnikClient
 from .profiler import profiler
 
 log = logging.getLogger(__name__)
@@ -342,10 +342,10 @@ GW_TOOLS = [
     Tool(
         name="its_search",
         description=(
-            "Search 1C ITS documentation and standard configurations via 1C:Napilnik API. "
+            "Search 1C ITS documentation and standard configurations via 1C:Naparnik API. "
             "Ask questions about 1C platform, BSP (Standard Subsystem Library), "
             "typical configurations, and best practices. "
-            "Requires NAPILNIK_API_KEY in .env file (get at https://code.1c.ai)."
+            "Requires NAPARNIK_API_KEY in .env file (get at https://code.1c.ai)."
         ),
         inputSchema={
             "type": "object",
@@ -855,17 +855,17 @@ async def _write_bsl(file: str, content: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# ITS Search via 1C:Napilnik
+# ITS Search via 1C:Naparnik
 # ---------------------------------------------------------------------------
 
 async def _its_search(query: str) -> str:
-    if not settings.napilnik_api_key:
+    if not settings.naparnik_api_key:
         return (
-            "ERROR: NAPILNIK_API_KEY not configured.\n"
+            "ERROR: NAPARNIK_API_KEY not configured.\n"
             "Get your API key at https://code.1c.ai (Profile → API token).\n"
-            "Add to .env: NAPILNIK_API_KEY=your-key-here"
+            "Add to .env: NAPARNIK_API_KEY=your-key-here"
         )
-    client = NapilnikClient(settings.napilnik_api_key)
+    client = NaparnikClient(settings.naparnik_api_key)
     return await client.search(query)
 
 

@@ -21,7 +21,7 @@ services:
       #   Linux:   http://localhost:8082  (host network mode)
       #   Windows: http://host.docker.internal:8082  (Docker Desktop)
       EXPORT_HOST_URL: ${EXPORT_HOST_URL:-http://localhost:8082}
-      NAPILNIK_API_KEY: ${NAPILNIK_API_KEY:-}
+      NAPARNIK_API_KEY: ${NAPARNIK_API_KEY:-}
       METADATA_CACHE_TTL: ${METADATA_CACHE_TTL:-600}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw

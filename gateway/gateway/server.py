@@ -212,7 +212,7 @@ async def dashboard(request: Request) -> HTMLResponse:
     config_items = [
         ("PORT", str(settings.port)),
         ("ENABLED_BACKENDS", settings.enabled_backends),
-        ("NAPILNIK_API_KEY", "***" if settings.napilnik_api_key else "not configured"),
+        ("NAPARNIK_API_KEY", "***" if settings.naparnik_api_key else "not configured"),
         ("METADATA_CACHE_TTL", f"{settings.metadata_cache_ttl}s"),
         ("EXPORT_HOST_URL", settings.export_host_url or "not set"),
         ("BSL_WORKSPACE", settings.bsl_workspace),
@@ -237,34 +237,34 @@ async def dashboard(request: Request) -> HTMLResponse:
 def _get_container_info() -> list[dict]:
     """Get Docker container info for the dashboard."""
     try:
-        import docker as docker_lib
-        client = docker_lib.from_env()
+        from .docker_manager import _docker
+        client = _docker()
         result = []
         for c in client.containers.list(all=True):
-            name = c.name
-            if not any(name.startswith(p) for p in ("onec-", "mcp-lsp-", "onec-toolkit-")):
+            name = c.name or ""
+            if not any(name.startswith(p) for p in ("onec-", "mcp-lsp-")):
                 continue
-            size_info = ""
             try:
-                attrs = c.attrs or {}
-                size_info = attrs.get("SizeRw", "")
-                if isinstance(size_info, int) and size_info > 0:
-                    size_info = f"{size_info / 1024 / 1024:.1f} MB"
-                else:
-                    size_info = ""
+                image_name = c.image.tags[0] if c.image and c.image.tags else ""
             except Exception:
-                pass
+                image_name = ""
             result.append({
                 "name": name,
-                "image": c.image.tags[0] if c.image.tags else str(c.image.id)[:20],
-                "status": c.status,
+                "image": image_name,
+                "status": c.status or "unknown",
                 "running": c.status == "running",
-                "size": size_info,
+                "size": "",
             })
-        return result
+        return sorted(result, key=lambda x: x["name"])
     except Exception as exc:
-        logger.debug(f"Docker info unavailable: {exc}")
+        logger.warning(f"Docker info unavailable: {exc}")
         return []
+
+
+async def dashboard_docs(request: Request) -> HTMLResponse:
+    from .web_ui import render_docs
+    lang = request.query_params.get("lang", "ru")
+    return HTMLResponse(render_docs(lang))
 
 
 async def action_api(request: Request) -> JSONResponse:
@@ -284,6 +284,20 @@ async def action_api(request: Request) -> JSONResponse:
             msg = anonymizer.enable()
         return JSONResponse({"ok": True, "message": msg})
 
+    if path == "connect-db":
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+        db_name = body.get("name", "").strip()
+        connection = body.get("connection", "").strip()
+        project_path = body.get("project_path", "").strip()
+        if not db_name or not connection or not project_path:
+            return JSONResponse({"error": "name, connection, project_path required"}, status_code=400)
+        from . import mcp_server as _ms
+        result = await _ms._connect_database(db_name, connection, project_path)
+        return JSONResponse({"ok": not result.startswith("ERROR"), "message": result})
+
     if path == "disconnect":
         db_name = request.query_params.get("name", "")
         if not db_name:
@@ -299,6 +313,7 @@ _starlette = Starlette(
     routes=[
         Route("/health", health),
         Route("/dashboard", dashboard),
+        Route("/dashboard/docs", dashboard_docs),
         Route("/api/export-bsl", export_bsl_api, methods=["POST"]),
         Route("/api/register", register_epf_api, methods=["POST"]),
         Route("/api/action/{action}", action_api, methods=["POST"]),

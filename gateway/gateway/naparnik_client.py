@@ -1,5 +1,5 @@
 """
-Client for 1C:Napilnik (1C:Naparnik / 1C:Buddy) API.
+Client for 1C:Naparnik (1C:Напарник) API.
 Provides ITS documentation search via code.1c.ai chat API.
 """
 from __future__ import annotations
@@ -16,8 +16,8 @@ BASE_URL = "https://code.1c.ai"
 CONVERSATIONS_URL = f"{BASE_URL}/chat_api/v1/conversations/"
 
 
-class NapilnikClient:
-    """Stateless client for 1C:Napilnik search API."""
+class NaparnikClient:
+    """Stateless client for 1C:Naparnik search API."""
 
     def __init__(self, api_key: str) -> None:
         self._api_key = api_key
@@ -30,9 +30,9 @@ class NapilnikClient:
         }
 
     async def search(self, query: str, timeout: int = 60) -> str:
-        """Send a question to 1C:Napilnik and return the answer."""
+        """Send a question to 1C:Naparnik and return the answer."""
         if not self._api_key:
-            return "ERROR: NAPILNIK_API_KEY not configured. Set it in .env file."
+            return "ERROR: NAPARNIK_API_KEY not configured. Set it in .env file."
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -86,12 +86,12 @@ class NapilnikClient:
 
                 # Clean up thinking tags
                 full_text = re.sub(r'<think(?:ing)?>(.*?)</think(?:ing)?>', '', full_text, flags=re.DOTALL)
-                return full_text.strip() if full_text.strip() else "No response from 1C:Napilnik."
+                return full_text.strip() if full_text.strip() else "No response from 1C:Naparnik."
 
         except httpx.TimeoutException:
-            return f"ERROR: 1C:Napilnik request timed out after {timeout}s"
+            return f"ERROR: 1C:Naparnik request timed out after {timeout}s"
         except Exception as exc:
-            return f"ERROR: 1C:Napilnik API error: {exc}"
+            return f"ERROR: 1C:Naparnik API error: {exc}"
 
     def _parse_sse_response(self, raw: str) -> str:
         """Extract text content from SSE stream."""
