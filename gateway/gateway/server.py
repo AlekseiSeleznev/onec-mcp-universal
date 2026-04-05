@@ -220,6 +220,7 @@ async def dashboard(request: Request) -> HTMLResponse:
     ]
 
     container_info = _get_container_info()
+    docker_system = _get_docker_system_info()
 
     html = render_dashboard(
         backends_status=_manager.status(),
@@ -229,6 +230,7 @@ async def dashboard(request: Request) -> HTMLResponse:
         anon_enabled=anonymizer.enabled,
         config_items=config_items,
         container_info=container_info,
+        docker_system=docker_system,
         lang=lang,
     )
     return HTMLResponse(html)
@@ -306,7 +308,85 @@ async def action_api(request: Request) -> JSONResponse:
         result = await _ms._disconnect_database(db_name)
         return JSONResponse({"ok": not result.startswith("ERROR"), "message": result})
 
+    if path == "get-env":
+        return JSONResponse({"ok": True, "env": _read_env_file()})
+
+    if path == "save-env":
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+        content = body.get("content", "")
+        if not content:
+            return JSONResponse({"error": "content required"}, status_code=400)
+        return JSONResponse(_write_env_file(content))
+
+    if path == "docker-info":
+        return JSONResponse({"ok": True, "data": _get_docker_system_info()})
+
     return JSONResponse({"error": f"Unknown action: {path}"}, status_code=404)
+
+
+def _read_env_file() -> str:
+    """Read .env file from project root (mounted or host)."""
+    import os
+    # Try common locations
+    for p in ["/data/.env", ".env", "/app/.env"]:
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return f.read()
+        except FileNotFoundError:
+            continue
+    # Try to find via docker volume or env
+    env_path = os.environ.get("ENV_FILE_PATH", "")
+    if env_path:
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except FileNotFoundError:
+            pass
+    return "# .env file not found inside container.\n# Edit .env on the host and restart: docker compose restart gateway\n"
+
+
+def _write_env_file(content: str) -> dict:
+    """Write .env file."""
+    import os
+    for p in ["/data/.env", ".env", "/app/.env"]:
+        try:
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(content)
+            return {"ok": True, "message": f"Saved to {p}. Restart gateway to apply: docker compose restart gateway"}
+        except (PermissionError, OSError):
+            continue
+    return {"ok": False, "error": "Cannot write .env inside container. Edit on host manually."}
+
+
+def _get_docker_system_info() -> dict:
+    """Get Docker daemon info: version, disk usage, etc."""
+    try:
+        from .docker_manager import _docker
+        client = _docker()
+        info = client.info()
+        df = client.df()
+        # Calculate total image/container size
+        images_size = sum(img.get("Size", 0) for img in df.get("Images", []))
+        containers_size = sum(c.get("SizeRw", 0) or 0 for c in df.get("Containers", []))
+        volumes_size = sum(v.get("UsageData", {}).get("Size", 0) or 0 for v in df.get("Volumes", []))
+        return {
+            "version": info.get("ServerVersion", ""),
+            "os": info.get("OperatingSystem", ""),
+            "arch": info.get("Architecture", ""),
+            "cpus": info.get("NCPU", 0),
+            "memory_gb": round(info.get("MemTotal", 0) / 1073741824, 1),
+            "containers_running": info.get("ContainersRunning", 0),
+            "containers_total": info.get("Containers", 0),
+            "images_total": info.get("Images", 0),
+            "images_size_gb": round(images_size / 1073741824, 2),
+            "containers_size_mb": round(containers_size / 1048576, 1),
+            "volumes_size_gb": round(volumes_size / 1073741824, 2),
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 _starlette = Starlette(
@@ -316,7 +396,7 @@ _starlette = Starlette(
         Route("/dashboard/docs", dashboard_docs),
         Route("/api/export-bsl", export_bsl_api, methods=["POST"]),
         Route("/api/register", register_epf_api, methods=["POST"]),
-        Route("/api/action/{action}", action_api, methods=["POST"]),
+        Route("/api/action/{action}", action_api, methods=["GET", "POST"]),
     ],
     lifespan=lifespan,
 )

@@ -8,16 +8,12 @@ from __future__ import annotations
 VERSION = "v0.4"
 GITHUB_URL = "https://github.com/AlekseiSeleznev/onec-mcp-universal"
 
-# SVG logo: stylized 1C cube + MCP connector
+# Simple text-based logo
 LOGO_SVG = (
-    '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<rect x="2" y="6" width="20" height="20" rx="3" fill="#0ea5e9" opacity=".85"/>'
-    '<text x="7" y="21" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#fff">1C</text>'
-    '<circle cx="26" cy="10" r="5" fill="#22c55e"/>'
-    '<circle cx="26" cy="22" r="5" fill="#a855f7"/>'
-    '<line x1="22" y1="16" x2="26" y2="10" stroke="#64748b" stroke-width="1.5"/>'
-    '<line x1="22" y1="16" x2="26" y2="22" stroke="#64748b" stroke-width="1.5"/>'
-    '<circle cx="22" cy="16" r="2" fill="#f8fafc"/>'
+    '<svg width="36" height="24" viewBox="0 0 36 24" xmlns="http://www.w3.org/2000/svg">'
+    '<rect width="36" height="24" rx="4" fill="#0ea5e9"/>'
+    '<text x="18" y="17" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" '
+    'font-size="13" font-weight="700" fill="#fff">1C</text>'
     '</svg>'
 )
 
@@ -73,6 +69,21 @@ _T = {
         "container": "Контейнер",
         "image": "Образ",
         "no_containers": "Нет контейнеров",
+        "edit_config": "Редактировать",
+        "save_config": "Сохранить",
+        "cancel": "Отмена",
+        "config_edit_hint": "Отредактируйте .env и нажмите «Сохранить». Перезапуск шлюза произойдёт автоматически.",
+        "docker_version": "Docker",
+        "docker_os": "ОС",
+        "docker_cpus": "CPU",
+        "docker_mem": "RAM",
+        "docker_imgs": "Образы",
+        "docker_imgs_size": "Размер образов",
+        "docker_vols_size": "Размер томов",
+        "running": "запущен",
+        "stopped": "остановлен",
+        "configure": "Настроить",
+        "add_db": "Добавить базу",
     },
     "en": {
         "title": "onec-mcp-universal",
@@ -125,6 +136,21 @@ _T = {
         "container": "Container",
         "image": "Image",
         "no_containers": "No containers",
+        "edit_config": "Edit",
+        "save_config": "Save",
+        "cancel": "Cancel",
+        "config_edit_hint": "Edit .env and click Save. Gateway restart required.",
+        "docker_version": "Docker",
+        "docker_os": "OS",
+        "docker_cpus": "CPUs",
+        "docker_mem": "RAM",
+        "docker_imgs": "Images",
+        "docker_imgs_size": "Images size",
+        "docker_vols_size": "Volumes size",
+        "running": "running",
+        "stopped": "stopped",
+        "configure": "Configure",
+        "add_db": "Add Database",
     },
 }
 
@@ -205,7 +231,7 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <div class="card"><h2>{{h_profiling}}</h2>{{profiling_html}}</div>
 <div class="card"><h2>{{h_cache}}</h2>{{cache_html}}</div>
 <div class="card"><h2>{{h_anon}}</h2><div class="sr"><div class="dot {{anon_dot}}"></div><span class="sn">{{anon_status}}</span></div></div>
-<div class="card"><h2>{{h_system}}</h2>{{system_html}}</div>
+<div class="card"><h2>{{h_system}}</h2>{{docker_info_html}}{{system_html}}</div>
 </div>
 </div>
 <div class="tc" id="t-settings">
@@ -213,16 +239,27 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <div class="card">
 <h2>{{h_db_mgmt}}</h2>
 {{db_mgmt_html}}
-<h2 style="margin-top:16px">{{connect_db}}</h2>
+<div style="margin-top:12px;padding-top:12px;border-top:1px solid #334155">
+<h2>{{add_db}}</h2>
 <div class="form-row"><label>{{add_db_name}}</label><input id="db-name" placeholder="ERP_DEMO"></div>
 <div class="form-row"><label>{{add_db_conn}}</label><input id="db-conn" placeholder="Srvr=localhost;Ref=ERP;"></div>
 <div class="form-row"><label>{{add_db_path}}</label><input id="db-path" placeholder="/home/user/projects"></div>
 <div class="ag"><button class="btn btn-p" onclick="connectDb()">{{add_db_btn}}</button></div>
 </div>
+</div>
 <div class="card">
-<h2>{{h_config}}</h2>
+<h2>{{h_config}} <button class="btn" style="float:right;font-size:.7rem" onclick="editEnv()">{{edit_config}}</button></h2>
+<div id="config-view">
 <table><tr><th style="width:40%">{{setting}}</th><th>{{value}}</th></tr>{{config_html}}</table>
-<p class="hint">{{restart_hint}}</p>
+</div>
+<div id="config-edit" style="display:none">
+<textarea id="env-editor" style="width:100%;height:250px;background:#0f172a;color:#e2e8f0;border:1px solid #475569;border-radius:4px;padding:8px;font-family:monospace;font-size:.8rem;resize:vertical"></textarea>
+<div class="ag">
+<button class="btn btn-p" onclick="saveEnv()">{{save_config}}</button>
+<button class="btn" onclick="cancelEnv()">{{cancel}}</button>
+</div>
+<p class="hint">{{config_edit_hint}}</p>
+</div>
 </div>
 <div class="card">
 <h2>{{h_actions}}</h2>
@@ -255,6 +292,22 @@ if(!n||!c||!p){alert('Fill all fields');return}
 fetch('/api/action/connect-db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,connection:c,project_path:p})})
 .then(r=>r.json()).then(d=>{alert(d.message||d.error||JSON.stringify(d));if(d.ok)location.reload()}).catch(e=>alert(e))
 }
+function editEnv(){
+fetch('/api/action/get-env',{method:'POST'}).then(r=>r.json()).then(d=>{
+document.getElementById('env-editor').value=d.env||'';
+document.getElementById('config-view').style.display='none';
+document.getElementById('config-edit').style.display='block';
+}).catch(e=>alert(e))
+}
+function saveEnv(){
+var c=document.getElementById('env-editor').value;
+fetch('/api/action/save-env',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:c})})
+.then(r=>r.json()).then(d=>{alert(d.message||d.error);cancelEnv()}).catch(e=>alert(e))
+}
+function cancelEnv(){
+document.getElementById('config-view').style.display='block';
+document.getElementById('config-edit').style.display='none';
+}
 </script>
 </body></html>"""
 
@@ -267,6 +320,7 @@ def render_dashboard(
     anon_enabled: bool,
     config_items: list[tuple[str, str]],
     container_info: list[dict] | None = None,
+    docker_system: dict | None = None,
     lang: str = "ru",
 ) -> str:
     t = _T.get(lang, _T["ru"])
@@ -313,31 +367,57 @@ def render_dashboard(
     anon_dot = "ok" if anon_enabled else "warn"
     anon_status = t["enabled"] if anon_enabled else t["disabled"]
 
-    # System / containers
+    # System / containers — translate status
+    status_map = {"running": t["running"], "exited": t["stopped"], "created": t["stopped"]}
     if container_info:
         c_rows = [f'<table><colgroup><col style="width:35%"><col style="width:40%"><col style="width:25%"></colgroup>'
                   f'<tr><th>{t["container"]}</th><th>{t["image"]}</th><th>{t["status"]}</th></tr>']
         for c in container_info:
             dot = "ok" if c.get("running") else "err"
             img = c.get("image", "")[:30]
-            c_rows.append(f'<tr><td><span class="sr" style="margin:0;gap:5px"><span class="dot {dot}"></span>{c["name"]}</span></td><td style="font-size:.72rem">{img}</td><td>{c.get("status","")}</td></tr>')
+            st = status_map.get(c.get("status", ""), c.get("status", ""))
+            c_rows.append(f'<tr><td><span class="sr" style="margin:0;gap:5px"><span class="dot {dot}"></span>{c["name"]}</span></td><td style="font-size:.72rem">{img}</td><td>{st}</td></tr>')
         c_rows.append("</table>")
         system_html = "\n".join(c_rows)
     else:
         system_html = f'<span class="st">{t["no_containers"]}</span>'
 
+    # Docker system info
+    if docker_system and not docker_system.get("error"):
+        ds = docker_system
+        docker_info_html = (
+            f'<div class="srow" style="margin-bottom:12px">'
+            f'<div><div class="sv" style="font-size:1rem">{ds.get("version","?")}</div><div class="sl">{t["docker_version"]}</div></div>'
+            f'<div><div class="sv" style="font-size:1rem">{ds.get("cpus",0)}</div><div class="sl">{t["docker_cpus"]}</div></div>'
+            f'<div><div class="sv" style="font-size:1rem">{ds.get("memory_gb",0)} GB</div><div class="sl">{t["docker_mem"]}</div></div>'
+            f'<div><div class="sv" style="font-size:1rem">{ds.get("images_size_gb",0)} GB</div><div class="sl">{t["docker_imgs_size"]}</div></div>'
+            f'<div><div class="sv" style="font-size:1rem">{ds.get("volumes_size_gb",0)} GB</div><div class="sl">{t["docker_vols_size"]}</div></div>'
+            f'</div>'
+        )
+    else:
+        docker_info_html = ""
+
     # Config
     config_html = "\n".join(f"<tr><td>{k}</td><td><code>{v}</code></td></tr>" for k, v in config_items)
 
-    # DB management
+    # DB management — with Configure + Disconnect buttons
     if databases:
         db_lines = []
         for db in databases:
+            badge = f' <span class="badge">{t["active"]}</span>' if db.get("active") else ""
+            epf_st = t["epf_ok"] if db.get("epf_connected") else t["epf_wait"]
+            conn = db.get("connection", "")[:40]
             db_lines.append(
-                f'<div class="sr"><span class="sn">{db["name"]}</span>'
-                f'<button class="btn-d" style="margin-left:auto" '
-                f'onclick="act(\'/api/action/disconnect?name={db["name"]}\')">'
-                f'{t["disconnect_db"]}</button></div>'
+                f'<div class="sr" style="gap:6px;flex-wrap:wrap">'
+                f'<span class="sn">{db["name"]}{badge}</span>'
+                f'<span class="st">{conn} — {epf_st}</span>'
+                f'<span style="margin-left:auto;display:flex;gap:4px">'
+                f'<button class="btn" style="font-size:.68rem;padding:2px 8px" '
+                f'onclick="alert(\'Use MCP tool switch_database to configure\')">{t["configure"]}</button>'
+                f'<button class="btn-d" '
+                f'onclick="if(confirm(\'Disconnect {db["name"]}?\'))act(\'/api/action/disconnect?name={db["name"]}\')">'
+                f'{t["disconnect_db"]}</button>'
+                f'</span></div>'
             )
         db_mgmt_html = "\n".join(db_lines)
     else:
@@ -347,7 +427,7 @@ def render_dashboard(
     for key, val in t.items():
         html = html.replace("{{" + key + "}}", val)
     replacements = {
-        "backends_html": backends_html, "databases_html": databases_html,
+        "backends_html": backends_html, "databases_html": databases_html, "docker_info_html": docker_info_html,
         "profiling_html": profiling_html, "cache_html": cache_html,
         "anon_dot": anon_dot, "anon_status": anon_status,
         "system_html": system_html, "config_html": config_html,
