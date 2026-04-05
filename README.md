@@ -621,37 +621,72 @@ docker compose --profile bsl-graph up -d
 
 ## Установка на Windows
 
-На Windows Docker Desktop запускает контейнеры через WSL2. Контейнер не видит `localhost` хоста напрямую -- используется `host.docker.internal`. Для Windows предоставлен отдельный override-файл.
+На Windows Docker Desktop запускает контейнеры через WSL2. Контейнер не видит `localhost` хоста напрямую -- используется `host.docker.internal`. Для Windows предоставлен отдельный override-файл `docker-compose.windows.yml`.
 
-### 1. Запустить сервис выгрузки на хосте
+### Предварительные требования
+
+- **Docker Desktop** 4.25+ с включённым WSL2
+- **Python 3.10+** (установленный на хосте Windows)
+- **Платформа 1С:Предприятие** 8.3 (установленная на хосте Windows)
+
+### 1. Скачать проект
+
+```cmd
+git clone https://github.com/AlekseiSeleznev/onec-mcp-universal.git
+cd onec-mcp-universal
+```
+
+### 2. Создать файл настроек
+
+```cmd
+copy .env.example .env
+```
+
+### 3. Запустить сервис выгрузки на хосте
 
 ```cmd
 python tools\export-host-service.py --port 8082 --workspace C:\1c-projects
 ```
 
-Оставить окно открытым или настроить как Windows-службу.
+Оставить окно открытым или настроить как Windows-службу (через `nssm` или Task Scheduler).
 
-### 2. Настроить `.env`
+### 4. Настроить `.env`
+
+Обязательные параметры для Windows:
 
 ```env
 EXPORT_HOST_URL=http://host.docker.internal:8082
 ```
 
-> На Windows закомментируйте `HOST_PLATFORM_PATH` и `PLATFORM_PATH` если 1С не установлена в WSL.
+> На Windows закомментируйте `HOST_PLATFORM_PATH` и `PLATFORM_PATH` если 1С не установлена в WSL. Платформа на хосте Windows будет доступна через сервис выгрузки.
 
-### 3. Запустить контейнеры с Windows-override
+### 5. Запустить контейнеры с Windows-override
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.windows.yml up -d
 ```
 
-Файл `docker-compose.windows.yml` заменяет `network_mode: host` на bridge-сеть с `host.docker.internal` и проброс портов.
+Файл `docker-compose.windows.yml` заменяет `network_mode: host` на bridge-сеть с `host.docker.internal` и проброс портов. Первый запуск: 2-3 минуты.
 
-### 4. Подключить AI-ассистент
+### 6. Проверить
+
+```bash
+curl http://localhost:8080/health
+```
+
+Или откройте в браузере: `http://localhost:8080/dashboard`
+
+### 7. Подключить AI-ассистент
 
 Адрес тот же: `http://localhost:8080/mcp`
 
-> **Примечание:** секция `platform-context` -> `volumes` монтирует `/opt/1cv8`. На Windows это может вызвать ошибку. Если `platform-context` не стартует -- закомментируйте строку `${HOST_PLATFORM_PATH:-/opt/1cv8}:/opt/1cv8:ro` в `docker-compose.yml`.
+### Типичные проблемы на Windows
+
+| Проблема | Решение |
+|---|---|
+| `platform-context` не стартует | Закомментируйте строку `${HOST_PLATFORM_PATH:-/opt/1cv8}:/opt/1cv8:ro` в `docker-compose.yml` -- на Windows монтирование Linux-путей невозможно |
+| Контейнер не видит хост | Убедитесь, что в `.env` указан `EXPORT_HOST_URL=http://host.docker.internal:8082` |
+| Порт 8080 занят | Измените порт в `.env`: `GATEWAY_PORT=8090` и используйте `http://localhost:8090/mcp` |
 
 ---
 
@@ -717,6 +752,7 @@ docker compose up -d
 ```
 Claude Code / Cursor / Windsurf
        | HTTP :8080/mcp (Streamable HTTP)
+       | (Mcp-Session-Id -> per-session routing)
        v
 +------------------------------------------+
 |  onec-mcp-gw  (Python, host network)     |
@@ -740,10 +776,16 @@ Claude Code / Cursor / Windsurf
 |  Per-session routing (idle 8h)           |
 |  /data/db_state.json <- persistence      |
 +------------------------------------------+
-         ^                        ^
-         | MCPToolkit.epf         | https://code.1c.ai
-         | (клиент 1С)           | (1С:Напарник API)
+       ^           ^                ^
+       |           |                |
+  MCPToolkit.epf   |     https://code.1c.ai
+  (клиент 1С)      |     (1С:Напарник API)
+                   |
+           /dashboard
+           (Web UI)
 ```
+
+**Per-session routing:** каждый AI-клиент получает уникальный `Mcp-Session-Id`. Шлюз маршрутизирует запросы к активной базе данных этой сессии. Разные сеансы Claude Code и Cursor могут одновременно работать с разными базами. Idle timeout сессий -- 8 часов.
 
 | Контейнер | Образ | Роль |
 |---|---|---|
@@ -774,6 +816,63 @@ Claude Code / Cursor / Windsurf
 |---|---|---|---|
 | [mcp-onec-test-runner](https://github.com/alkoleft/mcp-onec-test-runner) | alkoleft | `test-runner` | Запуск тестов YaXUnit, сборка, проверка синтаксиса |
 | [bsl-graph](https://github.com/alkoleft/bsl-graph) | alkoleft | `bsl-graph` | Граф зависимостей объектов конфигурации |
+
+---
+
+## Скилы 1С для Claude Code
+
+В репозитории поставляются 67 скилов для работы с 1С через Claude Code. Скилы — это команды вида `/meta-compile`, `/epf-init`, `/form-compile`, которые Claude Code выполняет локально.
+
+### Установка скилов
+
+**Linux / macOS:**
+
+```bash
+./install-skills.sh
+```
+
+**Windows (PowerShell от администратора):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install-skills.ps1
+```
+
+Скрипт создаёт символические ссылки из `~/.claude/skills/` на папку `skills/` в проекте. После установки скилы доступны в Claude Code через `/command`.
+
+### Категории скилов
+
+| Категория | Скилы | Описание |
+|---|---|---|
+| Конфигурация | `cf-init`, `cf-edit`, `cf-info`, `cf-validate` | Создание и управление конфигурацией |
+| Объекты метаданных | `meta-compile`, `meta-edit`, `meta-info`, `meta-remove`, `meta-validate` | Справочники, документы, регистры, модули |
+| Формы | `form-compile`, `form-edit`, `form-add`, `form-info`, `form-validate`, `form-patterns` | Управляемые формы |
+| СКД | `skd-compile`, `skd-edit`, `skd-info`, `skd-validate` | Схемы компоновки данных |
+| Обработки (EPF) | `epf-init`, `epf-add-form`, `epf-build`, `epf-dump`, `epf-validate` | Внешние обработки |
+| Отчёты (ERF) | `erf-init`, `erf-build`, `erf-dump`, `erf-validate` | Внешние отчёты |
+| Расширения (CFE) | `cfe-init`, `cfe-borrow`, `cfe-patch-method`, `cfe-diff`, `cfe-validate` | Расширения конфигурации |
+| Роли | `role-compile`, `role-info`, `role-validate` | Права и роли |
+| Подсистемы | `subsystem-compile`, `subsystem-edit`, `subsystem-info`, `subsystem-validate` | Подсистемы |
+| Макеты (MXL) | `mxl-compile`, `mxl-decompile`, `mxl-info`, `mxl-validate` | Табличные документы |
+| Базы данных | `db-create`, `db-run`, `db-update`, `db-list`, `db-dump-cf`, `db-load-cf`, `db-dump-xml`, `db-load-xml`, `db-load-git` | Управление ИБ |
+| Прочее | `help-add`, `interface-edit`, `interface-validate`, `img-grid` | Справка, интерфейс |
+
+### Примеры использования скилов
+
+```
+/meta-compile — создать справочник Клиенты с реквизитами ИНН и Телефон
+```
+
+```
+/epf-init — создать пустую обработку ЗагрузкаДанных
+```
+
+```
+/form-compile — создать форму списка для справочника Клиенты
+```
+
+```
+/skd-compile — создать СКД для отчёта по продажам
+```
 
 ---
 
