@@ -474,13 +474,15 @@ docker compose --profile bsl-graph up -d
 
 ## Установка на Windows
 
-На Windows платформа 1С работает только на хосте, а не внутри Linux-контейнеров.
+На Windows Docker Desktop запускает контейнеры через WSL2. Контейнер не видит `localhost` хоста напрямую — используется `host.docker.internal`. Кроме того, `network_mode: host` не поддерживается. Для Windows предоставлен отдельный override-файл.
 
-### 1. Запустить сервис выгрузки
+### 1. Запустить сервис выгрузки на хосте
 
 ```cmd
 python tools\export-host-service.py --port 8082 --workspace C:\1c-projects
 ```
+
+Оставить окно открытым или настроить как Windows-службу.
 
 ### 2. Настроить `.env`
 
@@ -488,13 +490,21 @@ python tools\export-host-service.py --port 8082 --workspace C:\1c-projects
 EXPORT_HOST_URL=http://host.docker.internal:8082
 ```
 
-### 3. Запустить контейнеры
+> На Windows закомментируйте `HOST_PLATFORM_PATH` и `PLATFORM_PATH` если 1С не установлена в WSL.
+
+### 3. Запустить контейнеры с Windows-override
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.windows.yml up -d
 ```
 
-> Если `platform-context` не стартует из-за монтирования `/opt/1cv8` — удалить строку `${HOST_PLATFORM_PATH:-/opt/1cv8}:/opt/1cv8:ro` из `docker-compose.yml` в секции `platform-context`.
+Файл `docker-compose.windows.yml` заменяет `network_mode: host` на bridge-сеть с `host.docker.internal` и проброс портов.
+
+### 4. Подключить AI-ассистент
+
+Адрес тот же: `http://localhost:8080/mcp`
+
+> **Примечание:** секция `platform-context` → `volumes` монтирует `/opt/1cv8`. На Windows это может вызвать ошибку. Если `platform-context` не стартует — закомментируйте строку `${HOST_PLATFORM_PATH:-/opt/1cv8}:/opt/1cv8:ro` в `docker-compose.yml`.
 
 ---
 

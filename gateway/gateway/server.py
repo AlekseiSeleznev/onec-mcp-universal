@@ -205,12 +205,22 @@ async def dashboard(request: Request) -> HTMLResponse:
     from .profiler import profiler
     from .web_ui import render_dashboard
 
+    lang = request.query_params.get("lang", "ru")
+    if lang not in ("ru", "en"):
+        lang = "ru"
+
     config_items = [
-        ("Port", str(settings.port)),
-        ("Enabled backends", settings.enabled_backends),
-        ("1C:Napilnik", "configured" if settings.napilnik_api_key else "not configured"),
-        ("Metadata cache TTL", f"{settings.metadata_cache_ttl}s"),
+        ("PORT", str(settings.port)),
+        ("ENABLED_BACKENDS", settings.enabled_backends),
+        ("NAPILNIK_API_KEY", "***" if settings.napilnik_api_key else "not configured"),
+        ("METADATA_CACHE_TTL", f"{settings.metadata_cache_ttl}s"),
+        ("EXPORT_HOST_URL", settings.export_host_url or "not set"),
+        ("BSL_WORKSPACE", settings.bsl_workspace),
+        ("LOG_LEVEL", settings.log_level),
     ]
+
+    container_info = _get_container_info()
+
     html = render_dashboard(
         backends_status=_manager.status(),
         databases=_registry.list(),
@@ -218,8 +228,71 @@ async def dashboard(request: Request) -> HTMLResponse:
         cache_stats=metadata_cache.stats(),
         anon_enabled=anonymizer.enabled,
         config_items=config_items,
+        container_info=container_info,
+        lang=lang,
     )
     return HTMLResponse(html)
+
+
+def _get_container_info() -> list[dict]:
+    """Get Docker container info for the dashboard."""
+    try:
+        import docker as docker_lib
+        client = docker_lib.from_env()
+        result = []
+        for c in client.containers.list(all=True):
+            name = c.name
+            if not any(name.startswith(p) for p in ("onec-", "mcp-lsp-", "onec-toolkit-")):
+                continue
+            size_info = ""
+            try:
+                attrs = c.attrs or {}
+                size_info = attrs.get("SizeRw", "")
+                if isinstance(size_info, int) and size_info > 0:
+                    size_info = f"{size_info / 1024 / 1024:.1f} MB"
+                else:
+                    size_info = ""
+            except Exception:
+                pass
+            result.append({
+                "name": name,
+                "image": c.image.tags[0] if c.image.tags else str(c.image.id)[:20],
+                "status": c.status,
+                "running": c.status == "running",
+                "size": size_info,
+            })
+        return result
+    except Exception as exc:
+        logger.debug(f"Docker info unavailable: {exc}")
+        return []
+
+
+async def action_api(request: Request) -> JSONResponse:
+    """REST actions from dashboard UI."""
+    path = request.path_params.get("action", "")
+
+    if path == "clear-cache":
+        from .metadata_cache import metadata_cache
+        msg = metadata_cache.invalidate()
+        return JSONResponse({"ok": True, "message": msg})
+
+    if path == "toggle-anon":
+        from .anonymizer import anonymizer
+        if anonymizer.enabled:
+            msg = anonymizer.disable()
+        else:
+            msg = anonymizer.enable()
+        return JSONResponse({"ok": True, "message": msg})
+
+    if path == "disconnect":
+        db_name = request.query_params.get("name", "")
+        if not db_name:
+            return JSONResponse({"error": "name parameter required"}, status_code=400)
+        from . import mcp_server as _ms
+        result = await _ms._disconnect_database(db_name)
+        return JSONResponse({"ok": not result.startswith("ERROR"), "message": result})
+
+    return JSONResponse({"error": f"Unknown action: {path}"}, status_code=404)
 
 
 _starlette = Starlette(
@@ -228,6 +301,7 @@ _starlette = Starlette(
         Route("/dashboard", dashboard),
         Route("/api/export-bsl", export_bsl_api, methods=["POST"]),
         Route("/api/register", register_epf_api, methods=["POST"]),
+        Route("/api/action/{action}", action_api, methods=["POST"]),
     ],
     lifespan=lifespan,
 )

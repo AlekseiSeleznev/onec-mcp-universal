@@ -17,8 +17,9 @@ services:
       PLATFORM_CONTEXT_URL: http://localhost:8081/sse
       LSP_DOCKER_CONTAINER: ${LSP_CONTAINER:-mcp-lsp-zup}
       ENABLED_BACKENDS: ${ENABLED_BACKENDS:-onec-toolkit,platform-context,bsl-lsp-bridge}
-      # Linux: leave empty, uses export-host-service on localhost:8082
-      # Windows: set to http://localhost:8082 and run tools/export-host-service.py
+      # Export service URL (set in .env):
+      #   Linux:   http://localhost:8082  (host network mode)
+      #   Windows: http://host.docker.internal:8082  (Docker Desktop)
       EXPORT_HOST_URL: ${EXPORT_HOST_URL:-http://localhost:8082}
       NAPILNIK_API_KEY: ${NAPILNIK_API_KEY:-}
       METADATA_CACHE_TTL: ${METADATA_CACHE_TTL:-600}

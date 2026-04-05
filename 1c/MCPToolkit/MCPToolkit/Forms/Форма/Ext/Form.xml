@@ -10,7 +10,7 @@
 					<Title>
 						<v8:item>
 							<v8:lang>ru</v8:lang>
-							<v8:content>Подключение</v8:content>
+							<v8:content>Подключение и BSL</v8:content>
 						</v8:item>
 					</Title>
 					<Group>Vertical</Group>
@@ -46,6 +46,7 @@
 					</Title>
 					<Group>AlwaysHorizontal</Group>
 					<Representation>None</Representation>
+					<Visible>false</Visible>
 					<ExtendedTooltip name="ГруппаРежимПодключенияРасширеннаяПодсказка" id="40"/>
 					<ChildItems>
 						<RadioButtonField name="ПолеРежимПодключения" id="41">
@@ -113,6 +114,7 @@
 					</Title>
 					<Group>AlwaysHorizontal</Group>
 					<Representation>None</Representation>
+					<Visible>false</Visible>
 					<ExtendedTooltip name="ГруппаКаналРасширеннаяПодсказка" id="33"/>
 					<ChildItems>
 						<InputField name="ИдентификаторКаналаПоле" id="34">
@@ -317,6 +319,52 @@
 					<Width>40</Width>
 					<ExtendedTooltip name="СтатусПолеРасширеннаяПодсказка" id="16"/>
 				</InputField>
+			</ChildItems>
+		</UsualGroup>
+		<UsualGroup name="ГруппаBSLНаГлавной" id="300">
+			<Title>
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Выгрузка BSL</v8:content>
+				</v8:item>
+			</Title>
+			<Group>AlwaysHorizontal</Group>
+			<Representation>NormalSeparation</Representation>
+			<ExtendedTooltip name="ГруппаBSLНаГлавнойРасширеннаяПодсказка" id="301"/>
+			<ChildItems>
+				<Button name="КнопкаОпределитьПараметрыБазыДубль" id="302">
+					<Type>UsualButton</Type>
+					<Title>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Определить базу</v8:content>
+						</v8:item>
+					</Title>
+					<CommandName>Form.Command.ОпределитьПараметрыБазы</CommandName>
+					<ExtendedTooltip name="КнопкаОпределитьПараметрыБазыДубльРасширеннаяПодсказка" id="303"/>
+				</Button>
+				<Button name="КнопкаЗарегистрироватьсяВШлюзеДубль" id="304">
+					<Type>UsualButton</Type>
+					<Title>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Подключить к прокси</v8:content>
+						</v8:item>
+					</Title>
+					<CommandName>Form.Command.ЗарегистрироватьсяВШлюзе</CommandName>
+					<ExtendedTooltip name="КнопкаЗарегистрироватьсяВШлюзеДубльРасширеннаяПодсказка" id="305"/>
+				</Button>
+				<Button name="КнопкаВыгрузитьBSLДубль" id="306">
+					<Type>UsualButton</Type>
+					<Title>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Выгрузить BSL</v8:content>
+						</v8:item>
+					</Title>
+					<CommandName>Form.Command.ВыгрузитьBSL</CommandName>
+					<ExtendedTooltip name="КнопкаВыгрузитьBSLДубльРасширеннаяПодсказка" id="307"/>
+				</Button>
 			</ChildItems>
 		</UsualGroup>
 		<UsualGroup name="ГруппаЛог" id="17">
@@ -637,6 +685,7 @@
 						</v8:item>
 					</Title>
 					<Group>Vertical</Group>
+					<Visible>false</Visible>
 					<ExtendedTooltip name="СтраницаВыгрузкаBSLРасширеннаяПодсказка" id="201"/>
 					<ChildItems>
 						<UsualGroup name="ГруппаТекущаяБаза" id="202">

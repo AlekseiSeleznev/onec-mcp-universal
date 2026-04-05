@@ -1,0 +1,18 @@
+# Windows override: replaces host network with port mapping + host.docker.internal
+# Usage: docker compose -f docker-compose.yml -f docker-compose.windows.yml up -d
+
+services:
+  gateway:
+    network_mode: bridge
+    ports:
+      - "${GW_PORT:-8080}:${GW_PORT:-8080}"
+    environment:
+      ONEC_TOOLKIT_URL: http://onec-toolkit:6003/mcp
+      PLATFORM_CONTEXT_URL: http://platform-context:8080/sse
+      EXPORT_HOST_URL: ${EXPORT_HOST_URL:-http://host.docker.internal:8082}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [onec-net]
+    volumes:
+      - //var/run/docker.sock:/var/run/docker.sock:rw
+      - gw-data:/data
