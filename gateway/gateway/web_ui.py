@@ -48,11 +48,11 @@ _T = {
         "no_backends": "Нет бэкендов",
         "no_databases": "Нет подключённых баз",
         "no_queries": "Нет запросов",
-        "epf_ok": "Обработка подключена",
-        "epf_wait": "Ожидание обработки",
+        "epf_ok": "Подключена",
+        "epf_wait": "Отключена",
         "name": "Имя",
         "connection": "Подключение",
-        "status": "Статус",
+        "status": "Обработка",
         "setting": "Параметр",
         "value": "Значение",
         "license": "Лицензия",
@@ -121,10 +121,10 @@ _T = {
         "no_databases": "No databases",
         "no_queries": "No queries yet",
         "epf_ok": "Connected",
-        "epf_wait": "Waiting for EPF",
+        "epf_wait": "Disconnected",
         "name": "Name",
         "connection": "Connection",
-        "status": "Status",
+        "status": "EPF",
         "setting": "Setting",
         "value": "Value",
         "license": "License",
@@ -370,9 +370,11 @@ def render_dashboard(
                 f'<tr><th>{t["name"]}</th><th>{t["connection"]}</th><th>{t["status"]}</th></tr>']
         for db in databases:
             badge = f' <span class="badge">{t["default_badge"]}</span>' if db.get("active") else ""
-            epf = t["epf_ok"] if db.get("epf_connected") else t["epf_wait"]
+            epf_connected = db.get("epf_connected", False)
+            epf_dot = "ok" if epf_connected else "warn"
+            epf = t["epf_ok"] if epf_connected else t["epf_wait"]
             conn = db.get("connection", "")[:40]
-            rows.append(f'<tr><td>{db["name"]}{badge}</td><td><code style="font-size:.72rem">{conn}</code></td><td>{epf}</td></tr>')
+            rows.append(f'<tr><td>{db["name"]}{badge}</td><td><code style="font-size:.72rem">{conn}</code></td><td><span class="sr" style="margin:0;gap:5px"><span class="dot {epf_dot}"></span>{epf}</span></td></tr>')
         rows.append("</table>")
         databases_html = "\n".join(rows)
     else:
@@ -433,7 +435,9 @@ def render_dashboard(
         for db in databases:
             is_default = db.get("active", False)
             badge = f' <span class="badge">{t["default_badge"]}</span>' if is_default else ""
-            epf_st = t["epf_ok"] if db.get("epf_connected") else t["epf_wait"]
+            epf_connected = db.get("epf_connected", False)
+            epf_dot = "ok" if epf_connected else "warn"
+            epf_st = f'<span class="sr" style="margin:0;gap:5px"><span class="dot {epf_dot}"></span>{t["epf_ok"] if epf_connected else t["epf_wait"]}</span>'
             conn = db.get("connection", "")
             proj = db.get("project_path", "")
             conn_short = conn[:40]
