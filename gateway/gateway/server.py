@@ -79,6 +79,7 @@ async def _restore_databases() -> None:
         try:
             logger.info(f"Auto-reconnecting database: {name}")
             db_info = _registry.register(name, connection, project_path)
+            db_info.connected = False  # EPF must re-register after restart
 
             toolkit_port, toolkit_container = await asyncio.wait_for(
                 loop.run_in_executor(None, start_toolkit, name), timeout=120
