@@ -299,7 +299,25 @@ async def action_api(request: Request) -> JSONResponse:
             return JSONResponse({"error": "name, connection, project_path required"}, status_code=400)
         from . import mcp_server as _ms
         result = await _ms._connect_database(db_name, connection, project_path)
-        return JSONResponse({"ok": not result.startswith("ERROR"), "message": result})
+        ok = not result.startswith("ERROR")
+        if ok:
+            msg = (
+                f"База '{db_name}' подключена.\n\n"
+                f"Следующие шаги:\n"
+                f"1. Откройте MCPToolkit.epf в 1С и нажмите «Подключить к прокси»\n"
+                f"2. Нажмите «Выгрузить BSL» для навигации по коду"
+            )
+        else:
+            msg = result
+        return JSONResponse({"ok": ok, "message": msg})
+
+    if path == "switch":
+        db_name = request.query_params.get("name", "")
+        if not db_name:
+            return JSONResponse({"error": "name parameter required"}, status_code=400)
+        if _manager.switch_db(db_name) and _registry.switch(db_name):
+            return JSONResponse({"ok": True, "message": f"База '{db_name}' активирована."})
+        return JSONResponse({"ok": False, "error": f"База '{db_name}' не найдена."})
 
     if path == "disconnect":
         db_name = request.query_params.get("name", "")

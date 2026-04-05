@@ -82,7 +82,7 @@ _T = {
         "docker_vols_size": "Размер томов",
         "running": "запущен",
         "stopped": "остановлен",
-        "configure": "Настроить",
+        "configure": "Активировать",
         "add_db": "Добавить базу",
     },
     "en": {
@@ -149,7 +149,7 @@ _T = {
         "docker_vols_size": "Volumes size",
         "running": "running",
         "stopped": "stopped",
-        "configure": "Configure",
+        "configure": "Activate",
         "add_db": "Add Database",
     },
 }
@@ -270,7 +270,7 @@ td{padding:6px 8px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 </div>
 </div>
 <div class="footer">
-{{logo}} {{title}} {{version}} &mdash;
+{{title}} {{version}} &mdash;
 <a href="{{github_url}}">{{project}}</a> &mdash;
 <a href="{{github_url}}/blob/main/LICENSE">{{license}}: MIT</a> &mdash;
 <a href="/health">Health</a> &mdash; <a href="/mcp">MCP</a>
@@ -384,13 +384,15 @@ def render_dashboard(
     # Docker system info
     if docker_system and not docker_system.get("error"):
         ds = docker_system
+        vol_size = ds.get("volumes_size_gb", 0)
+        vol_str = f"{vol_size} GB" if vol_size >= 0.01 else "<1 MB"
         docker_info_html = (
             f'<div class="srow" style="margin-bottom:12px">'
             f'<div><div class="sv" style="font-size:1rem">{ds.get("version","?")}</div><div class="sl">{t["docker_version"]}</div></div>'
             f'<div><div class="sv" style="font-size:1rem">{ds.get("cpus",0)}</div><div class="sl">{t["docker_cpus"]}</div></div>'
             f'<div><div class="sv" style="font-size:1rem">{ds.get("memory_gb",0)} GB</div><div class="sl">{t["docker_mem"]}</div></div>'
             f'<div><div class="sv" style="font-size:1rem">{ds.get("images_size_gb",0)} GB</div><div class="sl">{t["docker_imgs_size"]}</div></div>'
-            f'<div><div class="sv" style="font-size:1rem">{ds.get("volumes_size_gb",0)} GB</div><div class="sl">{t["docker_vols_size"]}</div></div>'
+            f'<div><div class="sv" style="font-size:1rem">{vol_str}</div><div class="sl">{t["docker_vols_size"]}</div></div>'
             f'</div>'
         )
     else:
@@ -406,13 +408,18 @@ def render_dashboard(
             badge = f' <span class="badge">{t["active"]}</span>' if db.get("active") else ""
             epf_st = t["epf_ok"] if db.get("epf_connected") else t["epf_wait"]
             conn = db.get("connection", "")[:40]
+            activate_btn = ""
+            if not db.get("active"):
+                activate_btn = (
+                    f'<button class="btn" style="font-size:.68rem;padding:2px 8px" '
+                    f'onclick="act(\'/api/action/switch?name={db["name"]}\')">{t["configure"]}</button>'
+                )
             db_lines.append(
                 f'<div class="sr" style="gap:6px;flex-wrap:wrap">'
                 f'<span class="sn">{db["name"]}{badge}</span>'
                 f'<span class="st">{conn} — {epf_st}</span>'
                 f'<span style="margin-left:auto;display:flex;gap:4px">'
-                f'<button class="btn" style="font-size:.68rem;padding:2px 8px" '
-                f'onclick="alert(\'Use MCP tool switch_database to configure\')">{t["configure"]}</button>'
+                f'{activate_btn}'
                 f'<button class="btn-d" '
                 f'onclick="if(confirm(\'Disconnect {db["name"]}?\'))act(\'/api/action/disconnect?name={db["name"]}\')">'
                 f'{t["disconnect_db"]}</button>'
