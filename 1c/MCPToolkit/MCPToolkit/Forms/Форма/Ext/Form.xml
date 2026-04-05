@@ -333,7 +333,7 @@
 			<ExtendedTooltip name="ГруппаBSLНаГлавнойРасширеннаяПодсказка" id="301"/>
 			<ChildItems>
 				<UsualGroup name="ГруппаBSLАвторизация" id="310">
-					<Group>AlwaysHorizontal</Group>
+					<Group>Vertical</Group>
 					<Representation>None</Representation>
 					<ExtendedTooltip name="ГруппаBSLАвторизацияРасширеннаяПодсказка" id="311"/>
 					<ChildItems>
