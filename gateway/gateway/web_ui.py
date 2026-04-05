@@ -72,7 +72,7 @@ _T = {
         "edit_config": "Редактировать",
         "save_config": "Сохранить",
         "cancel": "Отмена",
-        "config_edit_hint": "Отредактируйте .env и нажмите «Сохранить». Перезапуск шлюза произойдёт автоматически.",
+        "config_edit_hint": "Перезапуск шлюза произойдёт автоматически.",
         "docker_version": "Docker",
         "docker_os": "ОС",
         "docker_cpus": "CPU",
