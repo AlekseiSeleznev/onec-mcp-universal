@@ -509,6 +509,15 @@ async def list_tools() -> list[Tool]:
     return GW_TOOLS + manager.get_all_tools()
 
 
+def _get_session_active() -> 'DatabaseInfo | None':
+    """Get active DatabaseInfo for the current session."""
+    sid = _get_session_id()
+    db_name = manager.get_active_db(sid)
+    if db_name:
+        return registry.get(db_name)
+    return _get_session_active()
+
+
 def _get_session_id() -> str | None:
     """Extract MCP session ID from the current request context."""
     try:
@@ -583,7 +592,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     # --- BSL Search ---
     if name == "bsl_index":
         path = arguments.get("path", "").strip() or "/projects"
-        active = registry.get_active()
+        active = _get_session_active()
         container = active.lsp_container if active else ""
         return [TextContent(type="text", text=bsl_search.build_index(path, container=container))]
     if name == "bsl_search_tool":
@@ -752,7 +761,7 @@ async def _validate_query(query: str) -> str:
         return json.dumps(result, ensure_ascii=False, indent=2)
 
     try:
-        active = registry.get_active()
+        active = _get_session_active()
         if active:
             toolkit = manager.get_backend_for_tool("execute_query", session_id=_get_session_id())
             if toolkit:
@@ -787,7 +796,7 @@ async def _validate_query(query: str) -> str:
 # ---------------------------------------------------------------------------
 
 async def _reindex_bsl(path: str) -> str:
-    active = registry.get_active()
+    active = _get_session_active()
     if not active:
         return "ERROR: No active database. Connect a database first."
 
@@ -833,7 +842,7 @@ async def _graph_request(method: str, path: str, body: dict | None = None, param
 # ---------------------------------------------------------------------------
 
 async def _write_bsl(file: str, content: str) -> str:
-    active = registry.get_active()
+    active = _get_session_active()
     if not active:
         return "ERROR: No active database. Connect a database first."
 
@@ -892,7 +901,7 @@ async def _its_search(query: str) -> str:
 # ---------------------------------------------------------------------------
 
 async def _capture_form(fmt: str) -> str:
-    active = registry.get_active()
+    active = _get_session_active()
     if not active:
         return "ERROR: No active database. Connect a database first."
     if not active.toolkit_url:
