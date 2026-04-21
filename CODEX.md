@@ -35,8 +35,8 @@
 - Основной сценарий установки: `./setup.sh`
 - Опциональный встроенный граф зависимостей: `./setup.sh --with-bsl-graph`
 - Если `codex` установлен, `setup.sh` автоматически регистрирует `onec-universal`
-- gateway управляет Docker-контейнерами через внутренний sidecar `docker-control`, а не через прямой `docker.sock`
-- `docker-control` принимает только `GET /health` без auth; все `/api/*` закрыты bearer token из `DOCKER_CONTROL_TOKEN`
+- gateway управляет Docker-контейнерами через внутренний вспомогательный сервис `docker-control`, а не через прямой `docker.sock`
+- `docker-control` принимает только `GET /health` без авторизации; все `/api/*` закрыты bearer token из `DOCKER_CONTROL_TOKEN`
 - `ANONYMIZER_SALT` хранит стабильный salt для маскировки ПД и тоже маскируется в редакторе `.env`
 
 ## Требования
@@ -47,7 +47,7 @@
 - запущенный Docker daemon
 - `git`
 - `codex` для автоматической регистрации MCP
-- установленная платформа 1С в `/opt/1cv8/x86_64/...`, если нужен `platform-context` и host-side BSL export
+- установленная платформа 1С в `/opt/1cv8/x86_64/...`, если нужен `platform-context` и хостовая выгрузка BSL
 - `systemd --user`, если нужен автозапуск `onec-export-service.service`
 
 ### Windows
@@ -86,7 +86,7 @@ cd onec-mcp-universal
 8. ждёт health gateway, `docker-control` и, если включён, `bsl-graph`
 9. регистрирует `onec-universal` в Codex
 10. устанавливает skills в `~/.codex/skills`
-11. ставит host export service как user-level `systemd` unit на Linux или Scheduled Task на Windows
+11. ставит сервис хостовой выгрузки как user-level `systemd` unit на Linux или Scheduled Task на Windows
 
 ### Windows
 
@@ -107,8 +107,8 @@ cd onec-mcp-universal
 Windows-специфика:
 
 - `setup.sh` создаёт `docker-compose.override.yml` из `docker-compose.windows.yml`
-- gateway работает через bridge-сеть; host-side export идёт через `host.docker.internal`, а `docker-control` доступен внутри сети как `http://docker-control:8091`
-- BSL export идёт через host-side Python service
+- gateway работает через bridge-сеть; хостовая выгрузка идёт через `host.docker.internal`, а `docker-control` доступен внутри сети как `http://docker-control:8091`
+- BSL export идёт через хостовый Python-сервис
 - skills ставятся в `~/.codex/skills`
 
 ## Проверка установки
@@ -137,9 +137,9 @@ codex mcp list
 - gateway отвечает на `http://localhost:8080/health`
 - на Linux `docker-control` отвечает на `http://localhost:8091/health`
 - на Linux `docker-control` возвращает `401` на `http://localhost:8091/api/docker/system` без bearer token
-- на Windows проверка sidecar выполняется через `verify-install.ps1` изнутри `onec-mcp-gw`; host port `8091` не публикуется
+- на Windows проверка вспомогательного сервиса выполняется через `verify-install.ps1` изнутри `onec-mcp-gw`; порт хоста `8091` не публикуется
 - `codex mcp list` содержит `onec-universal`
-- export-host-service отвечает на `http://localhost:8082/health`
+- сервис хостовой выгрузки отвечает на `http://localhost:8082/health`
 - при опциональном графе `http://localhost:8888/health` отвечает успешно
 
 ## Тесты
@@ -201,9 +201,9 @@ cd onec-mcp-universal
 ## Инварианты
 
 - путь BSL-рабочего каталога, заданный из дашборда, — источник истины
-- сервис host export не должен зависеть от пути рабочего каталога, зашитого на этапе установки
+- сервис хостовой выгрузки не должен зависеть от пути рабочего каталога, зашитого на этапе установки
 - `disconnect` сохраняет запись базы в реестре
-- `remove` очищает runtime/state/graph, но не удаляет физические BSL-файлы
+- `remove` очищает рабочий контур, состояние и граф, но не удаляет физические BSL-файлы
 - `ghcr.io/alekseiseleznev/onec-mcp-universal:latest` должен отражать текущий `main`
 - `ghcr.io/alekseiseleznev/onec-mcp-universal-bsl-graph-lite:latest` публикуется отдельно для встроенного графового бэкенда
-- `ghcr.io/alekseiseleznev/onec-mcp-universal-docker-control:latest` публикуется отдельно для внутреннего Docker sidecar
+- `ghcr.io/alekseiseleznev/onec-mcp-universal-docker-control:latest` публикуется отдельно для внутреннего вспомогательного Docker-сервиса
