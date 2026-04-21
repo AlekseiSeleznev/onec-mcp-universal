@@ -1,0 +1,2 @@
+#!/bin/sh
+echo "BSL Language Server stopped with exit code $1"

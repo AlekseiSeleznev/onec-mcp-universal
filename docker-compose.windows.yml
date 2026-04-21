@@ -1,0 +1,31 @@
+# Windows / macOS override: replaces gateway's host network with bridge + port mapping.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.windows.yml up -d
+# Or: setup.sh auto-creates docker-compose.override.yml from this file
+#
+# onec-toolkit and platform-context already use the onec-net bridge network,
+# so they don't need overrides — only the gateway switches from host to bridge.
+
+services:
+  gateway:
+    # Override: connect to onec-net bridge instead of host network
+    # network_mode is dropped (cannot coexist with networks)
+    network_mode: !reset null
+    networks: [onec-net]
+    ports:
+      - "${GW_PORT:-8080}:8080"
+    environment:
+      # On bridge network, talk to backends by service name
+      ONEC_TOOLKIT_URL: http://onec-toolkit:6003/mcp
+      PLATFORM_CONTEXT_URL: http://platform-context:8080/sse
+      EXPORT_HOST_URL: ${EXPORT_HOST_URL:-http://host.docker.internal:8082}
+      DOCKER_CONTROL_URL: ${DOCKER_CONTROL_URL:-http://docker-control:8091}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      docker-control:
+        condition: service_healthy
+      onec-toolkit:
+        condition: service_healthy
+
+  docker-control:
+    ports: !reset []

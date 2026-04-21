@@ -1,0 +1,179 @@
+name: onec-mcp-universal
+
+services:
+
+  # ─── Gateway ──────────────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ./gateway
+    container_name: onec-mcp-gw
+    # host network: gateway sees localhost → export-host-service, toolkit, platform-context
+    network_mode: host
+    environment:
+      PORT: ${GW_PORT:-8080}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ONEC_TOOLKIT_URL: http://localhost:6003/mcp
+      PLATFORM_CONTEXT_URL: http://localhost:8081/sse
+      ENABLED_BACKENDS: ${ENABLED_BACKENDS:-onec-toolkit,bsl-lsp-bridge}
+      # Path to 1C platform (ibcmd binary) inside the container
+      PLATFORM_PATH: ${PLATFORM_PATH:-/opt/1cv8/x86_64/8.3.27.2074}
+      METADATA_CACHE_TTL: ${METADATA_CACHE_TTL:-600}
+      BSL_EXPORT_TIMEOUT: ${BSL_EXPORT_TIMEOUT:-3600}
+      BSL_WORKSPACE_HOST: ${BSL_WORKSPACE:-./bsl-projects}
+      # Host-side path that maps to /workspace inside container (used by host service
+      # to translate output paths before calling 1cv8 on the host).
+      BSL_HOST_WORKSPACE: ${BSL_WORKSPACE:-}
+      # URL of the host-side export service (tools/export-host-service.py).
+      # When set, BSL export uses it instead of running 1cv8 inside the container —
+      # this avoids copying 1C software licenses and the fingerprint-mismatch
+      # problem that can invalidate developer/community licenses.
+      EXPORT_HOST_URL: ${EXPORT_HOST_URL:-}
+      DOCKER_CONTROL_URL: ${DOCKER_CONTROL_URL:-http://localhost:8091}
+      DOCKER_CONTROL_TOKEN: ${DOCKER_CONTROL_TOKEN:-}
+      ANONYMIZER_SALT: ${ANONYMIZER_SALT:-}
+      NAPARNIK_API_KEY: ${NAPARNIK_API_KEY:-}
+      # Host-side prefix of whatever is mounted at /hostfs. Empty on Linux (mount is /),
+      # set to %USERPROFILE% on Windows so the folder browser can translate paths.
+      HOST_ROOT_PREFIX: ${HOST_ROOT_PREFIX:-}
+      TOOLKIT_ALLOW_DANGEROUS_WITH_APPROVAL: ${TOOLKIT_ALLOW_DANGEROUS_WITH_APPROVAL:-true}
+      GATEWAY_RATE_LIMIT_ENABLED: ${GATEWAY_RATE_LIMIT_ENABLED:-true}
+      GATEWAY_RATE_LIMIT_READ_RPM: ${GATEWAY_RATE_LIMIT_READ_RPM:-120}
+      GATEWAY_RATE_LIMIT_MUTATING_RPM: ${GATEWAY_RATE_LIMIT_MUTATING_RPM:-30}
+    volumes:
+      - gw-data:/data
+      - ./.env:/data/.env:ro
+      # 1C platform — defaults to ./data/empty-platform if 1C is not installed
+      - ${HOST_PLATFORM_PATH:-./data/empty-platform}:/opt/1cv8:ro
+      # 1C licenses — optional, defaults to empty placeholder
+      - ${ONEC_LICENSES_PATH:-./data/empty-licenses}:/var/1C:ro
+      # BSL workspace where source files are exported
+      - ${BSL_WORKSPACE:-./bsl-projects}:/workspace:rw
+      # Host /home for dashboard folder browser — Linux only, override empty on Win/macOS
+      - ${HOSTFS_HOME:-./data/empty-home}:/hostfs-home:rw
+      # Host root for dashboard folder browser — Linux only
+      - ${HOST_ROOT:-./data/empty-root}:/hostfs:ro
+    depends_on:
+      docker-control:
+        condition: service_healthy
+      onec-toolkit:
+        condition: service_healthy
+    restart: always
+
+  docker-control:
+    build:
+      context: ./docker-control
+    container_name: onec-mcp-docker-control
+    ports:
+      - "127.0.0.1:8091:8091"
+    environment:
+      PORT: 8091
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DOCKER_CONTROL_TOKEN: ${DOCKER_CONTROL_TOKEN:-}
+      ANONYMIZER_SALT: ${ANONYMIZER_SALT:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - ./.env:/data/.env:rw
+    restart: always
+    networks: [onec-net]
+
+  # ─── 1C Data Backend ──────────────────────────────────────────────────────────
+  onec-toolkit:
+    image: roctup/1c-mcp-toolkit-proxy:latest
+    container_name: onec-mcp-toolkit
+    ports:
+      - "6003:6003"   # exposed so 1C app server can POST results to /1c/poll
+    environment:
+      PORT: 6003
+      TIMEOUT: ${ONEC_TIMEOUT:-180}
+      RESPONSE_FORMAT: json
+      ALLOW_DANGEROUS_WITH_APPROVAL: ${TOOLKIT_ALLOW_DANGEROUS_WITH_APPROVAL:-true}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6003/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: always
+    networks: [onec-net]
+
+  # ─── 1C Platform Docs Backend (OPTIONAL — requires 1C platform installed) ────
+  # Activate with: docker compose --profile platform-context up -d
+  # Or: setup.sh enables this profile automatically when 1C is detected
+  platform-context:
+    image: ghcr.io/alkoleft/mcp-bsl-platform-context:latest
+    container_name: onec-mcp-platform
+    profiles: [platform-context]
+    ports:
+      - "8081:8080"
+    command:
+      - "java"
+      - "-jar"
+      - "/app/mcp-bsl-context.jar"
+      - "--mode"
+      - "sse"
+      - "--platform-path"
+      - "${PLATFORM_PATH:-/opt/1cv8/x86_64/8.3.27.2074}"
+      - "--port"
+      - "8080"
+    volumes:
+      - ${HOST_PLATFORM_PATH:-./data/empty-platform}:/opt/1cv8:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/localhost/8080'"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: always
+    networks: [onec-net]
+
+  # ─── Test Runner (optional, activate with: docker compose --profile test-runner up -d)
+  test-runner:
+    image: ghcr.io/alkoleft/mcp-onec-test-runner:0.5.2-sse
+    container_name: onec-mcp-test-runner
+    profiles: [test-runner]
+    ports:
+      - "8000:8000"
+    environment:
+      SPRING_CONFIG_IMPORT: file:/config/application.yml
+      JAVA_OPTS: "-Xmx1g"
+    volumes:
+      - ${HOST_PLATFORM_PATH:-./data/empty-platform}:/opt/1cv8:ro
+      - ./test-runner/application.yml:/config/application.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/localhost/8000'"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks: [onec-net]
+
+  # ─── BSL Graph (optional, activate with: docker compose --profile bsl-graph up -d)
+  # Lightweight local backend that scans the exported BSL workspace and serves
+  # graph_stats / graph_search / graph_related over REST for the gateway.
+  bsl-graph:
+    build:
+      context: ./bsl-graph-lite
+    container_name: onec-bsl-graph
+    profiles: [bsl-graph]
+    ports:
+      - "8888:8888"
+    environment:
+      PORT: 8888
+      GRAPH_WORKSPACE: /workspace
+      GRAPH_HOSTFS_HOME: /hostfs-home
+      GRAPH_STATE_FILE: /data/graph.json
+      GRAPH_REGISTRY_STATE_FILE: /data/db_state.json
+      GRAPH_RESCAN_SECONDS: ${BSL_GRAPH_RESCAN_SECONDS:-300}
+    volumes:
+      - ${BSL_WORKSPACE:-./bsl-projects}:/workspace:ro
+      - ${HOSTFS_HOME:-./data/empty-home}:/hostfs-home:ro
+      - gw-data:/data
+    restart: unless-stopped
+    networks: [onec-net]
+
+networks:
+  onec-net:
+    driver: bridge
+volumes:
+  gw-data:

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>BSL Graph</title>
+<link rel="stylesheet" href="/static/style.css?v=1.9.27">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+</head>
+<body>
+<header>
+  <h1>BSL Graph</h1>
+  <input id="q" type="search" autofocus>
+  <button id="btn-back" class="nav-btn" title="" disabled>◀</button>
+  <button id="btn-fwd" class="nav-btn" title="" disabled>▶</button>
+  <button id="btn-list"></button>
+  <button id="btn-clear"></button>
+  <div class="sp"></div>
+  <span class="stats" id="stats">—</span>
+  <button id="btn-rebuild"></button>
+  <select id="lang-select" title="Language / Язык">
+    <option value="ru">RU</option>
+    <option value="en">EN</option>
+  </select>
+</header>
+<main>
+  <aside class="panel">
+    <h2 id="h-dbs"></h2>
+    <div id="dbs" class="dbs"><div class="empty" id="dbs-loading"></div></div>
+    <h2 id="h-types" style="margin-top:14px"></h2>
+    <div class="types">
+      <ul id="types"><li class="empty" id="types-loading"></li></ul>
+    </div>
+  </aside>
+  <div id="cy"></div>
+  <aside class="panel right">
+    <h2 id="h-node"></h2>
+    <div id="details" class="details"><div class="empty" id="details-empty"></div></div>
+    <h2 id="h-legend" style="margin-top:14px"></h2>
+    <div id="legend" class="legend"></div>
+  </aside>
+  <div id="results-panel" class="results-panel" hidden>
+    <div class="rp-head">
+      <span id="rp-title"></span>
+      <button id="rp-close">✕</button>
+    </div>
+    <div id="rp-body" class="rp-body"></div>
+  </div>
+</main>
+<script src="/static/cytoscape.min.js"></script>
+<script src="/static/app.js?v=1.9.27"></script>
+</body>
+</html>

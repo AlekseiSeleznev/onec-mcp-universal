@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "onec-universal": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp"
+    },
+    "onec-bsl-graph": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp",
+      "comment": "Optional: enable bsl-graph profile in onec-mcp-universal before using graph_* tools"
+    },
+    "onec-test-runner": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp",
+      "comment": "Optional: enable test-runner profile in onec-mcp-universal"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.20">
+	<Template uuid="6a9f5935-761d-4951-a828-f1cabf3d4a95">
+		<Properties>
+			<Name>QueryLineageAnalyzer</Name>
+			<Synonym>
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Query Lineage Analyzer (Native)</v8:content>
+				</v8:item>
+			</Synonym>
+			<Comment>Native API компонента анализа происхождения колонок execute_query</Comment>
+			<TemplateType>BinaryData</TemplateType>
+		</Properties>
+	</Template>
+</MetaDataObject>

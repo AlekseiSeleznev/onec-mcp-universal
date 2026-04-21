@@ -1,0 +1,26 @@
+.env
+*.pyc
+__pycache__/
+.venv/
+*.egg-info/
+dist/
+.DS_Store
+mcp-server.log*
+all-in-one/libs/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+test-runner/application.yml
+.v8-project.json
+docker-compose.override.yml
+
+# EPF binary artifacts should not be committed, except the canonical build output
+*.epf
+!1c/MCPToolkit/build/MCPToolkit.epf
+.mcp.json
