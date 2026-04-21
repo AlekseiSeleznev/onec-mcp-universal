@@ -1,33 +1,91 @@
-# Project Bootstrap (Workflow Layer P1)
+# Инициализация проекта
 
-`/1c-project-init` is a local bootstrap helper for projects using `onec-mcp-universal`.
+Дата: 2026-04-21  
+Статус: актуально для `v1.0.0`
 
-## What it does
+`/1c-project-init` — это локальный помощник инициализации для проектов, которые хотят работать через `onec-mcp-universal` по каноническому workflow.
 
-1. Detects target project path (argument or current directory)
-2. Checks base project structure
-3. Copies `templates/mcp.json` to `<project>/.mcp.json` if missing
-4. Creates `session-notes.md` template if missing
-5. Reports created/skipped/manual steps
+## 1. Зачем нужна инициализация
 
-## What it does not do
+Новый проект редко готов к работе AI “из коробки”.
 
-- No direct infra provisioning
-- No automatic server deployment
-- No `1cv8`/DESIGNER execution
-- No secret persistence
+Обычно не хватает:
 
-## Template details
+- project-level MCP-конфига;
+- заготовки для сохранения и восстановления состояния;
+- минимальной локальной заготовки под workflow-слой;
+- понятной стартовой структуры для команды.
 
-`templates/mcp.json` includes:
+`1c-project-init` закрывает именно эту задачу.
 
-- `onec-universal` (default)
-- `onec-bsl-graph` (optional)
-- `onec-test-runner` (optional)
+## 2. Что делает `/1c-project-init`
 
-All point to local gateway URL `http://localhost:8080/mcp`. Optional entries require enabling corresponding profiles in the gateway stack.
+Типовой сценарий инициализации:
 
-## Safety contract
+1. определяет target path из аргумента или текущей директории;
+2. проверяет базовую структуру проекта;
+3. копирует `templates/mcp.json` в `<project>/.mcp.json`, если файла ещё нет;
+4. при необходимости создаёт заготовку `session-notes.md`;
+5. даёт отчёт: что создано, что пропущено, что требует ручного шага.
 
-- Existing `.mcp.json` is not overwritten.
-- Skill should propose merge recommendations when project config already exists.
+## 3. Чего инициализация не делает
+
+Инициализация сознательно ограничена.
+
+Он:
+
+- не разворачивает инфраструктуру;
+- не деплоит проект на сервер;
+- не запускает `1cv8` / DESIGNER;
+- не сохраняет секреты;
+- не подменяет `setup.sh`.
+
+Его задача — подготовить локальный project layer, а не стать deployment engine.
+
+## 4. Канонический шаблон MCP-конфига
+
+Шаблон:
+
+- `templates/mcp.json`
+
+Что в него обычно входит:
+
+- `onec-universal` как основной MCP endpoint;
+- опциональные подключения вроде графа или test-runner, если они реально используются в проекте.
+
+Цель шаблона:
+
+- дать проекту предсказуемую стартовую конфигурацию;
+- не заставлять каждый раз собирать `.mcp.json` вручную;
+- унифицировать стартовую настройку между проектами.
+
+## 5. Контракт безопасности
+
+Инициализация не должна быть агрессивной.
+
+Обязательные правила:
+
+- существующий `.mcp.json` не перезаписывается молча;
+- если конфиг уже есть, skill должен предложить безопасный merge path или ручной шаг;
+- уже существующие project-файлы не должны портиться при повторном запуске.
+
+Именно поэтому этот шаг должен быть идемпотентным и консервативным.
+
+## 6. Когда его использовать
+
+`/1c-project-init` полезен, когда:
+
+- создаётся новый проект под onec-flow;
+- проект переводится на `onec-mcp-universal`;
+- нужно быстро выровнять локальную структуру проекта под workflow-слой;
+- в проекте нет артефактов состояния сессии и MCP-шаблона.
+
+## 7. Практический результат
+
+После корректной инициализации у проекта должны появиться:
+
+- проектный MCP-конфиг или его безопасная заготовка;
+- стартовый артефакт состояния сессии;
+- минимальная готовность к работе AI через канонический протокол onec.
+
+То есть инициализация нужна не ради “магии”, а чтобы сократить путь от пустого каталога до рабочего каркаса проекта.

@@ -1,252 +1,361 @@
-# onec-mcp-universal Workflow Layer Design
+# Дизайн workflow-слоя в `onec-mcp-universal`
 
-Date: 2026-04-13  
-Status: implemented incrementally across the `v1.3.x`-`v1.7.x` line
+Дата: 2026-04-21  
+Статус: актуально для `v1.0.0`
 
-## 1. Goal
+## 1. Назначение
 
-Add a workflow/UX layer on top of the existing technical base of `onec-mcp-universal` without creating a parallel stack.
+`onec-mcp-universal` даёт единый MCP-шлюз для работы с 1С:Предприятием, BSL, документацией платформы, графом зависимостей и сопутствующими сервисами.
 
-Principle:
-- Keep current MCP toolchain as source of truth.
-- Add orchestration skills, onboarding bootstrap, and session ergonomics.
-- Avoid duplicating existing technical capabilities (BSL graph/search/query validation/ITS/anonymization/etc).
+Но одних низкоуровневых инструментов недостаточно для удобной повседневной работы. Пользователю и AI-ассистенту обычно нужны ещё:
 
-## 2. Current State vs External Dev Kit
+- понятные точки входа вместо выбора одного из десятков узких skills;
+- инициализация нового проекта под канонический сценарий onec;
+- сохранение и восстановление состояния длинной сессии;
+- защита от разрастания контекста;
+- повторяемый жизненный цикл для больших задач и фич.
 
-### Already strong in `onec-mcp-universal`
-- Core MCP tool coverage for 1C runtime operations.
-- Multi-DB session routing, dashboard, optional backends (`bsl-graph`, `test-runner`).
-- BSL write/reindex/search, query validation, rights analysis, ITS search, anonymization.
-- 96 production skills in `skills/` (current set, including P1 + P2 additions and compatibility aliases).
+Workflow-слой добавляет именно этот UX-слой и процессный слой, не создавая отдельный параллельный стек.
 
-### Missing (or weak) workflow layer
-- Consolidated entrypoints (`expert` aliases) for lower cognitive load.
-- Project bootstrap skill + ready template config.
-- Session continuity skills and context-usage guard.
-- Feature-level orchestration skill (`1c-feature-dev`) adapted to this repo.
+## 2. Основной принцип
 
-Important finding:
-- In the inspected external repo, `1c-feature-dev` is referenced in docs but no standalone `SKILL.md` implementation was found in `skills/`.
-- Therefore, design below treats it as a new native implementation for `onec`, not a direct port.
+Workflow-слой в этом проекте строится по одному жёсткому правилу:
 
-## 3. Scope
+- источником истины остаётся существующий MCP-шлюз и набор технических skills;
+- workflow-скиллы оркестрируют действия, а не дублируют низкоуровневые возможности;
+- сначала используется уже существующий инструмент или skill, и только потом при необходимости добавляется новый код.
 
-### P1 (must)
-1. Expert-skill aliases:
+Это нужно, чтобы проект не расползался на две независимые системы:
+
+- runtime и MCP-контракты с одной стороны;
+- “магический workflow” с другой.
+
+## 3. Что входит в workflow-слой
+
+В текущем состоянии проекта сюда относятся:
+
+- экспертные skill-алиасы;
+- инициализация проекта;
+- управление состоянием сессии;
+- Context Guard;
+- skills для оркестрации процессов;
+- workflow уровня фичи;
+- вспомогательные workflow-входы для типовых задач 1С.
+
+Это не отдельный сервис и не отдельный протокол. Это слой правил, skills, шаблонов и документов поверх уже существующего runtime MCP.
+
+## 4. Архитектурные принципы
+
+### 4.1 Не дублировать технические возможности
+
+Workflow-слой не должен заново реализовывать:
+
+- запросы к 1С;
+- выполнение кода;
+- валидацию запросов;
+- поиск по BSL;
+- граф зависимостей;
+- документацию платформы;
+- ITS / 1С:Напарник;
+- запись BSL;
+- пути для метаданных, прав, ссылок и CRUD.
+
+Если техническая возможность уже существует в MCP или в низкоуровневом skill, workflow-скилл должен:
+
+- выбрать её;
+- снять неоднозначность;
+- проложить правильную последовательность шагов;
+- задать критерии завершения и проверки результата.
+
+### 4.2 Workflow-слой не заменяет MCP
+
+MCP-инструменты остаются каноническим runtime API.
+
+Workflow-слой отвечает за:
+
+- распознавание намерения;
+- декомпозицию;
+- оркестрацию;
+- управление состоянием сессии;
+- эргономику работы.
+
+Он не должен уводить проект в отдельную экосистему, где логика уже не совпадает с реальными MCP-контрактами.
+
+### 4.3 Слой должен быть нейтральным к AI-клиенту
+
+Workflow-слой описывается как общий слой для AI-ассистентов, а не только для одного клиента.
+
+Поэтому:
+
+- общий протокол закреплён в `AGENTS.md`;
+- детали, специфичные для Codex, живут отдельно в `CODEX.md`;
+- MCP `instructions` в `gateway/gateway/mcp_server.py` должны быть согласованы с этими документами;
+- workflow-документация не должна зависеть от бренда конкретного клиента.
+
+## 5. Основные блоки workflow-слоя
+
+### 5.1 Экспертные алиасы
+
+Назначение: уменьшить когнитивную нагрузку на входе.
+
+Типовые алиасы:
+
 - `epf-expert`
 - `erf-expert`
 - `mxl-expert`
 - `inspect`
 - `validate`
 
-2. Project bootstrap:
+Их роль:
+
+- принять естественное намерение пользователя;
+- выбрать нужный низкоуровневый skill;
+- направить по корректной ветке;
+- не дублировать реализацию нижнего уровня.
+
+Пример для `epf-expert`:
+
+- `init` -> `epf-init`
+- `build` -> `epf-build`
+- `dump` -> `epf-dump`
+- работа с формой -> `epf-add-form`
+- BSP-регистрация -> `epf-bsp-init`, `epf-bsp-add-command`
+- проверка -> `epf-validate`
+
+Тот же принцип применяется к остальным экспертным точкам входа.
+
+### 5.2 Инициализация проекта
+
+Назначение: быстро привести локальный проект к состоянию, в котором AI может работать по каноническому сценарию onec.
+
+Основные элементы:
+
 - `1c-project-init`
-- `templates/mcp.json` (our stack preset)
+- `templates/mcp.json`
+- вспомогательные документы для инициализации
 
-3. Context guard:
-- `tools/context-monitor.ps1`
-- `tools/context-monitor.sh`
-- docs with hook examples for Codex-compatible clients
+Что делает инициализация:
 
-4. Session continuity:
+- инициализирует вспомогательные артефакты проекта, если их ещё нет;
+- добавляет MCP-конфиг проекта под `onec-universal`;
+- создаёт минимальную заготовку для workflow-слоя;
+- не перезаписывает существующие файлы без необходимости.
+
+Чего инициализация не делает:
+
+- не разворачивает инфраструктуру на сервере;
+- не подменяет `setup.sh`;
+- не превращается в deployment engine.
+
+### 5.3 Управление состоянием сессии
+
+Назначение: сделать длинные и прерываемые сессии управляемыми.
+
+Канонические skills:
+
 - `session-save`
 - `session-restore`
 - `session-retro`
 
-### P2 (implemented)
-1. `1c-query-opt` (workflow-oriented optimization skill, not replacing technical query tooling)
-2. `1c-feature-dev` (native orchestrator for feature lifecycle in onec stack)
-3. `brainstorm`
-4. `write-plan`
-5. `openspec-proposal`
-6. `openspec-apply`
-7. `openspec-archive`
-8. `1c-help-mcp`
-9. `bsp-patterns`
-10. `img-grid`
-11. `role-expert`
-12. `subsystem-expert`
-13. `subagent-dev`
-14. `1c-test-runner`
-15. `1c-web-session`
-16. `playwright-test`
+Канонический артефакт:
 
-## 4. Design Decisions
+- `session-notes.md` в корне проекта
 
-### 4.1 Expert aliases are orchestration-only
+Контракты:
 
-Each alias skill:
-- asks intent in one short step,
-- routes user to existing granular skills,
-- does not duplicate implementation logic.
+- `session-save` создаёт или перезаписывает детерминированную структуру состояния;
+- `session-restore` читает её и продолжает работу с `Next Action`;
+- `session-retro` добавляет короткий итог и зафиксированные выводы по этапу.
 
-Example `epf-expert` operations map:
-- `init` -> `epf-init`
-- `build` -> `epf-build`
-- `dump` -> `epf-dump`
-- `form` changes -> `epf-add-form`
-- BSP registration/commands -> `epf-bsp-init`, `epf-bsp-add-command`
-- validation -> `epf-validate`
+Этот слой нужен, чтобы:
 
-Same approach for `erf-expert`, `mxl-expert`, `inspect`, `validate`.
+- не терять прогресс на длинных задачах;
+- проще переживать смену окна, клиента или сессии;
+- иметь воспроизводимый handoff между сессиями.
 
-### 4.2 `1c-project-init` is bootstrap, not deployment engine
+### 5.4 Context Guard
 
-Responsibilities:
-- scaffold local assistant helper artifacts (if absent),
-- generate local `mcp.json` preset for onec stack,
-- generate project quick-reference file with canonical commands,
-- optionally run sanity checks (available MCP endpoints, expected folders).
+Назначение: предупредить деградацию качества работы при разрастании контекста.
 
-Non-goals:
-- no direct server-side provisioning,
-- no mandatory remote infra automation,
-- no requirement for client-specific flows.
+Реализация:
 
-### 4.3 Context guard is advisory and local-only
-
-Design:
-- hook reads tool output size and estimates token pressure,
-- emits warnings at `70%` and `85%`,
-- never blocks execution and never mutates project files by itself.
-
-Cross-platform:
-- PowerShell script + POSIX shell script with same thresholds and message format.
-
-### 4.4 Session skills write a simple portable artifact
-
-Canonical artifact:
-- `session-notes.md` in project root.
-
-Contracts:
-- `session-save`: overwrite/create deterministic structure.
-- `session-restore`: load and continue from `Next Action` when concrete.
-- `session-retro`: append short retrospective section.
-
-### 4.5 `1c-feature-dev` is rebuilt natively for onec
-
-Because an external concrete implementation is unavailable, we define a native one:
-
-Phases:
-1. Problem framing
-2. Scope and constraints
-3. Capability mapping to existing onec tools/skills
-4. Data model and metadata impacts
-5. Integration and migration impacts
-6. Validation and rollback strategy
-7. Atomic task plan
-8. Execution guidance (skill/tool sequence)
-9. Completion checklist
-
-Rules:
-- tool/skill-first (reuse existing onec stack),
-- no speculative infra steps,
-- no hidden side effects,
-- explicit acceptance criteria per phase.
-
-## 5. File-Level Blueprint
-
-Additions under repo root:
-
-- `skills/epf-expert/SKILL.md`
-- `skills/erf-expert/SKILL.md`
-- `skills/mxl-expert/SKILL.md`
-- `skills/inspect/SKILL.md` (or extend existing if already present in another namespace)
-- `skills/validate/SKILL.md`
-- `skills/1c-project-init/SKILL.md`
-- `skills/session-save/SKILL.md`
-- `skills/session-restore/SKILL.md`
-- `skills/session-retro/SKILL.md`
-- `skills/brainstorm/SKILL.md`
-- `skills/write-plan/SKILL.md`
-- `skills/openspec-proposal/SKILL.md`
-- `skills/openspec-apply/SKILL.md`
-- `skills/openspec-archive/SKILL.md`
-- `skills/1c-query-opt/SKILL.md` (P2)
-- `skills/1c-feature-dev/SKILL.md` (P2)
-- `skills/1c-help-mcp/SKILL.md`
-- `skills/bsp-patterns/SKILL.md`
-- `skills/img-grid/SKILL.md`
-- `skills/role-expert/SKILL.md`
-- `skills/subsystem-expert/SKILL.md`
-- `skills/subagent-dev/SKILL.md`
-- `skills/1c-test-runner/SKILL.md`
-- `skills/1c-web-session/SKILL.md`
-- `skills/playwright-test/SKILL.md`
-
-Additions for bootstrap/ops:
-- `templates/mcp.json`
-- `tools/context-monitor.ps1`
 - `tools/context-monitor.sh`
+- `tools/context-monitor.ps1`
 
-Documentation:
-- `docs/workflow-layer-design.md` (this file)
-- `docs/session-management.md` (P1 delivery doc)
-- `docs/project-bootstrap.md` (P1 delivery doc)
+Пороги:
 
-README updates (P1 implementation phase):
-- Add section `Workflow Layer` with new skills and usage.
-- Add section `Context Guard` with hook setup snippets.
+- предупреждение около `70%`
+- критическое предупреждение около `85%`
 
-## 6. Skill Contracts (P1)
+Принцип работы:
 
-### `epf-expert` / `erf-expert` / `mxl-expert`
-- Input: user intent in natural language.
-- Output: selected operation + delegated skill call sequence.
-- Validation: operation-specific existing validator skill must be called before completion.
+- guard работает только как подсказка;
+- он не блокирует действия;
+- он не меняет файлы проекта сам по себе;
+- он подсказывает, когда пора сохранить состояние, свернуть контекст или перейти к более локальному плану.
 
-### `inspect`
-- Input: object type + path/name.
-- Output: normalized call to relevant existing `*-info` style capability.
-- Validation: if object unresolved, return explicit ambiguity options.
+То есть Context Guard — это не механизм жёсткого ограничения, а предохранитель от разрастания контекста.
 
-### `validate`
-- Input: object category + target.
-- Output: normalized call to specific validation skill(s).
-- Validation: returns pass/fail with concise reason and next action.
+### 5.5 Оркестрация процессов
 
-### `1c-project-init`
-- Input: optional target path.
-- Output:
-  - initialized helper files,
-  - generated `templates/mcp.json` copy for project,
-  - bootstrap report (what created/skipped).
-- Validation:
-  - expected files exist,
-  - paths are normalized,
-  - no overwrite without explicit flag/confirmation instruction in skill flow.
+Назначение: дать AI и пользователю формализованный путь для неоднозначных и крупных задач.
 
-### `session-save` / `session-restore` / `session-retro`
-- Input: current conversation context.
-- Output: deterministic `session-notes.md` sections.
-- Validation: required headings present, non-empty `Next Action`.
+Ключевые skills:
 
-## 7. Risks and Mitigations
+- `brainstorm`
+- `write-plan`
+- `openspec-proposal`
+- `openspec-apply`
+- `openspec-archive`
 
-1. Risk: alias skills become shallow wrappers with no value.  
-Mitigation: enforce intent normalization + operation disambiguation + validator call.
+Роли:
 
-2. Risk: `1c-project-init` drifts into fragile infra automation.  
-Mitigation: keep bootstrap local/scaffold-only in P1.
+- `brainstorm` — формирует дизайн и рабочую рамку задачи;
+- `write-plan` — превращает дизайн в последовательность задач;
+- `openspec-proposal` — оформляет изменение как формализованное предложение;
+- `openspec-apply` — проводит исполнение по оформленному изменению;
+- `openspec-archive` — завершает жизненный цикл формального изменения.
 
-3. Risk: context monitor spam/noise.  
-Mitigation: two thresholds only, brief messages, no hard stop.
+Этот блок особенно важен для задач на 2+ объекта 1С, архитектурных решений и изменений с миграционным или интеграционным хвостом.
 
-4. Risk: `1c-feature-dev` becomes verbose prompt with weak execution value.  
-Mitigation: phase outputs are structured and mapped to concrete onec tools/skills.
+### 5.6 Workflow уровня фичи
 
-## 8. Acceptance Criteria
+Канонический оркестратор:
 
-P1 accepted when:
-1. New alias/session/bootstrap skills exist and are documented.
-2. `templates/mcp.json` reflects onec stack defaults.
-3. Context guard scripts exist for both PowerShell and POSIX shells.
-4. README documents new workflow features.
-5. Existing tests remain green; add focused tests/docs checks where feasible.
+- `1c-feature-dev`
 
-P2 accepted when:
-1. `1c-query-opt` and `1c-feature-dev` are implemented with onec-specific mappings.
-2. At least one end-to-end example demonstrates feature lifecycle using current onec stack (`docs/feature-lifecycle-example.md`).
-3. No duplication of existing low-level skills/tools.
-4. Process skill layer (`brainstorm`, `write-plan`, `openspec-*`) is documented and executable.
+Он нужен не вместо остальных skills, а для связывания их в единый жизненный цикл фичи.
+
+Типовой цикл:
+
+1. постановка проблемы;
+2. границы задачи и ограничения;
+3. сопоставление с существующими MCP-инструментами и skills;
+4. влияние на данные и метаданные;
+5. влияние на интеграции и миграции;
+6. стратегия проверки и отката;
+7. атомарный план задач;
+8. путь исполнения;
+9. контрольный список завершения.
+
+Правила:
+
+- сначала использовать уже существующий onec-инструментарий;
+- критерии приёмки должны быть явными;
+- никаких скрытых побочных эффектов;
+- никаких спекулятивных инфраструктурных шагов.
+
+## 6. Какие skills входят в слой сейчас
+
+### Экспертные точки входа и маршрутизация
+
+- `epf-expert`
+- `erf-expert`
+- `inspect`
+- `validate`
+
+### Инициализация и продолжение сессии
+
+- `1c-project-init`
+- `session-save`
+- `session-restore`
+- `session-retro`
+
+### Оркестрация процессов
+
+- `brainstorm`
+- `write-plan`
+- `openspec-proposal`
+- `openspec-apply`
+- `openspec-archive`
+- `1c-feature-dev`
+- `1c-query-opt`
+
+### Смежные вспомогательные skills
+
+- `1c-help-mcp`
+- `bsp-patterns`
+- `role-expert`
+- `subsystem-expert`
+- `subagent-dev`
+- `1c-test-runner`
+- `1c-web-session`
+- `playwright-test`
+
+Не все эти skills одинаково “высокоуровневые”, но вместе они образуют повторяемый workflow-слой над runtime MCP.
+
+## 7. Что считать источником истины
+
+Чтобы не было рассинхрона между документами, источники истины распределены так:
+
+- `AGENTS.md` — общий AI-протокол и правила выбора `onec-mcp-universal`;
+- `CODEX.md` — памятка, специфичная для Codex;
+- `gateway/gateway/mcp_server.py::AGENT_INSTRUCTIONS` — runtime MCP instructions, которые реально возвращает сервер;
+- `README.md` — пользовательская эксплуатационная документация;
+- `docs/feature-lifecycle-example.md` — сквозной пример жизненного цикла;
+- этот документ — архитектурное описание того, как слой устроен и зачем он нужен.
+
+Если меняются:
+
+- триггер-фразы;
+- протокол сессии;
+- сценарий инициализации;
+- семантика оркестрации;
+- имена и роли workflow-skills,
+
+нужно синхронно проверять все перечисленные точки, а не только один файл.
+
+## 8. Границы ответственности
+
+Workflow-слой отвечает за:
+
+- маршрутизацию намерения;
+- снижение когнитивной нагрузки;
+- управление состоянием сессии;
+- декомпозицию;
+- процессную дисциплину;
+- эргономику проекта.
+
+Workflow-слой не отвечает за:
+
+- сами runtime-операции 1С;
+- жизненный цикл Docker runtime;
+- хранение данных графа;
+- transport/session semantics MCP-сервера;
+- техническую реализацию query/LSP/graph/ITS/backend routing.
+
+Это важно, чтобы не размывать границы между UX-слоем, процессным слоем и базовым runtime.
+
+## 9. Почему этот слой не вынесен в отдельный проект
+
+Его ценность максимальна только рядом с текущим onec runtime.
+
+Если вынести его отдельно, быстро появятся:
+
+- рассинхрон по названиям tools и skills;
+- расхождение конфигов инициализации;
+- дублирование `README.md`, `AGENTS.md`, `CODEX.md`;
+- ложное ощущение, что workflow живёт независимо от реальных MCP-контрактов.
+
+Поэтому workflow-слой должен оставаться встроенным в `onec-mcp-universal` и развиваться вместе с ним.
+
+## 10. Что проверять при изменениях workflow-слоя
+
+Если меняется любой workflow-skill или документ этого слоя, нужно проверить:
+
+1. что `README.md` не врёт по именам и ролям skills;
+2. что `AGENTS.md` и `mcp_server.py::AGENT_INSTRUCTIONS` не расходятся по правилам маршрутизации;
+3. что `CODEX.md` не содержит устаревших шагов установки и использования;
+4. что примеры в `docs/feature-lifecycle-example.md` всё ещё соответствуют текущему сценарию процесса;
+5. что `templates/mcp.json` и инициализация проекта не выпали из актуального сценария установки;
+6. что управление состоянием сессии и Context Guard не стали зависеть от одного конкретного клиента;
+7. что workflow-скиллы по-прежнему оркестрируют существующие возможности, а не дублируют их.
+
+## 11. Связанные документы
+
+- [`README.md`](../README.md)
+- [`AGENTS.md`](../AGENTS.md)
+- [`CODEX.md`](../CODEX.md)
+- [`feature-lifecycle-example.md`](./feature-lifecycle-example.md)
+- [`project-bootstrap.md`](./project-bootstrap.md)
+- [`session-management.md`](./session-management.md)

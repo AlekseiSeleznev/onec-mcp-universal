@@ -5,9 +5,9 @@
 ## Базовые инварианты
 
 - канонический MCP endpoint: `http://localhost:8080/mcp`
-- основной bootstrap entrypoint: `./setup.sh`
+- основной сценарий установки: `./setup.sh`
 - README — основная пользовательская документация
-- `CODEX.md` — подробный runbook для Codex
+- `CODEX.md` — подробная памятка для Codex
 - gateway управляет контейнерами только через `docker-control`
 
 ## Инварианты workspace и экспорта
@@ -23,7 +23,7 @@
 - `remove` очищает runtime/state/graph базы, но не удаляет физические BSL-файлы
 - удаление базы не должно возвращать успех до завершения runtime cleanup
 
-## Packaging policy
+## Политика публикации
 
 - `ghcr.io/alekseiseleznev/onec-mcp-universal:latest` отслеживает `main`
 - release tags публикуют semver image tags
@@ -33,7 +33,7 @@
 - проект нейтрален к конкретному AI-клиенту
 - любой MCP-клиент может подключаться вручную к тому же endpoint
 
-## Agent protocol (правила работы для AI-клиента)
+## Протокол работы AI-ассистента
 
 Этот раздел — канонический протокол работы AI-ассистента с проектом вне встроенного MCP `instructions`.
 

@@ -16,15 +16,15 @@
 
 - [Возможности](#возможности)
   - [Локальный запуск тестов](#локальный-запуск-тестов)
-- [Дизайн Workflow Layer](#дизайн-workflow-layer)
-- [Context Guard и Session Continuity](#context-guard-и-session-continuity)
+- [Дизайн workflow-слоя](#дизайн-workflow-слоя)
+- [Context Guard и продолжение сессии](#context-guard-и-продолжение-сессии)
   - [Что добавлено](#что-добавлено)
   - [Как подключить context-monitor (Linux/macOS)](#как-подключить-context-monitor-linuxmacos)
   - [Как подключить context-monitor (Windows PowerShell)](#как-подключить-context-monitor-windows-powershell)
-  - [Шаблон project bootstrap](#шаблон-project-bootstrap)
+  - [Шаблон инициализации проекта](#шаблон-инициализации-проекта)
 - [Архитектура](#архитектура)
 - [Требования](#требования)
-- [Quick Start](#quick-start)
+- [Быстрый старт](#быстрый-старт)
   - [Linux](#linux)
   - [Windows](#windows)
   - [Что делает `setup.sh`](#что-делает-setupsh)
@@ -160,7 +160,7 @@
 - **Защита mutating HTTP API токеном** -- `GATEWAY_API_TOKEN` для `/api/action/*`, `/api/register`, `/api/unregister`, `/api/export-*`
 - **Потокобезопасный реестр БД** -- threading.Lock для защиты состояния регистрации
 - **Кросс-платформенный Docker** -- host network на Linux, bridge на Windows/macOS
-- **README / CODEX.md** -- нейтральная документация по эксплуатации + отдельный runbook для Codex
+- **README / CODEX.md** -- нейтральная документация по эксплуатации + отдельная памятка для Codex
 - **docker-control sidecar** -- gateway больше не получает `docker.sock`, все lifecycle-операции идут через внутренний HTTP-контур
 - **Защищённый `docker-control`** -- sidecar принимает `/api/*` только с `Authorization: Bearer ...`, общий секрет хранится в `DOCKER_CONTROL_TOKEN`
 - **Loopback/internal-only `docker-control`** -- на Linux sidecar опубликован только на `127.0.0.1:8091`, а на Windows/macOS host port `8091` не публикуется вовсе
@@ -186,25 +186,25 @@ cd gateway
 
 ---
 
-## Дизайн Workflow Layer
+## Дизайн workflow-слоя
 
-План интеграции UX/workflow-слоя поверх текущей технической базы описан в документе:
+План интеграции UX-слоя и workflow-слоя поверх текущей технической базы описан в документе:
 
 - [`docs/workflow-layer-design.md`](docs/workflow-layer-design.md)
 
 Документ покрывает:
-- Expert-skill aliases (`epf-expert`, `erf-expert`, `mxl-expert`, `inspect`, `validate`)
-- Project bootstrap (`1c-project-init`, `templates/mcp.json`)
-- Context guard (`PostToolUse` hook + мониторинг 70%/85%)
-- Session continuity (`session-save/restore/retro`)
+- экспертные skill-алиасы (`epf-expert`, `erf-expert`, `mxl-expert`, `inspect`, `validate`)
+- инициализация проекта (`1c-project-init`, `templates/mcp.json`)
+- Context Guard (`PostToolUse` hook + мониторинг 70%/85%)
+- продолжение сессии (`session-save/restore/retro`)
 - Native-дизайн `1c-feature-dev` под стек `onec-mcp-universal`
-- Process orchestration layer: `brainstorm`, `write-plan`, `openspec-proposal`, `openspec-apply`, `openspec-archive`
+- слой оркестрации процессов: `brainstorm`, `write-plan`, `openspec-proposal`, `openspec-apply`, `openspec-archive`
 - Совместимость с распространёнными входными точками: `1c-help-mcp`, `bsp-patterns`, `img-grid`, `role-expert`, `subsystem-expert`, `subagent-dev`, `1c-test-runner`, `1c-web-session`, `playwright-test`
 - Пример сквозного жизненного цикла фичи: [`docs/feature-lifecycle-example.md`](docs/feature-lifecycle-example.md)
 
 ---
 
-## Context Guard и Session Continuity
+## Context Guard и продолжение сессии
 
 ### Что добавлено
 
@@ -238,7 +238,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\context-monitor.ps1
 - `-WarnPercent` (по умолчанию `70`)
 - `-CriticalPercent` (по умолчанию `85`)
 
-### Шаблон project bootstrap
+### Шаблон инициализации проекта
 
 - Используйте `/1c-project-init` для локальной инициализации проекта.
 - Шаблон MCP-конфига находится в `templates/mcp.json` и копируется в `.mcp.json` проекта без перезаписи существующего файла.
@@ -315,7 +315,7 @@ MCP clients / Codex
 
 ---
 
-## Quick Start
+## Быстрый старт
 
 ### Linux
 
@@ -1473,7 +1473,7 @@ powershell -ExecutionPolicy Bypass -File install-skills.ps1
 | Базы данных (ИБ) | `db-create`, `db-run`, `db-update`, `db-list`, `db-dump-cf`, `db-load-cf`, `db-dump-xml`, `db-load-xml`, `db-load-git` | Создание ИБ, запуск 1С, обновление, выгрузка/загрузка конфигурации |
 | Веб-публикации | `web-publish`, `web-info`, `web-test`, `web-unpublish`, `web-stop` | Публикация через Apache, тестирование в веб-клиенте |
 | Стандарты кода | `standards-code`, `errors`, `query-writing`, `form-work`, `use-bsp` | Правила BSL, транзакции, запросы, формы, паттерны БСП |
-| Workflow и UX | `epf-expert`, `erf-expert`, `mxl-expert`, `inspect`, `validate`, `1c-project-init`, `session-save`, `session-restore`, `session-retro`, `brainstorm`, `write-plan`, `openspec-proposal`, `openspec-apply`, `openspec-archive`, `1c-feature-dev`, `1c-query-opt`, `1c-help-mcp`, `bsp-patterns`, `role-expert`, `subsystem-expert`, `subagent-dev`, `1c-test-runner`, `1c-web-session`, `playwright-test` | Оркестрация сценариев, bootstrap проекта, сохранение/восстановление состояния сессии |
+| Workflow и UX | `epf-expert`, `erf-expert`, `mxl-expert`, `inspect`, `validate`, `1c-project-init`, `session-save`, `session-restore`, `session-retro`, `brainstorm`, `write-plan`, `openspec-proposal`, `openspec-apply`, `openspec-archive`, `1c-feature-dev`, `1c-query-opt`, `1c-help-mcp`, `bsp-patterns`, `role-expert`, `subsystem-expert`, `subagent-dev`, `1c-test-runner`, `1c-web-session`, `playwright-test` | Оркестрация сценариев, инициализация проекта, сохранение и восстановление состояния сессии |
 | Прочее | `help-add`, `img-grid` | Встроенная справка, работа с изображениями |
 
 ### Примеры использования скилов

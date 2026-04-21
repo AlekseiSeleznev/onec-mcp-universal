@@ -1,18 +1,23 @@
-# Session Management (Workflow Layer P1)
+# Управление сессией
 
-`session-*` skills add portable continuity for long 1C development sessions.
+Дата: 2026-04-21  
+Статус: актуально для `v1.0.0`
 
-## Commands
+`session-*` skills добавляют переносимый слой управления состоянием для длинных 1С-сессий, где задача редко укладывается в один короткий заход.
 
-- `/session-save` — writes/updates `session-notes.md` with deterministic sections
-- `/session-restore` — restores context from `session-notes.md` and continues from `Next Action`
-- `/session-retro` — appends short retrospective block to `session-notes.md`
+## 1. Какие команды используются
 
-## Canonical file
+- `/session-save` — записывает или обновляет `session-notes.md`
+- `/session-restore` — восстанавливает контекст из `session-notes.md` и продолжает работу с раздела `Next Action`
+- `/session-retro` — добавляет короткий ретроспективный блок по завершённому этапу
 
-Project root file: `session-notes.md`
+## 2. Канонический файл
 
-Required sections:
+Основной файл состояния:
+
+- `session-notes.md` в корне проекта
+
+Минимально ожидаемые разделы файла:
 
 - `## Current Task`
 - `## Completed`
@@ -21,20 +26,85 @@ Required sections:
 - `## Key Decisions`
 - `## Modified Files`
 
-## Rules
+Дополнительные разделы допустимы, но эти заголовки считаются базовым контрактом и поэтому сохранены в английском виде.
 
-- `Next Action` must be concrete and executable.
-- `Completed` contains only done work, no plans.
-- `session-restore` treats notes as context, not immutable requirements.
+## 3. Смысл каждого раздела
 
-## Context guard integration
+### `Current Task`
 
-Use monitor scripts to warn about context growth during long sessions:
+Коротко фиксирует, над чем идёт работа прямо сейчас.
 
-- `tools/context-monitor.sh` (Linux/macOS)
-- `tools/context-monitor.ps1` (Windows)
+### `Completed`
 
-Warning thresholds:
+Содержит только уже сделанную работу.  
+Планы и гипотезы сюда не записываются.
 
-- 70%: recommendation to run `/session-save`
-- 85%: urgent recommendation to run `/session-save`
+### `Pending`
+
+Содержит оставшиеся задачи, вопросы и риски.
+
+### `Next Action`
+
+Это самый важный раздел.
+
+Он должен быть:
+
+- конкретным;
+- исполнимым;
+- понятным без восстановления всей истории чата.
+
+Плохой вариант:
+
+- `продолжить работу`
+
+Хороший вариант:
+
+- `проверить, что Z01 и Z02 обе дают graph_search без смешивания между базами`
+
+### `Key Decisions`
+
+Фиксирует архитектурные и workflow-решения, которые важно не потерять при следующем заходе.
+
+### `Modified Files`
+
+Список реально затронутых файлов, чтобы быстро восстановить зону изменений.
+
+## 4. Правила использования
+
+- `session-save` должен писать детерминированную структуру, а не свободный поток текста.
+- `session-restore` трактует заметки как рабочий контекст, а не как жёстко неизменяемые требования.
+- `session-retro` не должен превращаться в длинный отчёт; его задача — зафиксировать короткий итог и lessons learned.
+- Если `Next Action` не конкретен, состояние сессии сохранено плохо.
+
+## 5. Когда стоит вызывать session-skills
+
+Рекомендуемые ситуации:
+
+- задача не помещается в один сеанс;
+- контекст заметно разросся;
+- нужно прерваться и вернуться позже;
+- работу передают между окнами, клиентами или сессиями;
+- завершён важный этап и нужен короткий итог.
+
+## 6. Связь с Context Guard
+
+Для предупреждения о разрастании контекста в проекте есть monitor-скрипты:
+
+- `tools/context-monitor.sh`
+- `tools/context-monitor.ps1`
+
+Пороговая модель:
+
+- `70%` — рекомендация запустить `/session-save`
+- `85%` — срочная рекомендация сохранить состояние и сузить контекст
+
+Context Guard не блокирует работу, а подсказывает, когда уже пора включать сохранение состояния и восстановление контекста.
+
+## 7. Практический эффект
+
+`session-*` нужны не “для красоты”, а чтобы:
+
+- не терять прогресс на длинных задачах;
+- уменьшать стоимость возвращения в контекст;
+- делать handoff между сессиями воспроизводимым;
+- не держать критически важные решения только в истории чата.
