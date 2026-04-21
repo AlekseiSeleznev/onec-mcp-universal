@@ -7,9 +7,9 @@
 ## Распознавание намерения — когда маршрутизировать сюда
 
 - **Триггер-фразы**: «1С / 1C / онек / onec», «используем 1С `<имя_базы>`», «работаем с 1С `<имя>`», «подключись к 1С `<имя>`», «в базе 1С `<имя>`», «switch to 1C `<name>`».
-- **1С-терминология**: BSL / язык 1С, Справочник / Документ / Регистр / Перечисление / Отчёт / Обработка / БизнесПроцесс / ПланВидов\*, Конфигурация, БСП, ИТС, 1С:Напарник, MCPToolkit.epf, connection strings `Srvr=...;Ref=...;` / `File=...`.
+- **1С-терминология**: BSL / язык 1С, Справочник / Документ / Регистр / Перечисление / Отчёт / Обработка / БизнесПроцесс / ПланВидов\*, Конфигурация, БСП, ИТС, 1С:Напарник, MCPToolkit.epf, строки подключения `Srvr=...;Ref=...;` / `File=...`.
 - **Типовые имена баз**: `Z01`, `Z02`, `ZUP*`, `ERP*`, `БП*`, `УТ*`, `КА*`, `Розница`, `TST_*`.
-- **Когда пользователь назвал базу**: `list_databases` → если есть, `switch_database`; иначе попросить connection string и `connect_database`. Не угадывать.
+- **Когда пользователь назвал базу**: `list_databases` → если есть, `switch_database`; иначе попросить строку подключения и `connect_database`. Не угадывать.
 - **«База X» без указания системы** — `list_databases` здесь; если есть — работаем, если нет — честно сказать «в 1С-MCP такой базы нет» и попросить уточнение. Не выдумывать.
 
 ## Частые ошибки (не наступать)
@@ -31,7 +31,7 @@
 
 ## Что считать основной установкой
 
-- Канонический MCP endpoint: `http://localhost:8080/mcp`
+- Канонический MCP-адрес: `http://localhost:8080/mcp`
 - Основной сценарий установки: `./setup.sh`
 - Опциональный встроенный граф зависимостей: `./setup.sh --with-bsl-graph`
 - Если `codex` установлен, `setup.sh` автоматически регистрирует `onec-universal`
@@ -52,10 +52,10 @@
 
 ### Windows
 
-- Docker Desktop с WSL2 backend
+- Docker Desktop с WSL2-бэкендом
 - Git for Windows или WSL2
 - `codex` для автоматической регистрации MCP
-- Python 3.10+ для host-side BSL export
+- Python 3.10+ для хостовой выгрузки BSL
 - установленная платформа 1С на хосте Windows
 
 ## Установка под Codex
@@ -200,10 +200,10 @@ cd onec-mcp-universal
 
 ## Инварианты
 
-- путь BSL workspace, заданный из дашборда, — source of truth
-- host export service не должен зависеть от installer-baked workspace path
+- путь BSL-рабочего каталога, заданный из дашборда, — источник истины
+- сервис host export не должен зависеть от пути рабочего каталога, зашитого на этапе установки
 - `disconnect` сохраняет запись базы в реестре
 - `remove` очищает runtime/state/graph, но не удаляет физические BSL-файлы
 - `ghcr.io/alekseiseleznev/onec-mcp-universal:latest` должен отражать текущий `main`
-- `ghcr.io/alekseiseleznev/onec-mcp-universal-bsl-graph-lite:latest` публикуется отдельно для встроенного graph backend
+- `ghcr.io/alekseiseleznev/onec-mcp-universal-bsl-graph-lite:latest` публикуется отдельно для встроенного графового бэкенда
 - `ghcr.io/alekseiseleznev/onec-mcp-universal-docker-control:latest` публикуется отдельно для внутреннего Docker sidecar
