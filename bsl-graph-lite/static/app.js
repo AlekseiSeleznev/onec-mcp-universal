@@ -295,7 +295,7 @@
     navCursor: -1,
     restoringNav: false,
     lastSnapshotKey: '',
-    historyPushTimer: null,
+    historyRefreshTimer: null,
     lastResults: [],
     mode: queryParams().get('mode') === 'path' ? 'path' : 'overview',
     selectedSourceId: '',
@@ -911,6 +911,7 @@
 
   function pushGraphHistory() {
     if (state.restoringNav) return;
+    flushCurrentHistoryRefresh();
     const snapshot = captureSnapshot();
     const key = snapshotKey(snapshot);
     if (state.lastSnapshotKey === key) return;
@@ -921,12 +922,27 @@
     updateNavButtons();
   }
 
-  function scheduleGraphHistoryCapture(delay = 220) {
+  function replaceCurrentHistorySnapshot() {
+    if (state.restoringNav || state.navCursor < 0 || !state.navHistory.length) return;
+    const snapshot = captureSnapshot();
+    state.navHistory[state.navCursor] = snapshot;
+    state.lastSnapshotKey = snapshotKey(snapshot);
+    updateNavButtons();
+  }
+
+  function flushCurrentHistoryRefresh() {
+    if (!state.historyRefreshTimer) return;
+    window.clearTimeout(state.historyRefreshTimer);
+    state.historyRefreshTimer = null;
+    replaceCurrentHistorySnapshot();
+  }
+
+  function scheduleCurrentHistoryRefresh(delay = 220) {
     if (state.restoringNav) return;
-    if (state.historyPushTimer) window.clearTimeout(state.historyPushTimer);
-    state.historyPushTimer = window.setTimeout(() => {
-      state.historyPushTimer = null;
-      pushGraphHistory();
+    if (state.historyRefreshTimer) window.clearTimeout(state.historyRefreshTimer);
+    state.historyRefreshTimer = window.setTimeout(() => {
+      state.historyRefreshTimer = null;
+      replaceCurrentHistorySnapshot();
     }, delay);
   }
 
@@ -939,6 +955,7 @@
 
   function applySnapshot(snapshot) {
     state.restoringNav = true;
+    flushCurrentHistoryRefresh();
     state.selectedDb = snapshot.selectedDb;
     state.mode = snapshot.mode;
     state.selectedSourceId = snapshot.selectedSourceId;
@@ -1462,10 +1479,10 @@
     }
   });
   cy.on('pan zoom', () => {
-    scheduleGraphHistoryCapture();
+    scheduleCurrentHistoryRefresh();
   });
   cy.on('dragfreeon', 'node', () => {
-    scheduleGraphHistoryCapture();
+    scheduleCurrentHistoryRefresh();
   });
 
   document.querySelectorAll('#lang-sw [data-lang]').forEach(link => {

@@ -545,7 +545,9 @@ def test_bsl_graph_viewer_exposes_analysis_modes_and_path_api():
     assert "btn_back_title: 'Назад по графу'" in js
     assert "btn_fwd_title: 'Вперёд по графу'" in js
     assert "navHistory" in js
-    assert "historyPushTimer" in js
+    assert "historyRefreshTimer" in js
+    assert "replaceCurrentHistorySnapshot" in js
+    assert "scheduleCurrentHistoryRefresh" in js
     assert "cy.on('pan zoom'" in js
     assert "cy.on('dragfreeon'" in js
 
