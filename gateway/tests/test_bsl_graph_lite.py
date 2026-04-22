@@ -582,6 +582,13 @@ def test_docs_route_renders_localized_graph_dashboard_help(tmp_path):
     assert "История навигации" in payload["body"]
     assert "Очистить всё кроме закреплённых" in payload["body"]
     assert "↶ Назад" in payload["body"]
+    assert "Путь влияния" in payload["body"]
+    assert "Что зависит от узла" in payload["body"]
+    assert "Группировать BSL-файлы" in payload["body"]
+    assert "Сцены" in payload["body"]
+    assert "Пояснение связей" in payload["body"]
+    assert "Показать BSL-файлы" in payload["body"]
+    assert "Экспорт" in payload["body"]
 
     handler_en = module.Handler.__new__(module.Handler)
     handler_en.path = "/docs?lang=en"
@@ -599,3 +606,10 @@ def test_docs_route_renders_localized_graph_dashboard_help(tmp_path):
     assert "Navigation history" in payload_en["body"]
     assert "Clear all except pinned" in payload_en["body"]
     assert "↶ Back" in payload_en["body"]
+    assert "Impact path" in payload_en["body"]
+    assert "Reverse impact" in payload_en["body"]
+    assert "Group BSL files" in payload_en["body"]
+    assert "Scenes" in payload_en["body"]
+    assert "Edge explanations" in payload_en["body"]
+    assert "Show BSL files" in payload_en["body"]
+    assert "Export" in payload_en["body"]

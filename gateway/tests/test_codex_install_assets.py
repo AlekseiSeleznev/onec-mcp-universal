@@ -534,6 +534,16 @@ def test_bsl_graph_viewer_exposes_analysis_modes_and_path_api():
     assert html.index('id="mode-select"') < html.index('id="btn-back"') < html.index('id="btn-fwd"')
     assert html.index('id="lang-sw"') < html.index('id="btn-docs"') < html.index('id="btn-rebuild"') < html.index('id="current-db"') < html.index('id="stats"')
     assert 'id="btn-docs"' in html
+    assert 'id="group-bsl-files"' in html
+    assert 'id="btn-impact-preset"' in html
+    assert 'id="btn-reverse-impact"' in html
+    assert 'id="scene-name"' in html
+    assert 'id="btn-save-scene"' in html
+    assert 'id="btn-load-scene"' in html
+    assert 'id="btn-delete-scene"' in html
+    assert 'id="btn-export-png"' in html
+    assert 'id="btn-export-json"' in html
+    assert 'id="btn-export-steps"' in html
     assert "/api/graph/path" in js
     assert "selectedSourceId" in js
     assert "selectedTargetId" in js
@@ -545,9 +555,31 @@ def test_bsl_graph_viewer_exposes_analysis_modes_and_path_api():
     assert "btn_back_title: 'Назад по графу'" in js
     assert "btn_fwd_title: 'Вперёд по графу'" in js
     assert "navHistory" in js
-    assert "historyRefreshTimer" in js
-    assert "replaceCurrentHistorySnapshot" in js
-    assert "scheduleCurrentHistoryRefresh" in js
+    assert "captureGraphState" in js
+    assert "captureViewportState" in js
+    assert "captureHistoryEntry" in js
+    assert "graphStateKey" in js
+    assert "lastGraphStateKey" in js
+    assert "viewportRefreshTimer" in js
+    assert "updateCurrentViewportEntry" in js
+    assert "scheduleCurrentViewportRefresh" in js
+    assert "flushCurrentViewportRefresh" in js
+    assert "normalizeGraphPayload" in js
+    assert "mergeGraphData" in js
+    assert "extractRawGraphFromDisplay" in js
+    assert "saveScene" in js
+    assert "loadSelectedScene" in js
+    assert "deleteSelectedScene" in js
+    assert "exportScenePng" in js
+    assert "exportSceneJson" in js
+    assert "exportPathSteps" in js
+    assert "applyImpactPreset" in js
+    assert "reverseImpact" in js
+    assert "showNodeBslFiles" in js
+    assert "currentVisibleEdgeExplanations" in js
+    assert "Group BSL files" in js
+    assert "Путь влияния" in js
+    assert "Reverse impact" in js
     assert "cy.on('pan zoom'" in js
     assert "cy.on('dragfreeon'" in js
 

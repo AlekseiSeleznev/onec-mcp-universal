@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>BSL Graph</title>
-<link rel="stylesheet" href="/static/style.css?v=1.10.1">
+<link rel="stylesheet" href="/static/style.css?v=1.11.0">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -58,6 +58,13 @@
       <div class="row checkbox-row">
         <label><input id="hide-bsl-files" type="checkbox"> <span id="lbl-hide-bsl"></span></label>
       </div>
+      <div class="row checkbox-row">
+        <label><input id="group-bsl-files" type="checkbox"> <span id="lbl-group-bsl"></span></label>
+      </div>
+      <div class="row actions">
+        <button id="btn-impact-preset"></button>
+        <button id="btn-reverse-impact"></button>
+      </div>
       <div class="row">
         <div class="subhead" id="h-edge-filters"></div>
         <div id="edge-filters" class="check-list"></div>
@@ -69,6 +76,26 @@
       <div class="row actions">
         <button id="btn-focus-current"></button>
         <button id="btn-clear-unpinned"></button>
+      </div>
+      <div class="row">
+        <div class="subhead" id="h-scenes"></div>
+        <div class="scene-tools">
+          <input id="scene-name" type="text">
+          <button id="btn-save-scene"></button>
+        </div>
+        <div class="scene-tools">
+          <select id="scene-list"></select>
+          <button id="btn-load-scene"></button>
+          <button id="btn-delete-scene"></button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="subhead" id="h-export"></div>
+        <div class="row actions">
+          <button id="btn-export-png"></button>
+          <button id="btn-export-json"></button>
+          <button id="btn-export-steps"></button>
+        </div>
       </div>
     </div>
     <h2 id="h-path" style="margin-top:14px"></h2>
@@ -110,6 +137,6 @@
   </div>
 </main>
 <script src="/static/cytoscape.min.js"></script>
-<script src="/static/app.js?v=1.10.1"></script>
+<script src="/static/app.js?v=1.11.0"></script>
 </body>
 </html>

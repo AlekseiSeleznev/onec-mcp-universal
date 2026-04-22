@@ -1,6 +1,7 @@
 (function () {
   const MAX_NODES = 200;
   const DEFAULT_PATH_DEPTH = 6;
+  const SCENES_STORAGE_KEY = 'bslgraph.saved-scenes.v1';
   const TYPE_COLORS = {
     catalog: '#7fd4ff',
     document: '#f7a668',
@@ -28,12 +29,14 @@
     eventSubscription: '#ffd27f',
     scheduledJob: '#ffd27f',
     bslFile: '#6b7480',
+    bslGroup: '#4b5563',
   };
   const DB_PALETTE = ['#7fd4ff', '#f7a668', '#a6e3a1', '#f2c94c', '#e1acff', '#ff9ecb', '#a3f5d7', '#bdbde3', '#ffd27f', '#ffb4b4'];
   const TYPE_LABELS = {
     ru: {
       accumulationRegister: 'Регистр накопления',
       bslFile: 'BSL-файл',
+      bslGroup: 'Группа BSL-файлов',
       businessProcess: 'Бизнес-процесс',
       calculationRegister: 'Регистр расчёта',
       catalog: 'Справочник',
@@ -65,6 +68,7 @@
     en: {
       accumulationRegister: 'Accumulation register',
       bslFile: 'BSL file',
+      bslGroup: 'BSL file group',
       businessProcess: 'Business process',
       calculationRegister: 'Calculation register',
       catalog: 'Catalog',
@@ -97,10 +101,12 @@
   const EDGE_LABELS = {
     ru: {
       containsFile: 'Содержит BSL-файл',
+      containsBslGroup: 'Содержит группу BSL-файлов',
       references: 'Использует',
     },
     en: {
       containsFile: 'Contains BSL file',
+      containsBslGroup: 'Contains BSL file group',
       references: 'Uses',
     },
   };
@@ -155,8 +161,11 @@
       direction_out: 'Исходящие',
       direction_in: 'Входящие',
       lbl_hide_bsl: 'Скрыть BSL-файлы',
+      lbl_group_bsl: 'Группировать BSL-файлы',
       h_edge_filters: 'Типы связей',
       h_node_filters: 'Типы узлов',
+      h_scenes: 'Сцены',
+      h_export: 'Экспорт',
       lbl_source: 'Старт:',
       lbl_target: 'Цель:',
       lbl_max_depth: 'Макс. глубина',
@@ -187,6 +196,44 @@
       no_pinned_nodes: 'Закреплённых узлов нет.',
       focus_failed: 'Не удалось загрузить окрестность узла.',
       rebuild_failed: 'Пересборка не удалась',
+      btn_impact_preset: 'Путь влияния',
+      btn_reverse_impact: 'Что зависит от узла',
+      impact_preset_applied: 'Включён пресет анализа влияния.',
+      reverse_requires_node: 'Сначала выберите узел для обратного анализа.',
+      reverse_analysis_loaded: 'Обратный анализ загружен.',
+      scene_name_placeholder: 'Имя сцены',
+      btn_save_scene: 'Сохранить',
+      btn_load_scene: 'Загрузить',
+      btn_delete_scene: 'Удалить',
+      no_scenes: 'Сцен пока нет',
+      scene_saved: 'Сцена сохранена.',
+      scene_loaded: 'Сцена загружена.',
+      scene_deleted: 'Сцена удалена.',
+      scene_name_required: 'Введите имя сцены.',
+      scene_missing: 'Выберите сцену из списка.',
+      btn_export_png: 'PNG',
+      btn_export_json: 'JSON',
+      btn_export_steps: 'Шаги',
+      export_png_done: 'PNG выгружен.',
+      export_json_done: 'JSON выгружен.',
+      export_steps_done: 'Шаги пути выгружены.',
+      no_path_steps: 'Сначала постройте путь, чтобы выгрузить шаги.',
+      bsl_jump_btn: 'Показать BSL-файлы',
+      bsl_copy_btn: 'Скопировать BSL-пути',
+      bsl_jump_empty: 'Связанные BSL-файлы пока не загружены на полотно.',
+      bsl_jump_loaded: 'Связанные BSL-файлы загружены.',
+      bsl_paths_copied: 'BSL-пути скопированы.',
+      edge_explanations: 'Пояснение связей',
+      edge_explanations_empty: 'Выделите узел, чтобы увидеть, почему он связан с соседями.',
+      edge_reason_via: 'через {value}',
+      edge_reason_none: 'без дополнительного пояснения',
+      edge_role_out: 'Исходящая связь',
+      edge_role_in: 'Входящая связь',
+      edge_explanation_to: 'к',
+      edge_explanation_from: 'от',
+      scene_db_prefix: 'База',
+      jump_targets: 'Переход к BSL',
+      jump_targets_empty: 'Для выбранного узла пока нет доступного BSL-перехода.',
     },
     en: {
       search_placeholder: 'Search (space-separated words)…',
@@ -237,8 +284,11 @@
       direction_out: 'Outgoing',
       direction_in: 'Incoming',
       lbl_hide_bsl: 'Hide BSL files',
+      lbl_group_bsl: 'Group BSL files',
       h_edge_filters: 'Edge types',
       h_node_filters: 'Node types',
+      h_scenes: 'Scenes',
+      h_export: 'Export',
       lbl_source: 'Source:',
       lbl_target: 'Target:',
       lbl_max_depth: 'Max depth',
@@ -269,6 +319,44 @@
       no_pinned_nodes: 'No pinned nodes.',
       focus_failed: 'Failed to load node neighborhood.',
       rebuild_failed: 'Rebuild failed',
+      btn_impact_preset: 'Impact path',
+      btn_reverse_impact: 'Reverse impact',
+      impact_preset_applied: 'Impact analysis preset applied.',
+      reverse_requires_node: 'Select a node before running reverse analysis.',
+      reverse_analysis_loaded: 'Reverse impact loaded.',
+      scene_name_placeholder: 'Scene name',
+      btn_save_scene: 'Save',
+      btn_load_scene: 'Load',
+      btn_delete_scene: 'Delete',
+      no_scenes: 'No saved scenes yet',
+      scene_saved: 'Scene saved.',
+      scene_loaded: 'Scene loaded.',
+      scene_deleted: 'Scene deleted.',
+      scene_name_required: 'Enter a scene name first.',
+      scene_missing: 'Select a scene from the list first.',
+      btn_export_png: 'PNG',
+      btn_export_json: 'JSON',
+      btn_export_steps: 'Steps',
+      export_png_done: 'PNG exported.',
+      export_json_done: 'JSON exported.',
+      export_steps_done: 'Path steps exported.',
+      no_path_steps: 'Build a path before exporting steps.',
+      bsl_jump_btn: 'Show BSL files',
+      bsl_copy_btn: 'Copy BSL paths',
+      bsl_jump_empty: 'Related BSL files are not loaded on the canvas yet.',
+      bsl_jump_loaded: 'Related BSL files loaded.',
+      bsl_paths_copied: 'BSL paths copied.',
+      edge_explanations: 'Edge explanations',
+      edge_explanations_empty: 'Select a node to see why it is connected to neighbours.',
+      edge_reason_via: 'via {value}',
+      edge_reason_none: 'no extra explanation',
+      edge_role_out: 'Outgoing edge',
+      edge_role_in: 'Incoming edge',
+      edge_explanation_to: 'to',
+      edge_explanation_from: 'from',
+      scene_db_prefix: 'DB',
+      jump_targets: 'BSL jump',
+      jump_targets_empty: 'No direct BSL jump is available for the current node yet.',
     },
   };
 
@@ -294,8 +382,9 @@
     navHistory: [],
     navCursor: -1,
     restoringNav: false,
-    lastSnapshotKey: '',
-    historyRefreshTimer: null,
+    lastGraphStateKey: '',
+    viewportRefreshTimer: null,
+    historyEpoch: 0,
     lastResults: [],
     mode: queryParams().get('mode') === 'path' ? 'path' : 'overview',
     selectedSourceId: '',
@@ -304,6 +393,7 @@
     filters: {
       direction: 'both',
       hideBslFiles: false,
+      groupBslFiles: false,
       edgeTypes: new Set(),
       nodeTypes: new Set(),
     },
@@ -314,6 +404,8 @@
     },
     currentPathData: null,
     currentSelectedNodeId: '',
+    rawGraphData: { nodes: [], edges: [] },
+    savedScenes: [],
     edgeTypes: [],
     boot: {
       db: queryParams().get('db') || '',
@@ -534,6 +626,161 @@
     return EDGE_LABELS[state.lang]?.[type] || type;
   }
 
+  function cloneDeep(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function downloadFile(name, mime, content) {
+    const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  async function copyText(text) {
+    await navigator.clipboard.writeText(text);
+  }
+
+  function sceneTimestamp() {
+    return new Date().toISOString().replace(/[:.]/g, '-');
+  }
+
+  function cloneHistoryEntry(entry) {
+    return cloneDeep(entry);
+  }
+
+  function loadSavedScenes() {
+    try {
+      const raw = localStorage.getItem(SCENES_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function persistSavedScenes() {
+    localStorage.setItem(SCENES_STORAGE_KEY, JSON.stringify(state.savedScenes));
+  }
+
+  function visibleNodeIds() {
+    return new Set(cy.nodes().filter(n => n.style('display') !== 'none').map(n => n.id()));
+  }
+
+  function normalizeGraphPayload(nodes, edges) {
+    const rawNodes = cloneDeep(nodes || []);
+    const rawEdges = cloneDeep(edges || []);
+    if (!state.filters.groupBslFiles) return { nodes: rawNodes, edges: rawEdges };
+
+    const nodeMap = new Map(rawNodes.map(node => [node.id, node]));
+    const groupedNodes = [];
+    const groupedEdges = [];
+    const fileGroups = new Map();
+
+    for (const edge of rawEdges) {
+      const sourceId = edge.source_id || edge.sourceId;
+      const targetId = edge.target_id || edge.targetId;
+      const edgeType = edge.edge_type || edge.type;
+      const targetNode = nodeMap.get(targetId);
+      if (edgeType === 'containsFile' && targetNode?.type === 'bslFile') {
+        const bucket = fileGroups.get(sourceId) || [];
+        bucket.push(targetNode);
+        fileGroups.set(sourceId, bucket);
+        continue;
+      }
+      groupedEdges.push(edge);
+    }
+
+    for (const node of rawNodes) {
+      if (node.type === 'bslFile') continue;
+      groupedNodes.push(node);
+    }
+
+    for (const [ownerId, files] of fileGroups.entries()) {
+      const ownerNode = nodeMap.get(ownerId);
+      if (!ownerNode) continue;
+      const db = dbOf(ownerNode);
+      const groupId = `${ownerId}:bsl-group`;
+      groupedNodes.push({
+        id: groupId,
+        type: 'bslGroup',
+        properties: {
+          db,
+          name: `${rawNodeName(ownerNode)} · BSL (${files.length})`,
+          ownerId,
+          fileCount: files.length,
+          paths: files.map(file => file.properties?.path || '').filter(Boolean),
+          files: files.map(file => ({ id: file.id, name: rawNodeName(file), path: file.properties?.path || '' })),
+        },
+      });
+      groupedEdges.push({
+        sourceId: ownerId,
+        targetId: groupId,
+        type: 'containsBslGroup',
+        properties: { fileCount: files.length, grouped: true },
+      });
+    }
+    return { nodes: groupedNodes, edges: groupedEdges };
+  }
+
+  function mergeGraphData(baseGraph, nextGraph) {
+    const nodeMap = new Map((baseGraph?.nodes || []).map(node => [node.id, cloneDeep(node)]));
+    for (const node of nextGraph?.nodes || []) nodeMap.set(node.id, cloneDeep(node));
+    const edgeMap = new Map(
+      (baseGraph?.edges || []).map(edge => [`${edge.sourceId || edge.source_id}|${edge.targetId || edge.target_id}|${edge.type || edge.edge_type}`, cloneDeep(edge)])
+    );
+    for (const edge of nextGraph?.edges || []) {
+      edgeMap.set(`${edge.sourceId || edge.source_id}|${edge.targetId || edge.target_id}|${edge.type || edge.edge_type}`, cloneDeep(edge));
+    }
+    return {
+      nodes: Array.from(nodeMap.values()),
+      edges: Array.from(edgeMap.values()),
+    };
+  }
+
+  function extractRawGraphFromDisplay() {
+    const sourceNodes = new Map((state.rawGraphData?.nodes || []).map(node => [node.id, node]));
+    const sourceEdges = state.rawGraphData?.edges || [];
+    const includedNodeIds = new Set();
+    const includedGroupOwners = new Set();
+    cy.nodes().forEach(node => {
+      const raw = node.data('raw') || {};
+      if (node.data('type') === 'bslGroup') {
+        includedGroupOwners.add(raw.properties?.ownerId || node.id().replace(/:bsl-group$/, ''));
+        return;
+      }
+      includedNodeIds.add(node.id());
+    });
+    for (const ownerId of includedGroupOwners) {
+      includedNodeIds.add(ownerId);
+      for (const edge of sourceEdges) {
+        const sourceId = edge.sourceId || edge.source_id;
+        const targetId = edge.targetId || edge.target_id;
+        const edgeType = edge.type || edge.edge_type;
+        if (sourceId === ownerId && edgeType === 'containsFile') {
+          includedNodeIds.add(targetId);
+        }
+      }
+    }
+    const nodes = Array.from(includedNodeIds).map(id => cloneDeep(sourceNodes.get(id))).filter(Boolean);
+    const edges = sourceEdges
+      .filter(edge => includedNodeIds.has(edge.sourceId || edge.source_id) && includedNodeIds.has(edge.targetId || edge.target_id))
+      .map(edge => cloneDeep(edge));
+    return { nodes, edges };
+  }
+
+  async function renderRawGraph(rawGraph, opts) {
+    const normalized = normalizeGraphPayload(rawGraph?.nodes || [], rawGraph?.edges || []);
+    resetGraph(true);
+    await addElements(normalized.nodes || [], normalized.edges || [], opts);
+    renderContextSummary();
+  }
+
   function adjustPathDepth(delta) {
     const input = document.getElementById('path-depth');
     const min = Number(input.min || 1);
@@ -602,6 +849,7 @@
       state.truncatedState.related = false;
       state.truncatedState.path = false;
       state.truncatedState.reason = '';
+      state.rawGraphData = { nodes: [], edges: [] };
     }
   }
 
@@ -674,7 +922,7 @@
       if (!allNodeIds.has(src) || !allNodeIds.has(tgt)) continue;
       const key = `${src}|${tgt}|${label}`;
       if (existingEdges.has(key)) continue;
-      toAddEdges.push({ data: { source: src, target: tgt, label, rawLabel: label } });
+      toAddEdges.push({ data: { source: src, target: tgt, label, rawLabel: label, properties: e.properties || {} } });
     }
     cy.add([...toAddNodes, ...toAddEdges]);
     applyNodeDecorations();
@@ -727,6 +975,7 @@
       filterPills.push(t.filter_direction.replace('{value}', translateDirection(state.filters.direction)));
     }
     if (state.filters.hideBslFiles) filterPills.push(t.filter_hidden_bsl);
+    if (state.filters.groupBslFiles) filterPills.push(t.lbl_group_bsl);
     if (state.filters.edgeTypes.size) filterPills.push(t.filter_edges.replace('{value}', Array.from(state.filters.edgeTypes).map(displayEdgeType).join(', ')));
     if (state.filters.nodeTypes.size) filterPills.push(t.filter_nodes.replace('{value}', Array.from(state.filters.nodeTypes).map(displayNodeType).join(', ')));
 
@@ -752,6 +1001,66 @@
     `;
   }
 
+  function currentVisibleEdgeExplanations(nodeId) {
+    const node = cy.getElementById(nodeId);
+    if (node.empty()) return [];
+    const items = [];
+    node.connectedEdges().forEach(edge => {
+      if (edge.style('display') === 'none') return;
+      const isOutgoing = edge.data('source') === nodeId;
+      const other = isOutgoing ? edge.target() : edge.source();
+      const otherRaw = other.data('raw') || {};
+      const edgeType = edge.data('rawLabel') || edge.data('label');
+      const reasonVia = edge.data('properties')?.via || '';
+      items.push({
+        direction: isOutgoing ? 'out' : 'in',
+        otherName: rawNodeName(otherRaw || { id: other.id() }),
+        otherType: displayNodeType(other.data('type')),
+        edgeType: displayEdgeType(edgeType),
+        reasonVia,
+      });
+    });
+    items.sort((a, b) => a.direction.localeCompare(b.direction) || a.otherName.localeCompare(b.otherName));
+    return items.slice(0, 24);
+  }
+
+  function currentBslTargets(nodeId) {
+    const node = cy.getElementById(nodeId);
+    if (node.empty()) return [];
+    const raw = node.data('raw') || {};
+    if (node.data('type') === 'bslFile') {
+      return [{ name: rawNodeName(raw), path: raw.properties?.path || '' }];
+    }
+    if (node.data('type') === 'bslGroup') {
+      return (raw.properties?.files || []).map(file => ({ name: file.name, path: file.path })).filter(item => item.path);
+    }
+    const out = [];
+    node.outgoers('edge').forEach(edge => {
+      const target = edge.target();
+      const type = target.data('type');
+      const targetRaw = target.data('raw') || {};
+      if (type === 'bslFile') out.push({ name: rawNodeName(targetRaw), path: targetRaw.properties?.path || '' });
+      if (type === 'bslGroup') {
+        (targetRaw.properties?.files || []).forEach(file => out.push({ name: file.name, path: file.path }));
+      }
+    });
+    return out.filter(item => item.path);
+  }
+
+  function renderSavedScenes() {
+    const select = document.getElementById('scene-list');
+    if (!select) return;
+    if (!state.savedScenes.length) {
+      select.innerHTML = `<option value="">${escapeHtml(state.t.no_scenes)}</option>`;
+      select.disabled = true;
+      return;
+    }
+    select.disabled = false;
+    select.innerHTML = state.savedScenes
+      .map(scene => `<option value="${escapeAttr(scene.name)}">${escapeHtml(scene.name)} · ${escapeHtml(scene.db || '—')}</option>`)
+      .join('');
+  }
+
   function showDetails(node) {
     const t = state.t;
     const details = document.getElementById('details');
@@ -769,6 +1078,8 @@
     const isPinned = state.pinnedNodeIds.has(node.id());
     const isSource = state.selectedSourceId === node.id();
     const isTarget = state.selectedTargetId === node.id();
+    const bslTargets = currentBslTargets(node.id());
+    const edgeExplanations = currentVisibleEdgeExplanations(node.id());
     const badges = [
       `<span class="badge">${escapeHtml(displayNodeType(node.data('type')))}</span>`,
       db ? `<span class="badge db">db: ${escapeHtml(db)}</span>` : '',
@@ -790,12 +1101,39 @@
         <button id="set-source">${escapeHtml(t.set_source_btn)}</button>
         <button id="set-target">${escapeHtml(t.set_target_btn)}</button>
       </div>
+      <div class="row actions">
+        <button id="jump-bsl">${escapeHtml(t.bsl_jump_btn)}</button>
+        <button id="copy-bsl">${escapeHtml(t.bsl_copy_btn)}</button>
+      </div>
+      <div class="detail-subhead">${escapeHtml(t.jump_targets)}</div>
+      <div class="bsl-jump-list">
+        ${
+          bslTargets.length
+            ? bslTargets.slice(0, 8).map(item => `<div class="bsl-jump-item"><div class="title">${escapeHtml(item.name)}</div><div class="meta">${escapeHtml(item.path)}</div></div>`).join('')
+            : `<div class="empty">${escapeHtml(t.jump_targets_empty)}</div>`
+        }
+      </div>
+      <div class="detail-subhead">${escapeHtml(t.edge_explanations)}</div>
+      <div class="edge-list">
+        ${
+          edgeExplanations.length
+            ? edgeExplanations.map(item => `
+              <div class="edge-item">
+                <div class="title">${escapeHtml(item.direction === 'out' ? t.edge_role_out : t.edge_role_in)} · ${escapeHtml(item.edgeType)}</div>
+                <div class="meta">${escapeHtml(item.direction === 'out' ? t.edge_explanation_to : t.edge_explanation_from)} ${escapeHtml(item.otherName)} · ${escapeHtml(item.otherType)}</div>
+                <div class="meta">${escapeHtml(item.reasonVia ? t.edge_reason_via.replace('{value}', item.reasonVia) : t.edge_reason_none)}</div>
+              </div>`).join('')
+            : `<div class="empty">${escapeHtml(t.edge_explanations_empty)}</div>`
+        }
+      </div>
       <div class="hint">${escapeHtml(t.expand_hint)}</div>
     `;
     document.getElementById('expand')?.addEventListener('click', () => expand(node.id()));
     document.getElementById('toggle-pin')?.addEventListener('click', () => togglePinned(node.id()));
     document.getElementById('set-source')?.addEventListener('click', () => setPathEndpoint('source', node.id()));
     document.getElementById('set-target')?.addEventListener('click', () => setPathEndpoint('target', node.id()));
+    document.getElementById('jump-bsl')?.addEventListener('click', () => showNodeBslFiles(node.id()));
+    document.getElementById('copy-bsl')?.addEventListener('click', () => copyNodeBslPaths(node.id()));
     applyNodeDecorations();
     renderContextSummary();
   }
@@ -852,7 +1190,7 @@
     }
   }
 
-  function captureSnapshot() {
+  function captureGraphState() {
     return {
       query: document.getElementById('q').value || '',
       selectedDb: state.selectedDb,
@@ -863,6 +1201,7 @@
       filters: {
         direction: state.filters.direction,
         hideBslFiles: state.filters.hideBslFiles,
+        groupBslFiles: state.filters.groupBslFiles,
         edgeTypes: Array.from(state.filters.edgeTypes),
         nodeTypes: Array.from(state.filters.nodeTypes),
       },
@@ -871,78 +1210,88 @@
       currentSelectedNodeId: state.currentSelectedNodeId,
       lastResults: JSON.parse(JSON.stringify(state.lastResults || [])),
       pathDepth: Number(document.getElementById('path-depth').value || DEFAULT_PATH_DEPTH),
-      zoom: cy.zoom(),
-      pan: cy.pan(),
-      positions: Object.fromEntries(cy.nodes().map(node => [node.id(), node.position()])),
-      nodes: cy.nodes().map(node => node.data('raw')).filter(Boolean),
-      edges: cy.edges().map(edge => ({
-        sourceId: edge.data('source'),
-        targetId: edge.data('target'),
-        type: edge.data('rawLabel') || edge.data('label'),
-      })),
+      nodes: cloneDeep(state.rawGraphData?.nodes || []),
+      edges: cloneDeep(state.rawGraphData?.edges || []),
     };
   }
 
-  function snapshotKey(snapshot) {
+  function captureViewportState() {
+    return {
+      zoom: cy.zoom(),
+      pan: cy.pan(),
+      positions: Object.fromEntries(cy.nodes().map(node => [node.id(), node.position()])),
+    };
+  }
+
+  function captureHistoryEntry() {
+    return {
+      graphState: captureGraphState(),
+      viewportState: captureViewportState(),
+    };
+  }
+
+  function graphStateKey(graphState) {
     return JSON.stringify({
-      q: snapshot.query,
-      db: snapshot.selectedDb,
-      mode: snapshot.mode,
-      src: snapshot.selectedSourceId,
-      tgt: snapshot.selectedTargetId,
-      sel: snapshot.currentSelectedNodeId,
-      pins: snapshot.pinnedNodeIds,
-      dir: snapshot.filters.direction,
-      hide: snapshot.filters.hideBslFiles,
-      et: snapshot.filters.edgeTypes,
-      nt: snapshot.filters.nodeTypes,
-      zoom: snapshot.zoom,
-      pan: snapshot.pan,
-      path: snapshot.currentPathData ? {
-        found: snapshot.currentPathData.pathFound,
-        reason: snapshot.currentPathData.reason,
-        nodes: (snapshot.currentPathData.nodes || []).map(n => n.id),
-        edges: (snapshot.currentPathData.edges || []).map(e => `${e.sourceId || e.source_id}|${e.targetId || e.target_id}|${e.type || e.edge_type}`),
+      q: graphState.query,
+      db: graphState.selectedDb,
+      mode: graphState.mode,
+      src: graphState.selectedSourceId,
+      tgt: graphState.selectedTargetId,
+      sel: graphState.currentSelectedNodeId,
+      pins: graphState.pinnedNodeIds,
+      dir: graphState.filters.direction,
+      hide: graphState.filters.hideBslFiles,
+      group: graphState.filters.groupBslFiles,
+      et: graphState.filters.edgeTypes,
+      nt: graphState.filters.nodeTypes,
+      path: graphState.currentPathData ? {
+        found: graphState.currentPathData.pathFound,
+        reason: graphState.currentPathData.reason,
+        nodes: (graphState.currentPathData.nodes || []).map(n => n.id),
+        edges: (graphState.currentPathData.edges || []).map(e => `${e.sourceId || e.source_id}|${e.targetId || e.target_id}|${e.type || e.edge_type}`),
       } : null,
-      graphNodes: snapshot.nodes.map(node => node.id),
-      graphEdges: snapshot.edges.map(edge => `${edge.sourceId}|${edge.targetId}|${edge.type}`),
+      graphNodes: graphState.nodes.map(node => node.id),
+      graphEdges: graphState.edges.map(edge => `${edge.sourceId}|${edge.targetId}|${edge.type}`),
     });
   }
 
-  function pushGraphHistory() {
+  function commitHistoryEntry() {
     if (state.restoringNav) return;
-    flushCurrentHistoryRefresh();
-    const snapshot = captureSnapshot();
-    const key = snapshotKey(snapshot);
-    if (state.lastSnapshotKey === key) return;
+    flushCurrentViewportRefresh();
+    const entry = captureHistoryEntry();
+    const key = graphStateKey(entry.graphState);
+    if (state.lastGraphStateKey === key) return;
     state.navHistory = state.navHistory.slice(0, state.navCursor + 1);
-    state.navHistory.push(snapshot);
+    state.navHistory.push(entry);
     state.navCursor = state.navHistory.length - 1;
-    state.lastSnapshotKey = key;
+    state.lastGraphStateKey = key;
+    state.historyEpoch += 1;
     updateNavButtons();
   }
 
-  function replaceCurrentHistorySnapshot() {
+  function updateCurrentViewportEntry() {
     if (state.restoringNav || state.navCursor < 0 || !state.navHistory.length) return;
-    const snapshot = captureSnapshot();
-    state.navHistory[state.navCursor] = snapshot;
-    state.lastSnapshotKey = snapshotKey(snapshot);
+    const current = state.navHistory[state.navCursor];
+    if (!current) return;
+    current.viewportState = captureViewportState();
     updateNavButtons();
   }
 
-  function flushCurrentHistoryRefresh() {
-    if (!state.historyRefreshTimer) return;
-    window.clearTimeout(state.historyRefreshTimer);
-    state.historyRefreshTimer = null;
-    replaceCurrentHistorySnapshot();
+  function flushCurrentViewportRefresh() {
+    if (!state.viewportRefreshTimer) return;
+    window.clearTimeout(state.viewportRefreshTimer);
+    state.viewportRefreshTimer = null;
+    updateCurrentViewportEntry();
   }
 
-  function scheduleCurrentHistoryRefresh(delay = 220) {
+  function scheduleCurrentViewportRefresh(delay = 220) {
     if (state.restoringNav) return;
-    if (state.historyRefreshTimer) window.clearTimeout(state.historyRefreshTimer);
-    state.historyRefreshTimer = window.setTimeout(() => {
-      state.historyRefreshTimer = null;
-      replaceCurrentHistorySnapshot();
+    const epoch = state.historyEpoch;
+    if (state.viewportRefreshTimer) window.clearTimeout(state.viewportRefreshTimer);
+    state.viewportRefreshTimer = window.setTimeout(() => {
+      state.viewportRefreshTimer = null;
+      if (epoch !== state.historyEpoch) return;
+      updateCurrentViewportEntry();
     }, delay);
   }
 
@@ -953,45 +1302,63 @@
     fwd.disabled = state.navCursor < 0 || state.navCursor >= state.navHistory.length - 1;
   }
 
-  function applySnapshot(snapshot) {
-    state.restoringNav = true;
-    state.selectedDb = snapshot.selectedDb;
-    state.mode = snapshot.mode;
-    state.selectedSourceId = snapshot.selectedSourceId;
-    state.selectedTargetId = snapshot.selectedTargetId;
-    state.pinnedNodeIds = new Set(snapshot.pinnedNodeIds || []);
-    state.filters.direction = snapshot.filters?.direction || 'both';
-    state.filters.hideBslFiles = !!snapshot.filters?.hideBslFiles;
-    state.filters.edgeTypes = new Set(snapshot.filters?.edgeTypes || []);
-    state.filters.nodeTypes = new Set(snapshot.filters?.nodeTypes || []);
-    state.truncatedState = {
-      related: !!snapshot.truncatedState?.related,
-      path: !!snapshot.truncatedState?.path,
-      reason: snapshot.truncatedState?.reason || '',
-    };
-    state.currentPathData = snapshot.currentPathData ? JSON.parse(JSON.stringify(snapshot.currentPathData)) : null;
-    state.currentSelectedNodeId = snapshot.currentSelectedNodeId || '';
-    state.lastResults = JSON.parse(JSON.stringify(snapshot.lastResults || []));
+  function applyViewportState(viewportState) {
+    if (typeof viewportState?.zoom === 'number') cy.zoom(viewportState.zoom);
+    if (viewportState?.pan && typeof viewportState.pan.x === 'number' && typeof viewportState.pan.y === 'number') {
+      cy.pan(viewportState.pan);
+    } else if (cy.elements().length) {
+      cy.fit(cy.elements(), 60);
+    }
+  }
 
-    document.getElementById('q').value = snapshot.query || '';
+  async function applyHistoryEntry(entry, epochToken) {
+    const graphState = entry?.graphState || {};
+    const viewportState = entry?.viewportState || {};
+    state.restoringNav = true;
+    state.selectedDb = graphState.selectedDb;
+    state.mode = graphState.mode;
+    state.selectedSourceId = graphState.selectedSourceId;
+    state.selectedTargetId = graphState.selectedTargetId;
+    state.pinnedNodeIds = new Set(graphState.pinnedNodeIds || []);
+    state.filters.direction = graphState.filters?.direction || 'both';
+    state.filters.hideBslFiles = !!graphState.filters?.hideBslFiles;
+    state.filters.groupBslFiles = !!graphState.filters?.groupBslFiles;
+    state.filters.edgeTypes = new Set(graphState.filters?.edgeTypes || []);
+    state.filters.nodeTypes = new Set(graphState.filters?.nodeTypes || []);
+    state.truncatedState = {
+      related: !!graphState.truncatedState?.related,
+      path: !!graphState.truncatedState?.path,
+      reason: graphState.truncatedState?.reason || '',
+    };
+    state.currentPathData = graphState.currentPathData ? JSON.parse(JSON.stringify(graphState.currentPathData)) : null;
+    state.currentSelectedNodeId = graphState.currentSelectedNodeId || '';
+    state.lastResults = JSON.parse(JSON.stringify(graphState.lastResults || []));
+    state.rawGraphData = {
+      nodes: cloneDeep(graphState.nodes || []),
+      edges: cloneDeep(graphState.edges || []),
+    };
+
+    document.getElementById('q').value = graphState.query || '';
     document.getElementById('mode-select').value = state.mode;
     document.getElementById('direction-select').value = state.filters.direction;
     document.getElementById('hide-bsl-files').checked = state.filters.hideBslFiles;
-    document.getElementById('path-depth').value = String(snapshot.pathDepth || DEFAULT_PATH_DEPTH);
+    document.getElementById('group-bsl-files').checked = state.filters.groupBslFiles;
+    document.getElementById('path-depth').value = String(graphState.pathDepth || DEFAULT_PATH_DEPTH);
 
     renderDbs();
     renderTypes();
     renderStats();
     renderFilters();
     renderLegend();
-    resetGraph(true);
-    addElements(snapshot.nodes || [], snapshot.edges || [], {
+    await renderRawGraph(state.rawGraphData, {
       skipLayout: true,
-      positions: snapshot.positions || {},
+      positions: viewportState.positions || {},
     });
-    if (typeof snapshot.zoom === 'number') cy.zoom(snapshot.zoom);
-    if (snapshot.pan && typeof snapshot.pan.x === 'number' && typeof snapshot.pan.y === 'number') cy.pan(snapshot.pan);
-    else if (cy.elements().length) cy.fit(cy.elements(), 60);
+    if (epochToken !== state.historyEpoch) {
+      state.restoringNav = false;
+      return;
+    }
+    applyViewportState(viewportState);
     renderResultsPanel();
     updatePathSummary();
     renderPathSteps();
@@ -1008,13 +1375,14 @@
   }
 
   async function navigateHistory(delta) {
-    flushCurrentHistoryRefresh();
+    flushCurrentViewportRefresh();
     const next = state.navCursor + delta;
     if (next < 0 || next >= state.navHistory.length) return;
+    state.historyEpoch += 1;
     state.navCursor = next;
-    const snapshot = state.navHistory[next];
-    applySnapshot(snapshot);
-    state.lastSnapshotKey = snapshotKey(snapshot);
+    const entry = state.navHistory[next];
+    await applyHistoryEntry(entry, state.historyEpoch);
+    state.lastGraphStateKey = graphStateKey(entry.graphState || {});
     updateNavButtons();
   }
 
@@ -1027,12 +1395,12 @@
         dbs: dbsParam(),
       };
       const data = await apiPost('/api/graph/search', payload);
-      resetGraph();
-      await addElements(data.nodes || [], data.edges || []);
+      state.rawGraphData = { nodes: cloneDeep(data.nodes || []), edges: cloneDeep(data.edges || []) };
+      await renderRawGraph(state.rawGraphData);
       state.lastResults = data.nodes || [];
       renderResultsPanel();
       renderContextSummary();
-      if (recordHistory) pushGraphHistory();
+      if (recordHistory) commitHistoryEntry();
       return data;
     } catch (e) {
       console.error(e);
@@ -1078,16 +1446,18 @@
       const data = await apiGet(`/api/graph/related/${encodeURIComponent(nodeId)}?${qs}`);
       state.truncatedState.related = !!data.truncated;
       if (options.replace) {
-        resetGraph();
+        state.rawGraphData = { nodes: cloneDeep(data.nodes || []), edges: cloneDeep(data.edges || []) };
+      } else {
+        state.rawGraphData = mergeGraphData(state.rawGraphData, { nodes: data.nodes || [], edges: data.edges || [] });
       }
-      await addElements(data.nodes || [], data.edges || []);
+      await renderRawGraph(state.rawGraphData);
       const node = cy.getElementById(nodeId);
       if (node.nonempty()) {
         showDetails(node);
         await focusCyNode(node);
       }
       renderContextSummary();
-      pushGraphHistory();
+      commitHistoryEntry();
       return data;
     } catch (e) {
       console.error(e);
@@ -1100,7 +1470,7 @@
     if (node.nonempty()) {
       showDetails(node);
       await focusCyNode(node);
-      pushGraphHistory();
+      commitHistoryEntry();
       return;
     }
     await expand(id);
@@ -1148,6 +1518,7 @@
       return `<div class="path-step">
         <div>${escapeHtml(rawNodeName(from))}</div>
           <div class="arrow">→ ${escapeHtml(displayEdgeType(edge.type || edge.edge_type || ''))} →</div>
+          <div class="meta">${escapeHtml(edge.properties?.via ? state.t.edge_reason_via.replace('{value}', edge.properties.via) : state.t.edge_reason_none)}</div>
         <div>${escapeHtml(rawNodeName(to))}</div>
       </div>`;
     }).join('');
@@ -1162,7 +1533,7 @@
     renderPathSteps();
     applyNodeDecorations();
     renderContextSummary();
-    pushGraphHistory();
+    commitHistoryEntry();
   }
 
   async function buildPath() {
@@ -1192,8 +1563,8 @@
       state.currentPathData = data;
       state.truncatedState.path = !!data.truncated;
       state.truncatedState.reason = data.reason || '';
-      resetGraph();
-      await addElements(data.nodes || [], data.edges || []);
+      state.rawGraphData = { nodes: cloneDeep(data.nodes || []), edges: cloneDeep(data.edges || []) };
+      await renderRawGraph(state.rawGraphData);
       const src = cy.getElementById(state.selectedSourceId);
       const tgt = cy.getElementById(state.selectedTargetId);
       if (src.nonempty()) showDetails(src);
@@ -1202,12 +1573,12 @@
       }
       renderPathSteps();
       applyNodeDecorations();
-      pushGraphHistory();
+      commitHistoryEntry();
     } catch (e) {
       console.error(e);
       state.currentPathData = { pathFound: false, nodes: [], edges: [], reason: 'failed', truncated: false };
       renderPathSteps();
-      pushGraphHistory();
+      commitHistoryEntry();
     }
   }
 
@@ -1218,7 +1589,7 @@
     updatePathSummary();
     renderPathSteps();
     applyNodeDecorations();
-    pushGraphHistory();
+    commitHistoryEntry();
   }
 
   function togglePinned(nodeId) {
@@ -1230,7 +1601,7 @@
       applyNodeDecorations();
       renderContextSummary();
     }
-    pushGraphHistory();
+    commitHistoryEntry();
   }
 
   function clearExceptPinned() {
@@ -1241,9 +1612,10 @@
     cy.nodes().forEach(node => {
       if (!state.pinnedNodeIds.has(node.id())) node.remove();
     });
+    state.rawGraphData = extractRawGraphFromDisplay();
     applyNodeDecorations();
     renderContextSummary();
-    pushGraphHistory();
+    commitHistoryEntry();
   }
 
   async function focusCurrentNeighborhood() {
@@ -1253,6 +1625,179 @@
     }
     const data = await expand(state.currentSelectedNodeId, { replace: true, depth: 2, limitNodes: 120, limitEdges: 240 });
     if (!data) showDialog(state.t.focus_failed);
+  }
+
+  async function showNodeBslFiles(nodeId) {
+    const node = cy.getElementById(nodeId);
+    if (node.empty()) {
+      showDialog(state.t.no_selected_node);
+      return;
+    }
+    if (node.data('type') === 'bslFile' || node.data('type') === 'bslGroup') {
+      await focusCyNode(node);
+      return;
+    }
+    const data = await expand(nodeId, {
+      replace: false,
+      depth: 1,
+      edgeTypes: ['containsFile'],
+      includeNodeTypes: ['bslFile'],
+      excludeNodeTypes: [],
+    });
+    if (!data) {
+      showDialog(state.t.bsl_jump_empty);
+      return;
+    }
+    const targets = currentBslTargets(nodeId);
+    if (!targets.length) {
+      showDialog(state.t.bsl_jump_empty);
+      return;
+    }
+    showDetails(cy.getElementById(nodeId));
+    showDialog(state.t.bsl_jump_loaded);
+  }
+
+  async function copyNodeBslPaths(nodeId) {
+    const targets = currentBslTargets(nodeId);
+    if (!targets.length) {
+      showDialog(state.t.bsl_jump_empty);
+      return;
+    }
+    try {
+      await copyText(targets.map(item => item.path).join('\n'));
+      showDialog(state.t.bsl_paths_copied);
+    } catch (e) {
+      showDialog(`${state.t.bsl_paths_copied} ${e.message || ''}`.trim());
+    }
+  }
+
+  function saveScene() {
+    const nameInput = document.getElementById('scene-name');
+    const name = String(nameInput.value || '').trim();
+    if (!name) {
+      showDialog(state.t.scene_name_required);
+      return;
+    }
+    const entry = captureHistoryEntry();
+    const scene = {
+      name,
+      db: state.selectedDb,
+      savedAt: new Date().toISOString(),
+      entry,
+    };
+    state.savedScenes = state.savedScenes.filter(item => item.name !== name);
+    state.savedScenes.unshift(scene);
+    persistSavedScenes();
+    renderSavedScenes();
+    nameInput.value = '';
+    showDialog(state.t.scene_saved);
+  }
+
+  async function loadSelectedScene() {
+    const select = document.getElementById('scene-list');
+    const name = String(select.value || '');
+    if (!name) {
+      showDialog(state.t.scene_missing);
+      return;
+    }
+    const scene = state.savedScenes.find(item => item.name === name);
+    if (!scene?.entry) {
+      showDialog(state.t.scene_missing);
+      return;
+    }
+    flushCurrentViewportRefresh();
+    state.historyEpoch += 1;
+    const entry = cloneHistoryEntry(scene.entry);
+    await applyHistoryEntry(entry, state.historyEpoch);
+    state.navHistory = state.navHistory.slice(0, state.navCursor + 1);
+    state.navHistory.push(cloneHistoryEntry(entry));
+    state.navCursor = state.navHistory.length - 1;
+    state.lastGraphStateKey = graphStateKey(entry.graphState || {});
+    updateNavButtons();
+    showDialog(state.t.scene_loaded);
+  }
+
+  function deleteSelectedScene() {
+    const select = document.getElementById('scene-list');
+    const name = String(select.value || '');
+    if (!name) {
+      showDialog(state.t.scene_missing);
+      return;
+    }
+    state.savedScenes = state.savedScenes.filter(item => item.name !== name);
+    persistSavedScenes();
+    renderSavedScenes();
+    showDialog(state.t.scene_deleted);
+  }
+
+  function exportScenePng() {
+    const png = cy.png({ full: true, scale: 2, bg: '#0f172a' });
+    const base64 = png.split(',')[1] || '';
+    downloadFile(`bsl-graph-scene-${sceneTimestamp()}.png`, 'image/png', Uint8Array.from(atob(base64), c => c.charCodeAt(0)));
+    showDialog(state.t.export_png_done);
+  }
+
+  function exportSceneJson() {
+    const payload = {
+      savedAt: new Date().toISOString(),
+      entry: captureHistoryEntry(),
+      pathSteps: (state.currentPathData?.edges || []).map((edge, index) => ({
+        from: rawNodeName((state.currentPathData?.nodes || [])[index] || {}),
+        edgeType: edge.type || edge.edge_type || '',
+        via: edge.properties?.via || '',
+        to: rawNodeName((state.currentPathData?.nodes || [])[index + 1] || {}),
+      })),
+    };
+    downloadFile(`bsl-graph-scene-${sceneTimestamp()}.json`, 'application/json', JSON.stringify(payload, null, 2));
+    showDialog(state.t.export_json_done);
+  }
+
+  function exportPathSteps() {
+    if (!state.currentPathData?.pathFound) {
+      showDialog(state.t.no_path_steps);
+      return;
+    }
+    const lines = (state.currentPathData.edges || []).map((edge, index) => {
+      const from = rawNodeName((state.currentPathData.nodes || [])[index] || {});
+      const to = rawNodeName((state.currentPathData.nodes || [])[index + 1] || {});
+      const via = edge.properties?.via ? ` (${state.t.edge_reason_via.replace('{value}', edge.properties.via)})` : '';
+      return `${index + 1}. ${from} -> ${displayEdgeType(edge.type || edge.edge_type || '')} -> ${to}${via}`;
+    });
+    downloadFile(`bsl-graph-path-${sceneTimestamp()}.txt`, 'text/plain;charset=utf-8', lines.join('\n'));
+    showDialog(state.t.export_steps_done);
+  }
+
+  function applyImpactPreset() {
+    state.mode = 'path';
+    state.filters.direction = 'out';
+    state.filters.hideBslFiles = true;
+    state.filters.edgeTypes = new Set(['references']);
+    renderFilters();
+    document.getElementById('mode-select').value = 'path';
+    document.getElementById('direction-select').value = 'out';
+    document.getElementById('hide-bsl-files').checked = true;
+    applyMode();
+    renderContextSummary();
+    commitHistoryEntry();
+    showDialog(state.t.impact_preset_applied);
+  }
+
+  async function reverseImpact() {
+    if (!state.currentSelectedNodeId) {
+      showDialog(state.t.reverse_requires_node);
+      return;
+    }
+    state.mode = 'overview';
+    state.filters.direction = 'in';
+    state.filters.hideBslFiles = true;
+    state.filters.edgeTypes = new Set(['references']);
+    document.getElementById('mode-select').value = 'overview';
+    document.getElementById('direction-select').value = 'in';
+    document.getElementById('hide-bsl-files').checked = true;
+    renderFilters();
+    applyMode();
+    await expand(state.currentSelectedNodeId, { replace: true, depth: 2, limitNodes: 160, limitEdges: 320 });
+    showDialog(state.t.reverse_analysis_loaded);
   }
 
   function computeTypeCounts() {
@@ -1328,6 +1873,7 @@
         if (cb.checked) state.filters.edgeTypes.add(cb.value);
         else state.filters.edgeTypes.delete(cb.value);
         renderContextSummary();
+        commitHistoryEntry();
       });
     });
     nodeBox.querySelectorAll('input[type=checkbox]').forEach(cb => {
@@ -1335,6 +1881,7 @@
         if (cb.checked) state.filters.nodeTypes.add(cb.value);
         else state.filters.nodeTypes.delete(cb.value);
         renderContextSummary();
+        commitHistoryEntry();
       });
     });
   }
@@ -1373,7 +1920,7 @@
     syncCanvasVisibility();
     updatePathSummary();
     renderPathSteps();
-    pushGraphHistory();
+    commitHistoryEntry();
   }
 
   function applyI18n() {
@@ -1411,16 +1958,29 @@
     dirSelect.querySelector('option[value=out]').textContent = t.direction_out;
     dirSelect.querySelector('option[value=in]').textContent = t.direction_in;
     document.getElementById('lbl-hide-bsl').textContent = t.lbl_hide_bsl;
+    document.getElementById('lbl-group-bsl').textContent = t.lbl_group_bsl;
     document.getElementById('h-edge-filters').textContent = t.h_edge_filters;
     document.getElementById('h-node-filters').textContent = t.h_node_filters;
+    document.getElementById('h-scenes').textContent = t.h_scenes;
+    document.getElementById('h-export').textContent = t.h_export;
     document.getElementById('btn-focus-current').textContent = t.focus_btn;
     document.getElementById('btn-clear-unpinned').textContent = t.clear_unpinned_btn;
+    document.getElementById('btn-impact-preset').textContent = t.btn_impact_preset;
+    document.getElementById('btn-reverse-impact').textContent = t.btn_reverse_impact;
+    document.getElementById('scene-name').placeholder = t.scene_name_placeholder;
+    document.getElementById('btn-save-scene').textContent = t.btn_save_scene;
+    document.getElementById('btn-load-scene').textContent = t.btn_load_scene;
+    document.getElementById('btn-delete-scene').textContent = t.btn_delete_scene;
+    document.getElementById('btn-export-png').textContent = t.btn_export_png;
+    document.getElementById('btn-export-json').textContent = t.btn_export_json;
+    document.getElementById('btn-export-steps').textContent = t.btn_export_steps;
     document.getElementById('lbl-source').textContent = t.lbl_source;
     document.getElementById('lbl-target').textContent = t.lbl_target;
     document.getElementById('lbl-max-depth').textContent = t.lbl_max_depth;
     document.getElementById('btn-build-path').textContent = t.btn_build_path;
     document.getElementById('btn-clear-path').textContent = t.btn_clear_path;
     renderPathSteps();
+    renderSavedScenes();
   }
 
   async function loadStats() {
@@ -1469,20 +2029,20 @@
     if (state.mode === 'path' && !state.selectedSourceId) setPathEndpoint('source', node.id());
     else if (state.mode === 'path' && !state.selectedTargetId && state.selectedSourceId !== node.id()) setPathEndpoint('target', node.id());
     showDetails(node);
-    pushGraphHistory();
+    commitHistoryEntry();
   });
   cy.on('dbltap', 'node', evt => expand(evt.target.id()));
   cy.on('tap', evt => {
     if (evt.target === cy) {
       showDetails(null);
-      pushGraphHistory();
+      commitHistoryEntry();
     }
   });
   cy.on('pan zoom', () => {
-    scheduleCurrentHistoryRefresh();
+    scheduleCurrentViewportRefresh();
   });
   cy.on('dragfreeon', 'node', () => {
-    scheduleCurrentHistoryRefresh();
+    scheduleCurrentViewportRefresh();
   });
 
   document.querySelectorAll('#lang-sw [data-lang]').forEach(link => {
@@ -1498,17 +2058,26 @@
   document.getElementById('mode-select').addEventListener('change', e => {
     state.mode = e.target.value === 'path' ? 'path' : 'overview';
     applyMode();
-    pushGraphHistory();
+    commitHistoryEntry();
   });
   document.getElementById('direction-select').addEventListener('change', e => {
     state.filters.direction = e.target.value;
     renderContextSummary();
-    pushGraphHistory();
+    commitHistoryEntry();
   });
   document.getElementById('hide-bsl-files').addEventListener('change', e => {
     state.filters.hideBslFiles = e.target.checked;
     renderContextSummary();
-    pushGraphHistory();
+    commitHistoryEntry();
+  });
+  document.getElementById('group-bsl-files').addEventListener('change', async e => {
+    state.filters.groupBslFiles = e.target.checked;
+    await renderRawGraph(state.rawGraphData);
+    if (state.currentSelectedNodeId) {
+      const node = cy.getElementById(state.currentSelectedNodeId);
+      showDetails(node.nonempty() ? node : null);
+    }
+    commitHistoryEntry();
   });
   document.getElementById('path-depth').value = String(DEFAULT_PATH_DEPTH);
   document.getElementById('path-depth-dec').addEventListener('click', () => adjustPathDepth(-1));
@@ -1517,6 +2086,14 @@
   document.getElementById('btn-clear-path').addEventListener('click', clearPath);
   document.getElementById('btn-focus-current').addEventListener('click', focusCurrentNeighborhood);
   document.getElementById('btn-clear-unpinned').addEventListener('click', clearExceptPinned);
+  document.getElementById('btn-impact-preset').addEventListener('click', applyImpactPreset);
+  document.getElementById('btn-reverse-impact').addEventListener('click', reverseImpact);
+  document.getElementById('btn-save-scene').addEventListener('click', saveScene);
+  document.getElementById('btn-load-scene').addEventListener('click', loadSelectedScene);
+  document.getElementById('btn-delete-scene').addEventListener('click', deleteSelectedScene);
+  document.getElementById('btn-export-png').addEventListener('click', exportScenePng);
+  document.getElementById('btn-export-json').addEventListener('click', exportSceneJson);
+  document.getElementById('btn-export-steps').addEventListener('click', exportPathSteps);
   document.getElementById('dialog-ok').addEventListener('click', hideDialog);
   document.getElementById('dialog-modal').addEventListener('click', e => {
     if (e.target === e.currentTarget) hideDialog();
@@ -1532,7 +2109,7 @@
     showDetails(null);
     updatePathSummary();
     renderPathSteps();
-    pushGraphHistory();
+    commitHistoryEntry();
   });
   document.getElementById('btn-list').addEventListener('click', () => toggleResultsPanel());
   document.getElementById('rp-close').addEventListener('click', () => toggleResultsPanel(false));
@@ -1555,12 +2132,13 @@
   });
 
   (async function init() {
+    state.savedScenes = loadSavedScenes();
     applyI18n();
     await loadStats();
     applyMode();
     updatePathSummary();
     renderPathSteps();
     await bootstrapFromUrl();
-    pushGraphHistory();
+    commitHistoryEntry();
   })();
 })();

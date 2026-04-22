@@ -841,7 +841,14 @@ def render_docs(lang: str = "ru") -> str:
 <tr><td>Закрепить узел / Снять закрепление</td><td>Помечает узел как важный и сохраняет его при очистке незакреплённых.</td><td>Когда вы собираете рабочую сцену вокруг нескольких ключевых объектов.</td></tr>
 <tr><td>Выбрать как старт</td><td>Назначает узел стартом для поиска пути.</td><td>Используйте в режиме «Путь» или заранее перед переключением режима.</td></tr>
 <tr><td>Выбрать как цель</td><td>Назначает узел целью для поиска пути.</td><td>Используйте вместе со стартом перед построением пути.</td></tr>
+<tr><td>Показать BSL-файлы</td><td>Быстро подгружает связанные BSL-файлы объекта на полотно.</td><td>Полезно, когда вы нашли нужный объект и хотите сразу перейти к его модулю, не строя новый поисковый запрос.</td></tr>
+<tr><td>Скопировать BSL-пути</td><td>Копирует в буфер пути связанных BSL-файлов, если они уже доступны для узла.</td><td>Используйте, когда нужно передать пути разработчику или быстро перейти к файлам вне viewer.</td></tr>
 </table>
+<p>Ниже карточки узла отображаются два вспомогательных списка:</p>
+<ul>
+<li><b>Переход к BSL</b> — список файлов, к которым можно быстро перейти от выбранного узла.</li>
+<li><b>Пояснение связей</b> — список видимых входящих и исходящих связей с кратким объяснением, почему связь существует.</li>
+</ul>
 
 <h3>Анализ</h3>
 <p>Этот блок управляет тем, какие связи просмотрщик будет раскрывать и учитывать при поиске пути.</p>
@@ -849,13 +856,44 @@ def render_docs(lang: str = "ru") -> str:
 <tr><th>Настройка</th><th>Что делает</th><th>Как влияет на другие действия</th></tr>
 <tr><td>Направление</td><td>Ограничивает раскрытие окрестности входящими, исходящими или обоими типами связей.</td><td>Влияет на «Развернуть соседей» и «Оставить только текущую окрестность». Для пути это направление тоже передаётся на сервер.</td></tr>
 <tr><td>Скрыть BSL-файлы</td><td>Исключает узлы типа <code>bslFile</code> из анализа.</td><td>Уменьшает шум и действует и на окрестность, и на построение пути.</td></tr>
+<tr><td>Группировать BSL-файлы</td><td>Сворачивает множество отдельных BSL-файлов одного объекта в один групповой узел.</td><td>Полезно, когда файлов много и нужно упростить картину без полного скрытия BSL-слоя.</td></tr>
 <tr><td>Типы связей</td><td>Оставляет только выбранные типы рёбер.</td><td>Если выбрать только «Использует», путь и окрестность будут строиться только по таким рёбрам.</td></tr>
 <tr><td>Типы узлов</td><td>Оставляет только выбранные категории узлов.</td><td>Полезно, если нужен путь только через определённые типы объектов.</td></tr>
+<tr><td>Путь влияния</td><td>Включает пресет для анализа влияния: режим «Путь», исходящее направление, скрытие BSL-файлов и фокус на связях типа «Использует».</td><td>Это быстрый старт для вопроса «как изменение одного объекта может дойти до другого».</td></tr>
+<tr><td>Что зависит от узла</td><td>Запускает обратный анализ от выбранного узла: переключает направление на входящие связи и строит локальную картину зависимостей.</td><td>Используйте, когда хотите понять, какие объекты зависят от текущего узла и потенциально затронутся при изменении.</td></tr>
 <tr><td>Оставить только текущую окрестность</td><td>Очищает полотно и строит вокруг выбранного узла свежую локальную подгрузку.</td><td>Сбрасывает шум прошлых раскрытий, но сохраняет активные фильтры и базу.</td></tr>
 <tr><td>Очистить всё кроме закреплённых</td><td>Удаляет с полотна всё, что не закреплено.</td><td>Нужно, когда на графе уже накопилось слишком много переходов, но есть набор узлов, который надо сохранить.</td></tr>
 </table>
 <div class="warn"><p>Если фильтры слишком жёсткие, путь может не найтись даже при существующей связи в полном графе. В таких случаях сначала снимите часть фильтров и попробуйте снова.</p></div>
 <div class="note"><p><b>Простой совет:</b> если граф стал слишком шумным, сначала включите «Скрыть BSL-файлы». Если этого мало, закрепите 2–3 важных узла и нажмите «Очистить всё кроме закреплённых».</p></div>
+
+<h3>Сцены</h3>
+<p>Сцена — это сохранённый снимок вашего расследования. В сцену входят:</p>
+<ul>
+<li>активная база;</li>
+<li>режим, старт, цель и фильтры;</li>
+<li>содержимое полотна;</li>
+<li>положение узлов, масштаб и сдвиг камеры;</li>
+<li>закрепления и текущий путь.</li>
+</ul>
+<p>Как пользоваться:</p>
+<ol>
+<li>Соберите удобный вид графа.</li>
+<li>Введите имя сцены.</li>
+<li>Нажмите «Сохранить».</li>
+<li>Позже выберите сцену в списке и нажмите «Загрузить».</li>
+<li>Если сцена больше не нужна, выберите её и нажмите «Удалить».</li>
+</ol>
+<div class="note"><p>Сцены сохраняются локально в браузере. Это удобно для личной аналитической работы, но сцены не синхронизируются между разными компьютерами автоматически.</p></div>
+
+<h3>Экспорт</h3>
+<p>Блок «Экспорт» помогает вынести результат анализа наружу:</p>
+<table>
+<tr><th>Кнопка</th><th>Что делает</th><th>Когда использовать</th></tr>
+<tr><td>PNG</td><td>Выгружает текущую картинку графа как изображение.</td><td>Когда нужно показать картину аналитику, разработчику или приложить её к задаче.</td></tr>
+<tr><td>JSON</td><td>Выгружает текущее состояние сцены в машинно-читаемом виде.</td><td>Когда нужно сохранить подробный технический снимок расследования.</td></tr>
+<tr><td>Шаги</td><td>Выгружает список шагов найденного пути в текстовый файл.</td><td>Когда важно передать саму цепочку влияния в читаемом виде без картинки.</td></tr>
+</table>
 
 <h3>Путь</h3>
 <table>
@@ -915,8 +953,12 @@ def render_docs(lang: str = "ru") -> str:
 <ol>
 <li><b>Что изменится, если я меняю объект:</b> выберите объект как старт, зависимый объект как цель и постройте путь.</li>
 <li><b>Кто использует этот объект:</b> в режиме «Обзор» переключите направление на «Входящие» и разверните окрестность.</li>
+<li><b>Как быстро включить анализ влияния:</b> нажмите «Путь влияния», затем выберите старт и цель.</li>
+<li><b>Как быстро понять, кто зависит от узла:</b> выберите узел и нажмите «Что зависит от узла».</li>
 <li><b>Как очистить шум:</b> включите «Скрыть BSL-файлы», закрепите важные узлы и нажмите «Очистить всё кроме закреплённых».</li>
+<li><b>Как упростить картину без потери BSL-слоя:</b> включите «Группировать BSL-файлы».</li>
 <li><b>Как вернуться к прошлому состоянию:</b> используйте ↶ и ↷ вместо ручного повторения поиска и раскрытий.</li>
+<li><b>Как сохранить промежуточный результат расследования:</b> используйте блок «Сцены».</li>
 </ol>
 
 <h2>Если вы открыли граф впервые</h2>
@@ -926,7 +968,9 @@ def render_docs(lang: str = "ru") -> str:
 <li>Щёлкните по найденному объекту в результатах.</li>
 <li>Справа нажмите «Развернуть соседей».</li>
 <li>Если связей слишком много — включите «Скрыть BSL-файлы».</li>
-<li>Если нужно понять влияние изменения — переключитесь в режим «Путь», задайте старт и цель и нажмите «Построить путь».</li>
+<li>Если нужно понять влияние изменения — нажмите «Путь влияния», затем задайте старт и цель и нажмите «Построить путь».</li>
+<li>Если хотите понять, кто зависит от текущего объекта, выберите его и нажмите «Что зависит от узла».</li>
+<li>Если файлов слишком много, включите «Группировать BSL-файлы».</li>
 <li>Если ушли не туда — используйте ↶ и ↷.</li>
 </ol>
 </body></html>"""
@@ -1007,7 +1051,14 @@ def render_docs(lang: str = "ru") -> str:
 <tr><td>Pin node / Unpin node</td><td>Marks the node as important and preserves it when non-pinned nodes are cleared.</td><td>Use it to build a stable working scene around several key objects.</td></tr>
 <tr><td>Set as source</td><td>Assigns the node as the source for path analysis.</td><td>Use it in Path mode or prepare it before switching modes.</td></tr>
 <tr><td>Set as target</td><td>Assigns the node as the target for path analysis.</td><td>Use it together with the source before building a path.</td></tr>
+<tr><td>Show BSL files</td><td>Loads BSL files related to the selected object onto the canvas.</td><td>Use it when you want a quick jump from an object to its modules without starting a separate search.</td></tr>
+<tr><td>Copy BSL paths</td><td>Copies paths of related BSL files to the clipboard when they are available.</td><td>Use it when you need to hand file paths to a developer or open files outside the viewer.</td></tr>
 </table>
+<p>Below the node card the viewer also shows two helper blocks:</p>
+<ul>
+<li><b>BSL jump</b> — files that can be reached quickly from the selected node.</li>
+<li><b>Edge explanations</b> — visible incoming and outgoing edges with a short explanation of why the connection exists.</li>
+</ul>
 
 <h3>Analysis</h3>
 <p>This block controls what kind of relationships the viewer will expand and consider for path search.</p>
@@ -1015,13 +1066,35 @@ def render_docs(lang: str = "ru") -> str:
 <tr><th>Setting</th><th>What it does</th><th>How it affects other actions</th></tr>
 <tr><td>Direction</td><td>Limits neighborhood expansion to incoming, outgoing, or both directions.</td><td>Affects “Expand neighbours” and “Keep only current neighborhood”. The same direction is also passed into path analysis.</td></tr>
 <tr><td>Hide BSL files</td><td>Excludes <code>bslFile</code> nodes from analysis.</td><td>Reduces noise and affects both neighborhood expansion and shortest-path search.</td></tr>
+<tr><td>Group BSL files</td><td>Collapses multiple BSL files of the same object into one grouped node.</td><td>Useful when you want a cleaner picture without fully hiding the BSL layer.</td></tr>
 <tr><td>Edge types</td><td>Keeps only selected relation kinds.</td><td>If only “Uses” is selected, both path and neighborhood will follow only those edges.</td></tr>
 <tr><td>Node types</td><td>Keeps only selected node categories.</td><td>Useful when the path should pass only through specific kinds of metadata objects.</td></tr>
+<tr><td>Impact path</td><td>Applies an impact-analysis preset: Path mode, outgoing direction, hidden BSL files, and focus on “Uses” edges.</td><td>This is the fastest way to start the question “how can a change in object A reach object B?”.</td></tr>
+<tr><td>Reverse impact</td><td>Runs reverse analysis from the selected node by switching to incoming dependencies and rebuilding the local picture.</td><td>Use it when you want to know what depends on the selected object and may be affected by a change.</td></tr>
 <tr><td>Keep only current neighborhood</td><td>Clears the canvas and rebuilds a fresh local view around the selected node.</td><td>Removes noise from previous exploration while preserving the current filters and DB.</td></tr>
 <tr><td>Clear all except pinned</td><td>Removes every node from the canvas except pinned ones.</td><td>Use it when the graph becomes crowded but you need to keep a curated working set.</td></tr>
 </table>
 <div class="warn"><p>If filters are too restrictive, a valid path may not be found even though it exists in the full graph. In that case relax the filters and try again.</p></div>
 <div class="note"><p><b>Simple cleanup rule:</b> if the graph becomes noisy, first enable “Hide BSL files”. If that is still too broad, pin 2–3 important nodes and use “Clear all except pinned”.</p></div>
+
+<h3>Scenes</h3>
+<p>A scene is a saved snapshot of your investigation. A scene stores the active DB, mode, filters, selected nodes, current canvas content, pins, node positions, zoom, and pan.</p>
+<ol>
+<li>Build a useful graph view.</li>
+<li>Enter a scene name.</li>
+<li>Click “Save”.</li>
+<li>Later choose the scene from the list and click “Load”.</li>
+<li>If it is no longer needed, select it and click “Delete”.</li>
+</ol>
+<div class="note"><p>Scenes are stored locally in the browser. They are ideal for personal investigation work, but they are not synchronized across different machines automatically.</p></div>
+
+<h3>Export</h3>
+<table>
+<tr><th>Button</th><th>What it does</th><th>When to use it</th></tr>
+<tr><td>PNG</td><td>Exports the current graph picture as an image.</td><td>Use it when you want to share the picture with an analyst, developer, or in a task.</td></tr>
+<tr><td>JSON</td><td>Exports the current scene in a machine-readable form.</td><td>Use it when you need a technical snapshot of the current investigation state.</td></tr>
+<tr><td>Steps</td><td>Exports the current path steps into a text file.</td><td>Use it when the dependency chain matters more than the image itself.</td></tr>
+</table>
 
 <h3>Path</h3>
 <table>
@@ -1081,8 +1154,12 @@ def render_docs(lang: str = "ru") -> str:
 <ol>
 <li><b>What changes if I modify this object:</b> set the object as source, a dependent object as target, and build the path.</li>
 <li><b>Who uses this object:</b> switch Direction to Incoming in Overview mode and expand the neighborhood.</li>
+<li><b>How to start impact analysis quickly:</b> click “Impact path”, then choose source and target.</li>
+<li><b>How to see who depends on the current object:</b> select the node and click “Reverse impact”.</li>
 <li><b>How to reduce noise:</b> enable “Hide BSL files”, pin important nodes, and use “Clear all except pinned”.</li>
+<li><b>How to simplify the graph without losing the BSL layer:</b> enable “Group BSL files”.</li>
 <li><b>How to return to a previous state:</b> use ↶ and ↷ instead of manually repeating search and expansion steps.</li>
+<li><b>How to keep a useful intermediate result:</b> save a scene.</li>
 </ol>
 
 <h2>If this is your first time using the graph</h2>
@@ -1092,7 +1169,9 @@ def render_docs(lang: str = "ru") -> str:
 <li>Click the found object in the results panel.</li>
 <li>Use “Expand neighbours” on the right.</li>
 <li>If there is too much noise, enable “Hide BSL files”.</li>
-<li>If you need impact analysis, switch to Path mode, set source and target, and press “Build path”.</li>
+<li>If you need impact analysis, click “Impact path”, then set source and target and press “Build path”.</li>
+<li>If you want to know who depends on the current object, select it and click “Reverse impact”.</li>
+<li>If too many files are visible, enable “Group BSL files”.</li>
 <li>If you lose the useful state, go back with ↶ and forward with ↷.</li>
 </ol>
 </body></html>"""
