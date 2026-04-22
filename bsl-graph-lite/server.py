@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
+from collections import deque
 
 
 PORT = int(os.environ.get("PORT", "8888"))
@@ -356,6 +357,8 @@ class GraphStore:
             by_type: dict[str, int] = {}
             by_type_by_db: dict[str, dict[str, int]] = {}
             edges_by_db: dict[str, int] = {}
+            edge_types: dict[str, int] = {}
+            edge_types_by_db: dict[str, dict[str, int]] = {}
             for node in self.nodes.values():
                 t = str(node.get("type") or "")
                 if t:
@@ -368,8 +371,14 @@ class GraphStore:
                 source = self.nodes.get(edge.source_id, {})
                 target = self.nodes.get(edge.target_id, {})
                 db = str(source.get("properties", {}).get("db", "") or target.get("properties", {}).get("db", ""))
+                edge_type = str(edge.edge_type or "")
+                if edge_type:
+                    edge_types[edge_type] = edge_types.get(edge_type, 0) + 1
                 if db:
                     edges_by_db[db] = edges_by_db.get(db, 0) + 1
+                    if edge_type:
+                        edge_types_by_db.setdefault(db, {})
+                        edge_types_by_db[db][edge_type] = edge_types_by_db[db].get(edge_type, 0) + 1
             return {
                 "totalNodes": len(self.nodes),
                 "totalEdges": len(self.edges),
@@ -379,9 +388,85 @@ class GraphStore:
                 "byType": by_type,
                 "byTypeByDb": by_type_by_db,
                 "edgesByDb": edges_by_db,
+                "edgeTypes": edge_types,
+                "edgeTypesByDb": edge_types_by_db,
                 "registryStateFile": str(REGISTRY_STATE_FILE),
                 "lastError": self.last_error,
             }
+
+    @staticmethod
+    def _parse_csv_values(values: list[str] | None) -> list[str]:
+        out: list[str] = []
+        for raw in values or []:
+            for part in str(raw or "").split(","):
+                value = part.strip()
+                if value:
+                    out.append(value)
+        return out
+
+    @staticmethod
+    def _normalize_direction(direction: str | None) -> str:
+        value = str(direction or "both").strip().lower()
+        if value in {"in", "out", "both"}:
+            return value
+        return "both"
+
+    def _node_allowed(
+        self,
+        node: dict[str, Any],
+        include_node_types: set[str],
+        exclude_node_types: set[str],
+        allowed_dbs: set[str],
+    ) -> bool:
+        node_type = str(node.get("type") or "")
+        db = str(node.get("properties", {}).get("db", ""))
+        if allowed_dbs and db not in allowed_dbs:
+            return False
+        if include_node_types and node_type not in include_node_types:
+            return False
+        if exclude_node_types and node_type in exclude_node_types:
+            return False
+        return True
+
+    @staticmethod
+    def _serialize_edge(edge: Edge) -> dict[str, Any]:
+        return {
+            "sourceId": edge.source_id,
+            "targetId": edge.target_id,
+            "type": edge.edge_type,
+            "properties": edge.properties,
+        }
+
+    def _path_neighbors(
+        self,
+        current: str,
+        adjacency: dict[str, list[tuple[str, Edge]]],
+        direction: str,
+        allowed_edge_types: set[str],
+        include_node_types: set[str],
+        exclude_node_types: set[str],
+        allowed_dbs: set[str],
+    ) -> list[tuple[str, Edge]]:
+        options: list[tuple[str, Edge]] = []
+        for other, edge in adjacency.get(current, []):
+            if allowed_edge_types and edge.edge_type not in allowed_edge_types:
+                continue
+            other_node = self.nodes.get(other)
+            if other_node is None:
+                continue
+            if not self._node_allowed(
+                other_node,
+                include_node_types,
+                exclude_node_types,
+                allowed_dbs,
+            ):
+                continue
+            if direction == "out" and edge.source_id != current:
+                continue
+            if direction == "in" and edge.target_id != current:
+                continue
+            options.append((other, edge))
+        return options
 
     def search(
         self,
@@ -433,39 +518,211 @@ class GraphStore:
             ]
             return {"nodes": nodes, "edges": edges, "totalCount": len(nodes)}
 
-    def related(self, node_id: str, depth: int) -> dict[str, Any]:
+    def related(
+        self,
+        node_id: str,
+        depth: int,
+        *,
+        direction: str = "both",
+        edge_types: list[str] | None = None,
+        include_node_types: list[str] | None = None,
+        exclude_node_types: list[str] | None = None,
+        limit_nodes: int | None = None,
+        limit_edges: int | None = None,
+        dbs: list[str] | None = None,
+    ) -> dict[str, Any]:
         max_depth = max(1, min(depth or 1, 3))
+        direction = self._normalize_direction(direction)
+        allowed_edge_types = {str(v) for v in (edge_types or []) if v}
+        include_types = {str(v) for v in (include_node_types or []) if v}
+        exclude_types = {str(v) for v in (exclude_node_types or []) if v}
+        allowed_dbs = {str(v) for v in (dbs or []) if v}
+        node_limit = max(1, min(limit_nodes or 200, 200)) if limit_nodes else None
+        edge_limit = max(1, min(limit_edges or 400, 400)) if limit_edges else None
         with self.lock:
+            root_node = self.nodes.get(node_id)
+            if root_node is None:
+                return {"nodes": [], "edges": [], "totalCount": 0, "truncated": False}
+            root_db = str(root_node.get("properties", {}).get("db", ""))
+            if root_db:
+                allowed_dbs.add(root_db)
             adjacency: dict[str, list[Edge]] = {}
             for edge in self.edges:
-                adjacency.setdefault(edge.source_id, []).append(edge)
-                adjacency.setdefault(edge.target_id, []).append(edge)
+                if allowed_edge_types and edge.edge_type not in allowed_edge_types:
+                    continue
+                if direction in {"both", "out"}:
+                    adjacency.setdefault(edge.source_id, []).append(edge)
+                if direction in {"both", "in"}:
+                    adjacency.setdefault(edge.target_id, []).append(edge)
 
             seen = {node_id}
             frontier = {node_id}
             collected_edges: dict[tuple[str, str, str], Edge] = {}
+            truncated = False
             for _ in range(max_depth):
                 next_frontier: set[str] = set()
                 for current in frontier:
                     for edge in adjacency.get(current, []):
-                        collected_edges[(edge.source_id, edge.target_id, edge.edge_type)] = edge
+                        if direction == "out" and edge.source_id != current:
+                            continue
+                        if direction == "in" and edge.target_id != current:
+                            continue
                         other = edge.target_id if edge.source_id == current else edge.source_id
+                        other_node = self.nodes.get(other)
+                        if other_node is None:
+                            continue
+                        if not self._node_allowed(
+                            other_node,
+                            include_types,
+                            exclude_types,
+                            allowed_dbs,
+                        ):
+                            continue
+                        if edge_limit is not None and (edge.source_id, edge.target_id, edge.edge_type) not in collected_edges and len(collected_edges) >= edge_limit:
+                            truncated = True
+                            continue
+                        collected_edges[(edge.source_id, edge.target_id, edge.edge_type)] = edge
                         if other not in seen:
+                            related_seen = max(0, len(seen) - 1)
+                            if node_limit is not None and related_seen >= node_limit:
+                                truncated = True
+                                continue
                             seen.add(other)
                             next_frontier.add(other)
                 frontier = next_frontier
 
-            nodes = [self.nodes[nid] for nid in seen if nid in self.nodes]
-            edges = [
-                {
-                    "sourceId": edge.source_id,
-                    "targetId": edge.target_id,
-                    "type": edge.edge_type,
-                    "properties": edge.properties,
-                }
-                for edge in collected_edges.values()
+            nodes = [
+                self.nodes[nid]
+                for nid in seen
+                if nid in self.nodes and (
+                    nid == node_id
+                    or self._node_allowed(self.nodes[nid], include_types, exclude_types, allowed_dbs)
+                )
             ]
-            return {"nodes": nodes, "edges": edges, "totalCount": len(nodes)}
+            edges = [self._serialize_edge(edge) for edge in collected_edges.values()]
+            return {"nodes": nodes, "edges": edges, "totalCount": len(nodes), "truncated": truncated}
+
+    def path_between(
+        self,
+        source_id: str,
+        target_id: str,
+        *,
+        max_depth: int = 6,
+        edge_types: list[str] | None = None,
+        include_node_types: list[str] | None = None,
+        exclude_node_types: list[str] | None = None,
+        dbs: list[str] | None = None,
+        direction: str = "both",
+        max_visited: int = 1000,
+    ) -> dict[str, Any]:
+        depth_limit = max(1, min(max_depth or 6, 12))
+        visited_limit = max(1, min(max_visited or 1000, 5000))
+        direction = self._normalize_direction(direction)
+        allowed_edge_types = {str(v) for v in (edge_types or []) if v}
+        include_types = {str(v) for v in (include_node_types or []) if v}
+        exclude_types = {str(v) for v in (exclude_node_types or []) if v}
+        allowed_dbs = {str(v) for v in (dbs or []) if v}
+        with self.lock:
+            source = self.nodes.get(source_id)
+            target = self.nodes.get(target_id)
+            if source is None or target is None:
+                return {
+                    "nodes": [],
+                    "edges": [],
+                    "pathFound": False,
+                    "hopCount": 0,
+                    "visitedCount": 0,
+                    "truncated": False,
+                    "reason": "not_found",
+                }
+
+            source_db = str(source.get("properties", {}).get("db", ""))
+            target_db = str(target.get("properties", {}).get("db", ""))
+            if source_db and target_db and source_db != target_db:
+                return {
+                    "nodes": [],
+                    "edges": [],
+                    "pathFound": False,
+                    "hopCount": 0,
+                    "visitedCount": 0,
+                    "truncated": False,
+                    "reason": "not_found",
+                }
+            if source_db:
+                allowed_dbs.add(source_db)
+
+            adjacency: dict[str, list[tuple[str, Edge]]] = {}
+            for edge in self.edges:
+                if direction in {"both", "out"}:
+                    adjacency.setdefault(edge.source_id, []).append((edge.target_id, edge))
+                if direction in {"both", "in"}:
+                    adjacency.setdefault(edge.target_id, []).append((edge.source_id, edge))
+
+            queue: deque[tuple[str, int]] = deque([(source_id, 0)])
+            parents: dict[str, tuple[str, Edge]] = {}
+            visited = {source_id}
+            visited_count = 1
+            truncated = False
+            reason = "not_found"
+
+            while queue:
+                current, depth = queue.popleft()
+                if current == target_id:
+                    break
+                if depth >= depth_limit:
+                    reason = "depth_limit"
+                    continue
+                for other, edge in self._path_neighbors(
+                    current,
+                    adjacency,
+                    direction,
+                    allowed_edge_types,
+                    include_types,
+                    exclude_types,
+                    allowed_dbs,
+                ):
+                    if other in visited:
+                        continue
+                    if visited_count >= visited_limit:
+                        truncated = True
+                        reason = "search_limit"
+                        queue.clear()
+                        break
+                    visited.add(other)
+                    visited_count += 1
+                    parents[other] = (current, edge)
+                    queue.append((other, depth + 1))
+
+            if target_id not in visited:
+                return {
+                    "nodes": [],
+                    "edges": [],
+                    "pathFound": False,
+                    "hopCount": 0,
+                    "visitedCount": visited_count,
+                    "truncated": truncated,
+                    "reason": reason,
+                }
+
+            node_ids = [target_id]
+            path_edges: list[Edge] = []
+            cursor = target_id
+            while cursor != source_id:
+                parent, edge = parents[cursor]
+                path_edges.append(edge)
+                node_ids.append(parent)
+                cursor = parent
+            node_ids.reverse()
+            path_edges.reverse()
+            return {
+                "nodes": [self.nodes[nid] for nid in node_ids if nid in self.nodes],
+                "edges": [self._serialize_edge(edge) for edge in path_edges],
+                "pathFound": True,
+                "hopCount": max(0, len(node_ids) - 1),
+                "visitedCount": visited_count,
+                "truncated": truncated,
+                "reason": "",
+            }
 
 
 STORE = GraphStore()
@@ -553,7 +810,20 @@ class Handler(BaseHTTPRequestHandler):
             node_id = unquote(parsed.path[len("/api/graph/related/") :])
             params = parse_qs(parsed.query)
             depth = int((params.get("depth") or ["1"])[0])
-            self._send(200, STORE.related(node_id, depth))
+            self._send(
+                200,
+                STORE.related(
+                    node_id,
+                    depth,
+                    direction=str((params.get("direction") or ["both"])[0]),
+                    edge_types=STORE._parse_csv_values(params.get("edge_types")),
+                    include_node_types=STORE._parse_csv_values(params.get("include_node_types")),
+                    exclude_node_types=STORE._parse_csv_values(params.get("exclude_node_types")),
+                    limit_nodes=int((params.get("limit_nodes") or ["0"])[0] or 0) or None,
+                    limit_edges=int((params.get("limit_edges") or ["0"])[0] or 0) or None,
+                    dbs=STORE._parse_csv_values(params.get("dbs")),
+                ),
+            )
             return
         # Static UI
         if parsed.path == "/" or parsed.path == "/ui" or parsed.path == "/ui/":
@@ -588,6 +858,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": True, **STORE.stats()})
             except Exception as exc:
                 self._send(500, {"ok": False, "error": str(exc)})
+            return
+        if parsed.path == "/api/graph/path":
+            result = STORE.path_between(
+                source_id=str(payload.get("sourceId", "")),
+                target_id=str(payload.get("targetId", "")),
+                max_depth=int(payload.get("maxDepth", 6) or 6),
+                edge_types=[str(v) for v in (payload.get("edgeTypes", []) or []) if v],
+                include_node_types=[str(v) for v in (payload.get("includeNodeTypes", []) or []) if v],
+                exclude_node_types=[str(v) for v in (payload.get("excludeNodeTypes", []) or []) if v],
+                dbs=[str(v) for v in (payload.get("dbs", []) or []) if v],
+                direction=str(payload.get("direction", "both") or "both"),
+                max_visited=int(payload.get("maxVisited", 1000) or 1000),
+            )
+            self._send(200, result)
             return
         self._send(404, {"error": "Not found"})
 

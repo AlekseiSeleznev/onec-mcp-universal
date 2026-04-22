@@ -513,6 +513,42 @@ def test_bsl_graph_viewer_uses_per_database_edge_stats():
     assert "edges = '—';" not in text
 
 
+def test_bsl_graph_viewer_exposes_analysis_modes_and_path_api():
+    root = _repo_root()
+    html = (root / "bsl-graph-lite/static/index.html").read_text(encoding="utf-8")
+    js = (root / "bsl-graph-lite/static/app.js").read_text(encoding="utf-8")
+
+    assert 'id="mode-select"' in html
+    assert 'value="overview"' in html
+    assert 'value="path"' in html
+    assert 'id="path-panel"' in html
+    assert 'id="analysis-panel"' in html
+    assert "/api/graph/path" in js
+    assert "selectedSourceId" in js
+    assert "selectedTargetId" in js
+    assert "hide-bsl-files" in html
+
+
+def test_bsl_graph_viewer_supports_bootstrap_query_params():
+    root = _repo_root()
+    text = (root / "bsl-graph-lite/static/app.js").read_text(encoding="utf-8")
+
+    assert "queryParams().get('db')" in text
+    assert "queryParams().get('q')" in text
+    assert "queryParams().get('nodeId')" in text
+    assert "queryParams().get('mode')" in text
+    assert "bootstrapFromUrl" in text
+
+
+def test_dashboard_links_database_rows_to_graph_viewer():
+    root = _repo_root()
+    text = (root / "gateway/gateway/web_ui.py").read_text(encoding="utf-8")
+
+    assert '"open_graph": "Открыть граф"' in text
+    assert '"open_graph": "Open Graph"' in text
+    assert 'http://localhost:8888/?lang={lang}&db=' in text
+
+
 def test_compose_does_not_ship_legacy_bsl_graph_stack():
     root = _repo_root()
     text = (root / "docker-compose.yml").read_text(encoding="utf-8")

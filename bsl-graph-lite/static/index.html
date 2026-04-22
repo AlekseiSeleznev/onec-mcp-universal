@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>BSL Graph</title>
-<link rel="stylesheet" href="/static/style.css?v=1.9.27">
+<link rel="stylesheet" href="/static/style.css?v=1.10.0">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -16,6 +16,10 @@
   <button id="btn-fwd" class="nav-btn" title="" disabled>▶</button>
   <button id="btn-list"></button>
   <button id="btn-clear"></button>
+  <select id="mode-select" title="Mode / Режим">
+    <option value="overview">Обзор</option>
+    <option value="path">Путь</option>
+  </select>
   <div class="sp"></div>
   <span class="stats" id="stats">—</span>
   <button id="btn-rebuild"></button>
@@ -35,8 +39,51 @@
   </aside>
   <div id="cy"></div>
   <aside class="panel right">
+    <h2 id="h-context"></h2>
+    <div id="context-summary" class="context-summary"></div>
     <h2 id="h-node"></h2>
     <div id="details" class="details"><div class="empty" id="details-empty"></div></div>
+    <h2 id="h-analysis" style="margin-top:14px"></h2>
+    <div id="analysis-panel" class="analysis-panel">
+      <div class="row controls">
+        <label for="direction-select" id="lbl-direction"></label>
+        <select id="direction-select">
+          <option value="both">both</option>
+          <option value="out">out</option>
+          <option value="in">in</option>
+        </select>
+      </div>
+      <div class="row checkbox-row">
+        <label><input id="hide-bsl-files" type="checkbox"> <span id="lbl-hide-bsl"></span></label>
+      </div>
+      <div class="row">
+        <div class="subhead" id="h-edge-filters"></div>
+        <div id="edge-filters" class="check-list"></div>
+      </div>
+      <div class="row">
+        <div class="subhead" id="h-node-filters"></div>
+        <div id="node-filters" class="check-list"></div>
+      </div>
+      <div class="row actions">
+        <button id="btn-focus-current"></button>
+        <button id="btn-clear-unpinned"></button>
+      </div>
+    </div>
+    <h2 id="h-path" style="margin-top:14px"></h2>
+    <div id="path-panel" class="path-panel">
+      <div class="row"><span class="k" id="lbl-source"></span> <span class="v" id="path-source">—</span></div>
+      <div class="row"><span class="k" id="lbl-target"></span> <span class="v" id="path-target">—</span></div>
+      <div class="row controls">
+        <label for="path-depth" id="lbl-max-depth"></label>
+        <input id="path-depth" type="number" min="1" max="12" value="6">
+      </div>
+      <div class="row actions">
+        <button id="btn-build-path"></button>
+        <button id="btn-clear-path"></button>
+      </div>
+      <div id="path-status" class="empty"></div>
+      <div id="path-steps" class="path-steps"></div>
+    </div>
     <h2 id="h-legend" style="margin-top:14px"></h2>
     <div id="legend" class="legend"></div>
   </aside>
@@ -49,6 +96,6 @@
   </div>
 </main>
 <script src="/static/cytoscape.min.js"></script>
-<script src="/static/app.js?v=1.9.27"></script>
+<script src="/static/app.js?v=1.10.0"></script>
 </body>
 </html>
