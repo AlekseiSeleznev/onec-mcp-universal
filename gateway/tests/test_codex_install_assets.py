@@ -540,6 +540,17 @@ def test_bsl_graph_viewer_supports_bootstrap_query_params():
     assert "bootstrapFromUrl" in text
 
 
+def test_bsl_graph_viewer_localizes_graph_type_labels_for_ru_and_en():
+    root = _repo_root()
+    text = (root / "bsl-graph-lite/static/app.js").read_text(encoding="utf-8")
+
+    assert "Регистр сведений" in text
+    assert "Справочник" in text
+    assert "Документ" in text
+    assert "Contains BSL file" in text
+    assert "Accumulation register" in text
+
+
 def test_dashboard_links_database_rows_to_graph_viewer():
     root = _repo_root()
     text = (root / "gateway/gateway/web_ui.py").read_text(encoding="utf-8")

@@ -30,6 +30,80 @@
     bslFile: '#6b7480',
   };
   const DB_PALETTE = ['#7fd4ff', '#f7a668', '#a6e3a1', '#f2c94c', '#e1acff', '#ff9ecb', '#a3f5d7', '#bdbde3', '#ffd27f', '#ffb4b4'];
+  const TYPE_LABELS = {
+    ru: {
+      accumulationRegister: 'Регистр накопления',
+      bslFile: 'BSL-файл',
+      businessProcess: 'Бизнес-процесс',
+      calculationRegister: 'Регистр расчёта',
+      catalog: 'Справочник',
+      chartOfAccounts: 'План счетов',
+      chartOfCalculationTypes: 'План видов расчёта',
+      chartOfCharacteristicTypes: 'План видов характеристик',
+      commonCommand: 'Общая команда',
+      commonForm: 'Общая форма',
+      commonModule: 'Общий модуль',
+      constant: 'Константа',
+      dataProcessor: 'Обработка',
+      document: 'Документ',
+      documentJournal: 'Журнал документов',
+      enum: 'Перечисление',
+      exchangePlan: 'План обмена',
+      httpService: 'HTTP-сервис',
+      informationRegister: 'Регистр сведений',
+      integrationService: 'Сервис интеграции',
+      report: 'Отчёт',
+      role: 'Роль',
+      scheduledJob: 'Регламентное задание',
+      settingsStorage: 'Хранилище настроек',
+      subsystem: 'Подсистема',
+      task: 'Задача',
+      webService: 'Веб-сервис',
+      wsReference: 'WS-ссылка',
+      xdtoPackage: 'XDTO-пакет',
+    },
+    en: {
+      accumulationRegister: 'Accumulation register',
+      bslFile: 'BSL file',
+      businessProcess: 'Business process',
+      calculationRegister: 'Calculation register',
+      catalog: 'Catalog',
+      chartOfAccounts: 'Chart of accounts',
+      chartOfCalculationTypes: 'Chart of calculation types',
+      chartOfCharacteristicTypes: 'Chart of characteristic types',
+      commonCommand: 'Common command',
+      commonForm: 'Common form',
+      commonModule: 'Common module',
+      constant: 'Constant',
+      dataProcessor: 'Data processor',
+      document: 'Document',
+      documentJournal: 'Document journal',
+      enum: 'Enumeration',
+      exchangePlan: 'Exchange plan',
+      httpService: 'HTTP service',
+      informationRegister: 'Information register',
+      integrationService: 'Integration service',
+      report: 'Report',
+      role: 'Role',
+      scheduledJob: 'Scheduled job',
+      settingsStorage: 'Settings storage',
+      subsystem: 'Subsystem',
+      task: 'Task',
+      webService: 'Web service',
+      wsReference: 'WS reference',
+      xdtoPackage: 'XDTO package',
+    },
+  };
+  const EDGE_LABELS = {
+    ru: {
+      containsFile: 'Содержит BSL-файл',
+      references: 'Использует',
+    },
+    en: {
+      containsFile: 'Contains BSL file',
+      references: 'Uses',
+    },
+  };
 
   const I18N = {
     ru: {
@@ -434,6 +508,14 @@
     return (node.properties && node.properties.db) || '';
   }
 
+  function displayNodeType(type) {
+    return TYPE_LABELS[state.lang]?.[type] || type;
+  }
+
+  function displayEdgeType(type) {
+    return EDGE_LABELS[state.lang]?.[type] || type;
+  }
+
   function dbsParam() {
     return state.selectedDb ? [state.selectedDb] : [];
   }
@@ -606,8 +688,8 @@
       filterPills.push(t.filter_direction.replace('{value}', translateDirection(state.filters.direction)));
     }
     if (state.filters.hideBslFiles) filterPills.push(t.filter_hidden_bsl);
-    if (state.filters.edgeTypes.size) filterPills.push(t.filter_edges.replace('{value}', Array.from(state.filters.edgeTypes).join(', ')));
-    if (state.filters.nodeTypes.size) filterPills.push(t.filter_nodes.replace('{value}', Array.from(state.filters.nodeTypes).join(', ')));
+    if (state.filters.edgeTypes.size) filterPills.push(t.filter_edges.replace('{value}', Array.from(state.filters.edgeTypes).map(displayEdgeType).join(', ')));
+    if (state.filters.nodeTypes.size) filterPills.push(t.filter_nodes.replace('{value}', Array.from(state.filters.nodeTypes).map(displayNodeType).join(', ')));
 
     const warnings = [];
     if (state.truncatedState.related || state.truncatedState.path) warnings.push(t.context_truncated);
@@ -649,7 +731,7 @@
     const isSource = state.selectedSourceId === node.id();
     const isTarget = state.selectedTargetId === node.id();
     const badges = [
-      `<span class="badge">${escapeHtml(node.data('type'))}</span>`,
+      `<span class="badge">${escapeHtml(displayNodeType(node.data('type')))}</span>`,
       db ? `<span class="badge db">db: ${escapeHtml(db)}</span>` : '',
       isPinned ? `<span class="badge">${escapeHtml(t.tag_pinned)}</span>` : '',
       isSource ? `<span class="badge">${escapeHtml(t.tag_source)}</span>` : '',
@@ -711,7 +793,7 @@
         <div class="rp-dot" style="background:${TYPE_COLORS[type] || '#8b95a4'};border-color:${color}"></div>
         <div>
           <div class="rp-name">${escapeHtml(name)}</div>
-          <div class="rp-meta">${escapeHtml(type)}${db ? ' · ' + escapeHtml(db) : ''}</div>
+          <div class="rp-meta">${escapeHtml(displayNodeType(type))}${db ? ' · ' + escapeHtml(db) : ''}</div>
         </div>
       </div>`;
     }).join('');
@@ -888,7 +970,7 @@
       const to = nodes[index + 1];
       return `<div class="path-step">
         <div>${escapeHtml(rawNodeName(from))}</div>
-        <div class="arrow">→ ${escapeHtml(edge.type || edge.edge_type || '')} →</div>
+          <div class="arrow">→ ${escapeHtml(displayEdgeType(edge.type || edge.edge_type || ''))} →</div>
         <div>${escapeHtml(rawNodeName(to))}</div>
       </div>`;
     }).join('');
@@ -1006,7 +1088,7 @@
     const sorted = computeTypeCounts();
     const ul = document.getElementById('types');
     ul.innerHTML = sorted.length
-      ? sorted.map(([type, count]) => `<li data-type="${escapeAttr(type)}"><span><span style="color:${TYPE_COLORS[type] || '#8b95a4'}">●</span> ${escapeHtml(type)}</span> <span class="n">${count}</span></li>`).join('')
+      ? sorted.map(([type, count]) => `<li data-type="${escapeAttr(type)}"><span><span style="color:${TYPE_COLORS[type] || '#8b95a4'}">●</span> ${escapeHtml(displayNodeType(type))}</span> <span class="n">${count}</span></li>`).join('')
       : `<li class="empty">${t.no_types}</li>`;
     ul.querySelectorAll('li[data-type]').forEach(li => {
       li.addEventListener('click', () => searchByType(li.dataset.type));
@@ -1052,10 +1134,10 @@
     const nodeTypes = nodeTypeListForCurrentDb();
 
     edgeBox.innerHTML = edgeTypes.map(([type, count]) => `
-      <label><input type="checkbox" value="${escapeAttr(type)}" ${state.filters.edgeTypes.has(type) ? 'checked' : ''}> <span>${escapeHtml(type)} (${count})</span></label>
+      <label><input type="checkbox" value="${escapeAttr(type)}" ${state.filters.edgeTypes.has(type) ? 'checked' : ''}> <span>${escapeHtml(displayEdgeType(type))} (${count})</span></label>
     `).join('') || `<div class="empty">${escapeHtml(state.t.no_types)}</div>`;
     nodeBox.innerHTML = nodeTypes.map(([type, count]) => `
-      <label><input type="checkbox" value="${escapeAttr(type)}" ${state.filters.nodeTypes.has(type) ? 'checked' : ''}> <span>${escapeHtml(type)} (${count})</span></label>
+      <label><input type="checkbox" value="${escapeAttr(type)}" ${state.filters.nodeTypes.has(type) ? 'checked' : ''}> <span>${escapeHtml(displayNodeType(type))} (${count})</span></label>
     `).join('') || `<div class="empty">${escapeHtml(state.t.no_types)}</div>`;
 
     edgeBox.querySelectorAll('input[type=checkbox]').forEach(cb => {
