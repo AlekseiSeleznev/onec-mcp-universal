@@ -295,6 +295,7 @@
     navCursor: -1,
     restoringNav: false,
     lastSnapshotKey: '',
+    historyPushTimer: null,
     lastResults: [],
     mode: queryParams().get('mode') === 'path' ? 'path' : 'overview',
     selectedSourceId: '',
@@ -913,6 +914,14 @@
     updateNavButtons();
   }
 
+  function queueGraphHistory(delay = 0) {
+    if (state.historyPushTimer) window.clearTimeout(state.historyPushTimer);
+    state.historyPushTimer = window.setTimeout(() => {
+      state.historyPushTimer = null;
+      pushGraphHistory();
+    }, delay);
+  }
+
   function updateNavButtons() {
     const back = document.getElementById('btn-back');
     const fwd = document.getElementById('btn-fwd');
@@ -1053,7 +1062,7 @@
         focusCyNode(node);
       }
       renderContextSummary();
-      pushGraphHistory();
+      queueGraphHistory(node.nonempty() ? 450 : 0);
       return data;
     } catch (e) {
       console.error(e);
@@ -1066,7 +1075,7 @@
     if (node.nonempty()) {
       focusCyNode(node);
       showDetails(node);
-      pushGraphHistory();
+      queueGraphHistory(450);
       return;
     }
     expand(id);
