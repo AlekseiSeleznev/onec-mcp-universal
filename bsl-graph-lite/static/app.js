@@ -295,6 +295,7 @@
     navCursor: -1,
     restoringNav: false,
     lastSnapshotKey: '',
+    historyPushTimer: null,
     lastResults: [],
     mode: queryParams().get('mode') === 'path' ? 'path' : 'overview',
     selectedSourceId: '',
@@ -920,6 +921,15 @@
     updateNavButtons();
   }
 
+  function scheduleGraphHistoryCapture(delay = 220) {
+    if (state.restoringNav) return;
+    if (state.historyPushTimer) window.clearTimeout(state.historyPushTimer);
+    state.historyPushTimer = window.setTimeout(() => {
+      state.historyPushTimer = null;
+      pushGraphHistory();
+    }, delay);
+  }
+
   function updateNavButtons() {
     const back = document.getElementById('btn-back');
     const fwd = document.getElementById('btn-fwd');
@@ -1450,6 +1460,12 @@
       showDetails(null);
       pushGraphHistory();
     }
+  });
+  cy.on('pan zoom', () => {
+    scheduleGraphHistoryCapture();
+  });
+  cy.on('dragfreeon', 'node', () => {
+    scheduleGraphHistoryCapture();
   });
 
   document.querySelectorAll('#lang-sw [data-lang]').forEach(link => {
