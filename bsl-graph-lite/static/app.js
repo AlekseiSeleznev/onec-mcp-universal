@@ -114,8 +114,8 @@
       btn_list_title: 'Показать список найденных объектов',
       btn_rebuild: 'Пересобрать',
       btn_rebuild_title: 'Пересобрать граф по рабочему каталогу',
-      btn_back_title: 'Предыдущий поиск',
-      btn_fwd_title: 'Следующий поиск',
+      btn_back_title: 'Назад по графу',
+      btn_fwd_title: 'Вперёд по графу',
       h_dbs: 'Базы',
       h_types: 'Типы',
       h_context: 'Контекст',
@@ -196,8 +196,8 @@
       btn_list_title: 'Show list of matched objects',
       btn_rebuild: 'Rebuild',
       btn_rebuild_title: 'Rebuild graph from the workspace',
-      btn_back_title: 'Previous search',
-      btn_fwd_title: 'Next search',
+      btn_back_title: 'Back in graph history',
+      btn_fwd_title: 'Forward in graph history',
       h_dbs: 'Databases',
       h_types: 'Types',
       h_context: 'Context',
@@ -291,8 +291,10 @@
     dbColor: {},
     lang: detectLang(),
     t: null,
-    history: [],
-    hCursor: -1,
+    navHistory: [],
+    navCursor: -1,
+    restoringNav: false,
+    lastSnapshotKey: '',
     lastResults: [],
     mode: queryParams().get('mode') === 'path' ? 'path' : 'overview',
     selectedSourceId: '',
@@ -591,13 +593,15 @@
     };
   }
 
-  function resetGraph() {
+  function resetGraph(preserveState = false) {
     cy.elements().remove();
-    state.currentSelectedNodeId = '';
-    state.currentPathData = null;
-    state.truncatedState.related = false;
-    state.truncatedState.path = false;
-    state.truncatedState.reason = '';
+    if (!preserveState) {
+      state.currentSelectedNodeId = '';
+      state.currentPathData = null;
+      state.truncatedState.related = false;
+      state.truncatedState.path = false;
+      state.truncatedState.reason = '';
+    }
   }
 
   function ensurePinnedNodeVisibility() {
@@ -837,18 +841,133 @@
     }
   }
 
-  function pushHistory(entry) {
-    state.history = state.history.slice(0, state.hCursor + 1);
-    state.history.push(entry);
-    state.hCursor = state.history.length - 1;
+  function captureSnapshot() {
+    return {
+      query: document.getElementById('q').value || '',
+      selectedDb: state.selectedDb,
+      mode: state.mode,
+      selectedSourceId: state.selectedSourceId,
+      selectedTargetId: state.selectedTargetId,
+      pinnedNodeIds: Array.from(state.pinnedNodeIds),
+      filters: {
+        direction: state.filters.direction,
+        hideBslFiles: state.filters.hideBslFiles,
+        edgeTypes: Array.from(state.filters.edgeTypes),
+        nodeTypes: Array.from(state.filters.nodeTypes),
+      },
+      truncatedState: { ...state.truncatedState },
+      currentPathData: state.currentPathData ? JSON.parse(JSON.stringify(state.currentPathData)) : null,
+      currentSelectedNodeId: state.currentSelectedNodeId,
+      lastResults: JSON.parse(JSON.stringify(state.lastResults || [])),
+      pathDepth: Number(document.getElementById('path-depth').value || DEFAULT_PATH_DEPTH),
+      nodes: cy.nodes().map(node => node.data('raw')).filter(Boolean),
+      edges: cy.edges().map(edge => ({
+        sourceId: edge.data('source'),
+        targetId: edge.data('target'),
+        type: edge.data('rawLabel') || edge.data('label'),
+      })),
+    };
+  }
+
+  function snapshotKey(snapshot) {
+    return JSON.stringify({
+      q: snapshot.query,
+      db: snapshot.selectedDb,
+      mode: snapshot.mode,
+      src: snapshot.selectedSourceId,
+      tgt: snapshot.selectedTargetId,
+      sel: snapshot.currentSelectedNodeId,
+      pins: snapshot.pinnedNodeIds,
+      dir: snapshot.filters.direction,
+      hide: snapshot.filters.hideBslFiles,
+      et: snapshot.filters.edgeTypes,
+      nt: snapshot.filters.nodeTypes,
+      path: snapshot.currentPathData ? {
+        found: snapshot.currentPathData.pathFound,
+        reason: snapshot.currentPathData.reason,
+        nodes: (snapshot.currentPathData.nodes || []).map(n => n.id),
+        edges: (snapshot.currentPathData.edges || []).map(e => `${e.sourceId || e.source_id}|${e.targetId || e.target_id}|${e.type || e.edge_type}`),
+      } : null,
+      graphNodes: snapshot.nodes.map(node => node.id),
+      graphEdges: snapshot.edges.map(edge => `${edge.sourceId}|${edge.targetId}|${edge.type}`),
+    });
+  }
+
+  function pushGraphHistory() {
+    if (state.restoringNav) return;
+    const snapshot = captureSnapshot();
+    const key = snapshotKey(snapshot);
+    if (state.lastSnapshotKey === key) return;
+    state.navHistory = state.navHistory.slice(0, state.navCursor + 1);
+    state.navHistory.push(snapshot);
+    state.navCursor = state.navHistory.length - 1;
+    state.lastSnapshotKey = key;
     updateNavButtons();
   }
 
   function updateNavButtons() {
     const back = document.getElementById('btn-back');
     const fwd = document.getElementById('btn-fwd');
-    back.disabled = state.hCursor <= 0;
-    fwd.disabled = state.hCursor < 0 || state.hCursor >= state.history.length - 1;
+    back.disabled = state.navCursor <= 0;
+    fwd.disabled = state.navCursor < 0 || state.navCursor >= state.navHistory.length - 1;
+  }
+
+  function applySnapshot(snapshot) {
+    state.restoringNav = true;
+    state.selectedDb = snapshot.selectedDb;
+    state.mode = snapshot.mode;
+    state.selectedSourceId = snapshot.selectedSourceId;
+    state.selectedTargetId = snapshot.selectedTargetId;
+    state.pinnedNodeIds = new Set(snapshot.pinnedNodeIds || []);
+    state.filters.direction = snapshot.filters?.direction || 'both';
+    state.filters.hideBslFiles = !!snapshot.filters?.hideBslFiles;
+    state.filters.edgeTypes = new Set(snapshot.filters?.edgeTypes || []);
+    state.filters.nodeTypes = new Set(snapshot.filters?.nodeTypes || []);
+    state.truncatedState = {
+      related: !!snapshot.truncatedState?.related,
+      path: !!snapshot.truncatedState?.path,
+      reason: snapshot.truncatedState?.reason || '',
+    };
+    state.currentPathData = snapshot.currentPathData ? JSON.parse(JSON.stringify(snapshot.currentPathData)) : null;
+    state.currentSelectedNodeId = snapshot.currentSelectedNodeId || '';
+    state.lastResults = JSON.parse(JSON.stringify(snapshot.lastResults || []));
+
+    document.getElementById('q').value = snapshot.query || '';
+    document.getElementById('mode-select').value = state.mode;
+    document.getElementById('direction-select').value = state.filters.direction;
+    document.getElementById('hide-bsl-files').checked = state.filters.hideBslFiles;
+    document.getElementById('path-depth').value = String(snapshot.pathDepth || DEFAULT_PATH_DEPTH);
+
+    renderDbs();
+    renderTypes();
+    renderStats();
+    renderFilters();
+    renderLegend();
+    resetGraph(true);
+    addElements(snapshot.nodes || [], snapshot.edges || [], { skipLayout: true });
+    renderResultsPanel();
+    updatePathSummary();
+    renderPathSteps();
+    applyMode();
+
+    if (state.currentSelectedNodeId) {
+      const node = cy.getElementById(state.currentSelectedNodeId);
+      if (node.nonempty()) showDetails(node);
+      else showDetails(null);
+    } else {
+      showDetails(null);
+    }
+    state.restoringNav = false;
+  }
+
+  async function navigateHistory(delta) {
+    const next = state.navCursor + delta;
+    if (next < 0 || next >= state.navHistory.length) return;
+    state.navCursor = next;
+    const snapshot = state.navHistory[next];
+    applySnapshot(snapshot);
+    state.lastSnapshotKey = snapshotKey(snapshot);
+    updateNavButtons();
   }
 
   async function runSearch(opts, recordHistory = true) {
@@ -865,13 +984,7 @@
       state.lastResults = data.nodes || [];
       renderResultsPanel();
       renderContextSummary();
-      if (recordHistory) {
-        pushHistory({
-          query: payload.query,
-          types: payload.types.slice(),
-          results: state.lastResults.slice(),
-        });
-      }
+      if (recordHistory) pushGraphHistory();
       return data;
     } catch (e) {
       console.error(e);
@@ -887,16 +1000,6 @@
   async function searchByQuery(query) {
     if (!query.trim()) return;
     await runSearch({ query, types: [] });
-  }
-
-  async function navigateHistory(delta) {
-    const next = state.hCursor + delta;
-    if (next < 0 || next >= state.history.length) return;
-    state.hCursor = next;
-    const entry = state.history[next];
-    document.getElementById('q').value = entry.query || '';
-    await runSearch({ query: entry.query, types: entry.types || [] }, false);
-    updateNavButtons();
   }
 
   function relatedQueryString(payload, depth, override) {
@@ -936,6 +1039,7 @@
         focusCyNode(node);
       }
       renderContextSummary();
+      pushGraphHistory();
       return data;
     } catch (e) {
       console.error(e);
@@ -948,6 +1052,7 @@
     if (node.nonempty()) {
       focusCyNode(node);
       showDetails(node);
+      pushGraphHistory();
       return;
     }
     expand(id);
@@ -1009,6 +1114,7 @@
     renderPathSteps();
     applyNodeDecorations();
     renderContextSummary();
+    pushGraphHistory();
   }
 
   async function buildPath() {
@@ -1048,10 +1154,12 @@
       }
       renderPathSteps();
       applyNodeDecorations();
+      pushGraphHistory();
     } catch (e) {
       console.error(e);
       state.currentPathData = { pathFound: false, nodes: [], edges: [], reason: 'failed', truncated: false };
       renderPathSteps();
+      pushGraphHistory();
     }
   }
 
@@ -1062,6 +1170,7 @@
     updatePathSummary();
     renderPathSteps();
     applyNodeDecorations();
+    pushGraphHistory();
   }
 
   function togglePinned(nodeId) {
@@ -1073,6 +1182,7 @@
       applyNodeDecorations();
       renderContextSummary();
     }
+    pushGraphHistory();
   }
 
   function clearExceptPinned() {
@@ -1085,6 +1195,7 @@
     });
     applyNodeDecorations();
     renderContextSummary();
+    pushGraphHistory();
   }
 
   async function focusCurrentNeighborhood() {
@@ -1214,6 +1325,7 @@
     syncCanvasVisibility();
     updatePathSummary();
     renderPathSteps();
+    pushGraphHistory();
   }
 
   function applyI18n() {
@@ -1309,10 +1421,14 @@
     if (state.mode === 'path' && !state.selectedSourceId) setPathEndpoint('source', node.id());
     else if (state.mode === 'path' && !state.selectedTargetId && state.selectedSourceId !== node.id()) setPathEndpoint('target', node.id());
     showDetails(node);
+    pushGraphHistory();
   });
   cy.on('dbltap', 'node', evt => expand(evt.target.id()));
   cy.on('tap', evt => {
-    if (evt.target === cy) showDetails(null);
+    if (evt.target === cy) {
+      showDetails(null);
+      pushGraphHistory();
+    }
   });
 
   document.querySelectorAll('#lang-sw [data-lang]').forEach(link => {
@@ -1328,14 +1444,17 @@
   document.getElementById('mode-select').addEventListener('change', e => {
     state.mode = e.target.value === 'path' ? 'path' : 'overview';
     applyMode();
+    pushGraphHistory();
   });
   document.getElementById('direction-select').addEventListener('change', e => {
     state.filters.direction = e.target.value;
     renderContextSummary();
+    pushGraphHistory();
   });
   document.getElementById('hide-bsl-files').addEventListener('change', e => {
     state.filters.hideBslFiles = e.target.checked;
     renderContextSummary();
+    pushGraphHistory();
   });
   document.getElementById('path-depth').value = String(DEFAULT_PATH_DEPTH);
   document.getElementById('path-depth-dec').addEventListener('click', () => adjustPathDepth(-1));
@@ -1359,6 +1478,7 @@
     showDetails(null);
     updatePathSummary();
     renderPathSteps();
+    pushGraphHistory();
   });
   document.getElementById('btn-list').addEventListener('click', () => toggleResultsPanel());
   document.getElementById('rp-close').addEventListener('click', () => toggleResultsPanel(false));
@@ -1387,5 +1507,6 @@
     updatePathSummary();
     renderPathSteps();
     await bootstrapFromUrl();
+    pushGraphHistory();
   })();
 })();

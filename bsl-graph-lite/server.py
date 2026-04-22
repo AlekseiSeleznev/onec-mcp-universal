@@ -767,124 +767,304 @@ def render_docs(lang: str = "ru") -> str:
         return f"""<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Документация BSL Graph</title><style>{_DOC_STYLE}</style></head><body>
 <a class="back" href="/?lang=ru">&larr; Назад к графу</a>
 <h1>Документация BSL Graph</h1>
-<p>Viewer предназначен для анализа зависимостей между объектами конфигурации 1С и BSL-файлами на основе уже построенного графа.</p>
+<p>BSL Graph — это отдельный viewer для анализа зависимостей между объектами конфигурации 1С и BSL-модулями. Он работает поверх уже построенного графа и предназначен не для редактирования, а для расследования влияния изменений, навигации по зависимостям и поиска коротких путей между объектами.</p>
 
 <h2>Что показывает граф</h2>
-<p>Узлы графа представляют объекты метаданных 1С и связанные BSL-файлы. Рёбра показывают два основных вида связей:</p>
+<p>Каждый узел представляет объект конфигурации 1С или BSL-файл. Цвет заливки показывает тип объекта, цвет рамки — базу данных. Сейчас используются два основных типа связей:</p>
 <ul>
-<li><code>Использует</code> — один объект ссылается на другой по имени или через код.</li>
-<li><code>Содержит BSL-файл</code> — объект связан со своим исходным BSL-модулем.</li>
+<li><code>Использует</code> — объект ссылается на другой объект или символ по имени в коде.</li>
+<li><code>Содержит BSL-файл</code> — объект связан со своим исходным модулем.</li>
 </ul>
+<div class="note"><p>Viewer всегда работает в пределах активной базы. Если база переключена, и поиск, и анализ пути, и раскрытие окрестности выполняются только по ней.</p></div>
 
 <h2>Верхняя панель</h2>
 <table>
-<tr><th>Элемент</th><th>Назначение</th></tr>
-<tr><td>Поиск</td><td>Находит объекты по имени. Можно вводить несколько слов через пробел.</td></tr>
-<tr><td>RU / EN</td><td>Переключает язык интерфейса и подписей типов.</td></tr>
-<tr><td>Документация</td><td>Открывает эту страницу.</td></tr>
-<tr><td>Пересобрать</td><td>Полностью перестраивает граф из текущего рабочего каталога BSL.</td></tr>
-<tr><td>Имя базы</td><td>Показывает активную базу, для которой сейчас строится анализ.</td></tr>
-<tr><td>Узлы / рёбра</td><td>Показывает размер текущего среза графа по активной базе.</td></tr>
+<tr><th>Элемент</th><th>Что делает</th><th>Как связан с остальным</th></tr>
+<tr><td>Поле поиска</td><td>Ищет узлы по имени. Поддерживает несколько слов через пробел.</td><td>Результаты попадают в боковую панель «Результаты поиска». Клик по результату фокусирует существующий узел или догружает его окрестность.</td></tr>
+<tr><td>Список</td><td>Открывает и закрывает панель результатов поиска.</td><td>Полезно, если граф уже открыт и нужно быстро перейти к другому объекту без нового запроса.</td></tr>
+<tr><td>Очистить</td><td>Очищает поле поиска, текущий canvas, список результатов и выделение узла.</td><td>Не меняет активную базу, язык и глобальные фильтры. Это «сброс рабочего вида», а не пересборка графа.</td></tr>
+<tr><td>Обзор / Путь</td><td>Переключает основной режим работы viewer.</td><td>В режиме «Обзор» удобнее раскрывать окрестности. В режиме «Путь» — выбирать старт и цель и строить кратчайший путь.</td></tr>
+<tr><td>↶ Назад</td><td>Возвращает к предыдущему состоянию графа.</td><td>Запоминаются переходы по кликам, раскрытия соседей, построение пути, выбор старта/цели, закрепления, переключение базы, режима и ключевых фильтров.</td></tr>
+<tr><td>↷ Вперёд</td><td>Возвращает к следующему состоянию графа после шага назад.</td><td>Работает как обычная история навигации: если после шага назад сделать новое действие, «ветка вперёд» обрезается.</td></tr>
+<tr><td>RU / EN</td><td>Переключает язык интерфейса и локализованные подписи типов узлов и связей.</td><td>Не меняет сами данные графа. Переключение перезагружает страницу с параметром <code>?lang=</code>.</td></tr>
+<tr><td>Документация</td><td>Открывает эту страницу.</td><td>Язык документации синхронизирован с текущим языком интерфейса.</td></tr>
+<tr><td>Пересобрать</td><td>Запускает пересборку графа по текущему рабочему каталогу BSL.</td><td>Нужно использовать после изменений в выгрузке BSL, если нужно обновить сам граф, а не только локальный viewer.</td></tr>
+<tr><td>Имя базы</td><td>Показывает активную базу.</td><td>Все действия viewer ниже выполняются в пределах этой базы.</td></tr>
+<tr><td>Количество узлов и рёбер</td><td>Показывает размер графа по активной базе.</td><td>Это не число узлов на canvas, а общий размер среза графа для выбранной БД.</td></tr>
 </table>
 
-<h2>Левая панель</h2>
-<p><b>Базы</b> позволяют переключать активную БД. <b>Типы</b> — это быстрый вход в поиск по категориям метаданных, например «Справочник» или «Документ».</p>
+<h2>Левая колонка</h2>
+<h3>Базы</h3>
+<p>Радиокнопки в блоке «Базы» переключают активную БД. После переключения canvas очищается, путь сбрасывается, а список типов и статистика пересчитываются под новую базу.</p>
+<div class="note"><p>Если открыть viewer через deep link с <code>?db=...</code>, эта база выберется автоматически.</p></div>
+
+<h3>Типы</h3>
+<p>Блок «Типы» — это быстрые преднастроенные поиски. Клик по типу запускает поиск узлов соответствующей категории, например «Справочник», «Документ» или «Общий модуль».</p>
 
 <h2>Режимы работы</h2>
 <h3>Обзор</h3>
-<p>Используйте для разведки окрестности узла. Выберите узел, затем раскрывайте соседей и сужайте картину фильтрами.</p>
-<h3>Путь</h3>
-<p>Используйте для impact analysis: задайте стартовый и целевой узел, затем постройте кратчайший путь между ними.</p>
+<p>Режим для исследования окрестности объекта. Основные действия:</p>
+<ul>
+<li>клик по узлу — показать детали и подсветить его локальную окрестность;</li>
+<li>двойной клик — догрузить соседей;</li>
+<li>кнопка «Развернуть соседей» — то же действие из панели узла;</li>
+<li>кнопка «Оставить только текущую окрестность» — очистить canvas и построить вокруг выбранного узла свежую локальную картину.</li>
+</ul>
 
-<h2>Правая панель</h2>
+<h3>Путь</h3>
+<p>Режим для impact analysis. Здесь viewer строит кратчайший путь между двумя объектами в пределах текущей базы.</p>
+<ul>
+<li>первый клик по узлу обычно делает его стартом;</li>
+<li>второй клик по другому узлу — целью;</li>
+<li>то же можно задать кнопками «Выбрать как старт» и «Выбрать как цель» в карточке узла;</li>
+<li>после этого кнопка «Построить путь» запрашивает путь на backend и показывает его на canvas и справа списком шагов.</li>
+</ul>
+
+<h2>Правая колонка</h2>
+<h3>Контекст</h3>
+<p>Блок «Контекст» показывает:</p>
+<ul>
+<li>текущий режим анализа;</li>
+<li>активную базу;</li>
+<li>количество узлов и рёбер именно на canvas;</li>
+<li>активные фильтры;</li>
+<li>предупреждения о том, что результат усечён лимитами или путь не найден.</li>
+</ul>
+
+<h3>Узел</h3>
+<p>Карточка узла показывает имя, тип, базу и доступные действия:</p>
 <table>
-<tr><th>Блок</th><th>Назначение</th></tr>
-<tr><td>Контекст</td><td>Показывает активную базу, режим анализа, число узлов и активные фильтры.</td></tr>
-<tr><td>Узел</td><td>Детали выбранного узла и действия: закрепить, выбрать как старт, выбрать как цель.</td></tr>
-<tr><td>Анализ</td><td>Фильтры по направлению, типам связей, типам узлов и скрытие BSL-файлов.</td></tr>
-<tr><td>Путь</td><td>Выбор старта/цели, глубины поиска и список шагов найденного пути.</td></tr>
+<tr><th>Кнопка</th><th>Что делает</th><th>Когда использовать</th></tr>
+<tr><td>Развернуть соседей</td><td>Догружает окрестность выбранного узла с учётом фильтров анализа.</td><td>Когда нужно увидеть, с чем узел связан напрямую или на глубину 2-3.</td></tr>
+<tr><td>Закрепить узел / Снять закрепление</td><td>Помечает узел как важный и сохраняет его при очистке незакреплённых.</td><td>Когда собираете «рабочую сцену» вокруг нескольких ключевых объектов.</td></tr>
+<tr><td>Выбрать как старт</td><td>Назначает узел стартом для поиска пути.</td><td>Используйте в режиме «Путь» либо заранее перед переключением режима.</td></tr>
+<tr><td>Выбрать как цель</td><td>Назначает узел целью для поиска пути.</td><td>Используйте вместе со стартом перед построением пути.</td></tr>
 </table>
 
-<h2>Практические сценарии</h2>
-<ol>
-<li><b>Что сломается при изменении объекта:</b> найдите объект, задайте его как старт, затем укажите зависимый объект как цель и постройте путь.</li>
-<li><b>Кто использует объект:</b> в режиме «Обзор» переключите направление на «Входящие» и раскройте соседей.</li>
-<li><b>Убрать шум BSL-файлов:</b> включите «Скрыть BSL-файлы».</li>
-<li><b>Держать рабочий контекст:</b> закрепите важные узлы и используйте «Очистить всё кроме закреплённых».</li>
-</ol>
+<h3>Анализ</h3>
+<p>Этот блок управляет тем, какие связи viewer будет раскрывать и учитывать при поиске пути.</p>
+<table>
+<tr><th>Настройка</th><th>Что делает</th><th>Как влияет на другие действия</th></tr>
+<tr><td>Направление</td><td>Ограничивает раскрытие окрестности входящими, исходящими или обоими типами связей.</td><td>Влияет на «Развернуть соседей» и «Оставить только текущую окрестность». Для пути направление тоже передаётся на backend.</td></tr>
+<tr><td>Скрыть BSL-файлы</td><td>Исключает узлы типа <code>bslFile</code> из анализа.</td><td>Уменьшает шум и действует и на окрестность, и на построение пути.</td></tr>
+<tr><td>Типы связей</td><td>Оставляет только выбранные типы рёбер.</td><td>Если выбрать только «Использует», путь и окрестность будут строиться только по таким рёбрам.</td></tr>
+<tr><td>Типы узлов</td><td>Оставляет только выбранные категории узлов.</td><td>Полезно, если нужен путь, например, только через метаданные без файлов или только через определённые типы объектов.</td></tr>
+<tr><td>Оставить только текущую окрестность</td><td>Очищает canvas и строит вокруг выбранного узла свежую локальную подгрузку.</td><td>Сбрасывает шум прошлых раскрытий, но сохраняет активные фильтры и базу.</td></tr>
+<tr><td>Очистить всё кроме закреплённых</td><td>Удаляет с canvas всё, что не закреплено.</td><td>Нужно, когда на графе уже накопилось слишком много переходов, но есть набор узлов, который надо сохранить.</td></tr>
+</table>
+<div class="warn"><p>Если фильтры слишком жёсткие, путь может не найтись даже при существующей связи в полном графе. В таких случаях сначала снимите часть фильтров и попробуйте снова.</p></div>
 
-<h2>Ограничения</h2>
-<div class="warn"><p>Viewer анализирует граф только в пределах активной базы. Если результат усечён лимитами или путь не найден, это явно показывается в правой панели.</p></div>
+<h3>Путь</h3>
+<table>
+<tr><th>Элемент</th><th>Что делает</th></tr>
+<tr><td>Старт</td><td>Показывает выбранный исходный узел.</td></tr>
+<tr><td>Цель</td><td>Показывает выбранный конечный узел.</td></tr>
+<tr><td>Макс. глубина</td><td>Ограничивает глубину BFS-поиска пути. Меньшее значение быстрее, большее — полнее, но тяжелее.</td></tr>
+<tr><td>Построить путь</td><td>Запускает поиск кратчайшего пути на backend с текущими фильтрами.</td></tr>
+<tr><td>Очистить путь</td><td>Сбрасывает текущий path result, но не стирает сам canvas.</td></tr>
+<tr><td>Статус пути</td><td>Показывает, выбран ли старт, цель, найден ли путь и не сработали ли лимиты.</td></tr>
+<tr><td>Шаги пути</td><td>Пошагово перечисляет найденную цепочку вида «узел → связь → узел».</td></tr>
+</table>
+
+<h2>Результаты поиска</h2>
+<p>Панель результатов показывает узлы, найденные по строке поиска или по блоку «Типы». Клик по элементу:</p>
+<ul>
+<li>если узел уже есть на canvas — просто фокусирует его;</li>
+<li>если узла ещё нет — подгружает его окрестность и затем фокусирует.</li>
+</ul>
+
+<h2>История навигации</h2>
+<p>Кнопки ↶ и ↷ запоминают не текст запросов, а именно состояния viewer. В историю входят:</p>
+<ul>
+<li>поиск и переход по результату;</li>
+<li>клики по узлам и снятие выделения;</li>
+<li>раскрытие окрестности;</li>
+<li>выбор старта и цели;</li>
+<li>построение и очистка пути;</li>
+<li>закрепление и очистка узлов;</li>
+<li>смена режима, базы и ключевых фильтров.</li>
+</ul>
 
 <h2>Deep links</h2>
-<p>Viewer поддерживает открытие с параметрами URL:</p>
+<p>Viewer можно открыть сразу в нужном контексте через параметры URL:</p>
 <pre><code>?lang=ru|en
 ?db=Z01
 ?q=Номенклатура
 ?nodeId=Z01:Catalogs:Номенклатура
 ?mode=overview|path</code></pre>
-<p>Это позволяет открывать graph viewer прямо из dashboard уже в нужном контексте.</p>
+<p>Типовые сценарии:</p>
+<ul>
+<li><code>?db=Z01&amp;q=Номенклатура</code> — сразу открыть базу и выполнить поиск;</li>
+<li><code>?db=Z01&amp;nodeId=Z01:Catalogs:Номенклатура</code> — сразу загрузить окрестность конкретного узла;</li>
+<li><code>?db=Z01&amp;mode=path</code> — открыть viewer сразу в режиме поиска пути.</li>
+</ul>
+
+<h2>Ограничения и предупреждения</h2>
+<ul>
+<li>Viewer анализирует только активную базу.</li>
+<li>Если backend вернул <code>truncated=true</code>, значит результат подрезан лимитами узлов, рёбер или поиска пути.</li>
+<li>Если путь не найден, это не всегда означает отсутствие зависимости — возможно, её скрывают текущие фильтры или ограничение <code>Макс. глубина</code>.</li>
+<li>«Пересобрать» обновляет сам граф из BSL workspace, а не только текущее представление на экране.</li>
+</ul>
+
+<h2>Быстрые рабочие сценарии</h2>
+<ol>
+<li><b>Что изменится, если я меняю объект:</b> выберите объект как старт, зависимый объект как цель и постройте путь.</li>
+<li><b>Кто использует этот объект:</b> в режиме «Обзор» переключите направление на «Входящие» и разверните окрестность.</li>
+<li><b>Как очистить шум:</b> включите «Скрыть BSL-файлы», закрепите важные узлы и нажмите «Очистить всё кроме закреплённых».</li>
+<li><b>Как вернуться к прошлому состоянию:</b> используйте ↶ и ↷ вместо ручного повторения поиска и раскрытий.</li>
+</ol>
 </body></html>"""
     return f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BSL Graph Documentation</title><style>{_DOC_STYLE}</style></head><body>
 <a class="back" href="/?lang=en">&larr; Back to graph</a>
 <h1>BSL Graph Documentation</h1>
-<p>This viewer is designed for dependency analysis between 1C configuration objects and BSL source files using a prebuilt graph.</p>
+<p>BSL Graph is a dedicated viewer for dependency analysis between 1C configuration objects and BSL modules. It works on top of a prebuilt graph and is meant for investigation, impact analysis, and path tracing rather than editing.</p>
 
 <h2>What the graph shows</h2>
-<p>Graph nodes represent 1C metadata objects and related BSL files. Edges currently show two main relation types:</p>
+<p>Each node represents either a configuration object or a BSL file. Fill color reflects node type, border color reflects the database. The main edge types are:</p>
 <ul>
-<li><code>Uses</code> — one object references another through code or symbol usage.</li>
-<li><code>Contains BSL file</code> — an object is connected to its BSL source module.</li>
+<li><code>Uses</code> — one object references another object or symbol in code.</li>
+<li><code>Contains BSL file</code> — an object is linked to its source module.</li>
 </ul>
+<div class="note"><p>The viewer always works inside the active database. Search, neighborhood expansion, and path analysis are all scoped to that DB.</p></div>
 
 <h2>Top bar</h2>
 <table>
-<tr><th>Element</th><th>Purpose</th></tr>
-<tr><td>Search</td><td>Finds objects by name. Multiple words are supported.</td></tr>
-<tr><td>RU / EN</td><td>Switches UI language and localized type labels.</td></tr>
-<tr><td>Docs</td><td>Opens this documentation page.</td></tr>
-<tr><td>Rebuild</td><td>Fully rebuilds the graph from the current BSL workspace.</td></tr>
-<tr><td>Database name</td><td>Shows the active database currently used for analysis.</td></tr>
-<tr><td>Nodes / edges</td><td>Shows the size of the current graph slice for the active DB.</td></tr>
+<tr><th>Element</th><th>What it does</th><th>How it relates to other controls</th></tr>
+<tr><td>Search field</td><td>Searches nodes by name. Multiple words are supported.</td><td>Results appear in the search results panel. Clicking a result focuses an existing node or loads its neighborhood.</td></tr>
+<tr><td>List</td><td>Opens and closes the search results panel.</td><td>Useful when the graph is already populated and you want to jump to another object without a new query.</td></tr>
+<tr><td>Clear</td><td>Clears the search field, canvas, search results, and current selection.</td><td>Does not change the active DB, language, or global filters. It resets the current view, not the underlying graph.</td></tr>
+<tr><td>Overview / Path</td><td>Switches the main viewer mode.</td><td>Overview is for neighborhood exploration. Path is for shortest-path impact analysis.</td></tr>
+<tr><td>↶ Back</td><td>Moves to the previous graph state.</td><td>The history tracks actual canvas states: clicks, expansions, path building, source/target selection, pinning, DB switch, mode switch, and key filters.</td></tr>
+<tr><td>↷ Forward</td><td>Moves to the next graph state after a back step.</td><td>Works like browser history: once you go back and perform a new action, the forward branch is discarded.</td></tr>
+<tr><td>RU / EN</td><td>Switches UI language and localized node/edge labels.</td><td>Data stays the same; the page reloads with a different <code>?lang=</code> parameter.</td></tr>
+<tr><td>Docs</td><td>Opens this documentation page.</td><td>The documentation language follows the current UI language.</td></tr>
+<tr><td>Rebuild</td><td>Triggers a full graph rebuild from the current BSL workspace.</td><td>Use this after BSL workspace changes when the underlying graph needs to be refreshed.</td></tr>
+<tr><td>Database name</td><td>Shows the active database.</td><td>All analysis below is scoped to this database.</td></tr>
+<tr><td>Node / edge counters</td><td>Show the total graph size for the active DB.</td><td>This is not the same as the number of currently visible canvas elements.</td></tr>
 </table>
 
-<h2>Left panel</h2>
-<p><b>Databases</b> let you switch the active DB. <b>Types</b> are quick entry points for metadata categories such as Catalog, Document, or Information register.</p>
+<h2>Left column</h2>
+<h3>Databases</h3>
+<p>The “Databases” block switches the active DB. When you switch databases, the canvas is cleared, the current path is reset, and the type list and stats are recalculated for the new DB.</p>
+<div class="note"><p>If the viewer is opened via a deep link with <code>?db=...</code>, that database is selected automatically.</p></div>
+
+<h3>Types</h3>
+<p>The “Types” block is a quick entry point for category-based searches. Clicking a type runs a search for nodes of that metadata category, such as Catalog, Document, or Common module.</p>
 
 <h2>Modes</h2>
 <h3>Overview</h3>
-<p>Use it for neighborhood exploration. Select a node, expand related nodes, and narrow the picture with filters.</p>
-<h3>Path</h3>
-<p>Use it for impact analysis: set source and target nodes and build the shortest path between them.</p>
+<p>This mode is for neighborhood exploration. Core actions:</p>
+<ul>
+<li>single click — show details and highlight the local neighborhood;</li>
+<li>double click — load and expand neighbors;</li>
+<li>“Expand neighbours” — the same action from the node card;</li>
+<li>“Keep only current neighborhood” — clear the canvas and rebuild a fresh local view around the selected node.</li>
+</ul>
 
-<h2>Right panel</h2>
+<h3>Path</h3>
+<p>This mode is for impact analysis. The viewer builds the shortest path between two objects inside the current database.</p>
+<ul>
+<li>the first click usually sets the source node;</li>
+<li>the second click on a different node sets the target;</li>
+<li>the same can be done through “Set as source” and “Set as target” in the node card;</li>
+<li>“Build path” sends the request to the backend and renders the path both on the canvas and in the step list.</li>
+</ul>
+
+<h2>Right column</h2>
+<h3>Context</h3>
+<p>The “Context” block shows:</p>
+<ul>
+<li>current analysis mode;</li>
+<li>active database;</li>
+<li>node and edge counts currently present on the canvas;</li>
+<li>active filters;</li>
+<li>warnings when results are truncated or a path was not found.</li>
+</ul>
+
+<h3>Node</h3>
+<p>The node card shows the node name, type, DB, and actions:</p>
 <table>
-<tr><th>Block</th><th>Purpose</th></tr>
-<tr><td>Context</td><td>Shows active DB, analysis mode, node count, and active filters.</td></tr>
-<tr><td>Node</td><td>Selected node details and actions: pin, set as source, set as target.</td></tr>
-<tr><td>Analysis</td><td>Filters for direction, edge types, node types, and hiding BSL files.</td></tr>
-<tr><td>Path</td><td>Source/target selection, search depth, and step-by-step path list.</td></tr>
+<tr><th>Button</th><th>What it does</th><th>When to use it</th></tr>
+<tr><td>Expand neighbours</td><td>Loads the neighborhood of the selected node with current analysis filters applied.</td><td>Use it to inspect direct or depth-limited dependencies around the object.</td></tr>
+<tr><td>Pin node / Unpin node</td><td>Marks the node as important and preserves it when non-pinned nodes are cleared.</td><td>Use it to build a stable working scene around several key objects.</td></tr>
+<tr><td>Set as source</td><td>Assigns the node as the source for path analysis.</td><td>Use it in Path mode or prepare it before switching modes.</td></tr>
+<tr><td>Set as target</td><td>Assigns the node as the target for path analysis.</td><td>Use it together with the source before building a path.</td></tr>
 </table>
 
-<h2>Practical scenarios</h2>
-<ol>
-<li><b>What breaks if I change this object:</b> find the object, set it as source, pick a dependent object as target, then build the path.</li>
-<li><b>Who uses this object:</b> in Overview mode switch direction to Incoming and expand the node.</li>
-<li><b>Reduce BSL noise:</b> enable “Hide BSL files”.</li>
-<li><b>Keep a working context:</b> pin important nodes and use “Clear all except pinned”.</li>
-</ol>
+<h3>Analysis</h3>
+<p>This block controls what kind of relationships the viewer will expand and consider for path search.</p>
+<table>
+<tr><th>Setting</th><th>What it does</th><th>How it affects other actions</th></tr>
+<tr><td>Direction</td><td>Limits neighborhood expansion to incoming, outgoing, or both directions.</td><td>Affects “Expand neighbours” and “Keep only current neighborhood”. The same direction is also passed into path analysis.</td></tr>
+<tr><td>Hide BSL files</td><td>Excludes <code>bslFile</code> nodes from analysis.</td><td>Reduces noise and affects both neighborhood expansion and shortest-path search.</td></tr>
+<tr><td>Edge types</td><td>Keeps only selected relation kinds.</td><td>If only “Uses” is selected, both path and neighborhood will follow only those edges.</td></tr>
+<tr><td>Node types</td><td>Keeps only selected node categories.</td><td>Useful when the path should pass only through specific kinds of metadata objects.</td></tr>
+<tr><td>Keep only current neighborhood</td><td>Clears the canvas and rebuilds a fresh local view around the selected node.</td><td>Removes noise from previous exploration while preserving the current filters and DB.</td></tr>
+<tr><td>Clear all except pinned</td><td>Removes every node from the canvas except pinned ones.</td><td>Use it when the graph becomes crowded but you need to keep a curated working set.</td></tr>
+</table>
+<div class="warn"><p>If filters are too restrictive, a valid path may not be found even though it exists in the full graph. In that case relax the filters and try again.</p></div>
 
-<h2>Limits</h2>
-<div class="warn"><p>The viewer analyzes paths only inside the active database. If a result is truncated by limits or a path is not found, the right panel reports that explicitly.</p></div>
+<h3>Path</h3>
+<table>
+<tr><th>Element</th><th>What it does</th></tr>
+<tr><td>Source</td><td>Shows the current source node.</td></tr>
+<tr><td>Target</td><td>Shows the current target node.</td></tr>
+<tr><td>Max depth</td><td>Limits BFS path search depth. Lower values are faster; larger values are broader but heavier.</td></tr>
+<tr><td>Build path</td><td>Runs shortest-path search on the backend with the current filters.</td></tr>
+<tr><td>Clear path</td><td>Clears the current path result but keeps the canvas.</td></tr>
+<tr><td>Path status</td><td>Shows whether source and target are selected and whether the path was found or limited.</td></tr>
+<tr><td>Path steps</td><td>Lists the resulting chain in the form “node → edge → node”.</td></tr>
+</table>
+
+<h2>Search results</h2>
+<p>The search results panel shows nodes found by the search field or by the “Types” block. Clicking an item:</p>
+<ul>
+<li>focuses the node directly if it is already on the canvas;</li>
+<li>loads its neighborhood first and then focuses it if it is not on the canvas yet.</li>
+</ul>
+
+<h2>Navigation history</h2>
+<p>The ↶ and ↷ buttons remember actual viewer states rather than raw text queries. The tracked history includes:</p>
+<ul>
+<li>search and result selection;</li>
+<li>node clicks and deselection;</li>
+<li>neighborhood expansion;</li>
+<li>source/target selection;</li>
+<li>path build and path clear;</li>
+<li>pinning and canvas cleanup;</li>
+<li>mode, database, and key filter changes.</li>
+</ul>
 
 <h2>Deep links</h2>
-<p>The viewer supports direct URL bootstrap parameters:</p>
+<p>The viewer can be opened directly in a prepared context via URL parameters:</p>
 <pre><code>?lang=ru|en
 ?db=Z01
 ?q=Номенклатура
 ?nodeId=Z01:Catalogs:Номенклатура
 ?mode=overview|path</code></pre>
-<p>This lets the dashboard open the graph viewer directly in the needed context.</p>
+<p>Typical scenarios:</p>
+<ul>
+<li><code>?db=Z01&amp;q=Номенклатура</code> — open the DB and immediately run a search;</li>
+<li><code>?db=Z01&amp;nodeId=Z01:Catalogs:Номенклатура</code> — immediately load the neighborhood of a specific node;</li>
+<li><code>?db=Z01&amp;mode=path</code> — open directly in path mode.</li>
+</ul>
+
+<h2>Limits and warnings</h2>
+<ul>
+<li>The viewer analyzes only the active database.</li>
+<li>If the backend returns <code>truncated=true</code>, the result was cut by node, edge, or path search limits.</li>
+<li>If a path is not found, it may still exist in the full graph but be hidden by current filters or the <code>Max depth</code> limit.</li>
+<li>“Rebuild” refreshes the underlying graph from the BSL workspace; it does not merely redraw the current canvas.</li>
+</ul>
+
+<h2>Quick workflows</h2>
+<ol>
+<li><b>What changes if I modify this object:</b> set the object as source, a dependent object as target, and build the path.</li>
+<li><b>Who uses this object:</b> switch Direction to Incoming in Overview mode and expand the neighborhood.</li>
+<li><b>How to reduce noise:</b> enable “Hide BSL files”, pin important nodes, and use “Clear all except pinned”.</li>
+<li><b>How to return to a previous state:</b> use ↶ and ↷ instead of manually repeating search and expansion steps.</li>
+</ol>
 </body></html>"""
 
 

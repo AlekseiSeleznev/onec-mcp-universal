@@ -527,7 +527,12 @@ def test_bsl_graph_viewer_exposes_analysis_modes_and_path_api():
     assert 'id="dialog-modal"' in html
     assert 'id="path-depth-dec"' in html
     assert 'id="path-depth-inc"' in html
-    assert html.index('id="lang-sw"') < html.index('id="btn-rebuild"') < html.index('id="current-db"') < html.index('id="stats"')
+    assert 'id="btn-back"' in html
+    assert 'id="btn-fwd"' in html
+    assert '↶' in html
+    assert '↷' in html
+    assert html.index('id="mode-select"') < html.index('id="btn-back"') < html.index('id="btn-fwd"')
+    assert html.index('id="lang-sw"') < html.index('id="btn-docs"') < html.index('id="btn-rebuild"') < html.index('id="current-db"') < html.index('id="stats"')
     assert 'id="btn-docs"' in html
     assert "/api/graph/path" in js
     assert "selectedSourceId" in js
@@ -537,6 +542,9 @@ def test_bsl_graph_viewer_exposes_analysis_modes_and_path_api():
     assert 'getElementById(\'current-db\')' in js
     assert "btn_docs: 'Документация'" in js
     assert "btn_docs: 'Docs'" in js
+    assert "btn_back_title: 'Назад по графу'" in js
+    assert "btn_fwd_title: 'Вперёд по графу'" in js
+    assert "navHistory" in js
 
 
 def test_bsl_graph_viewer_supports_bootstrap_query_params():

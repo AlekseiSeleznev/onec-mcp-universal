@@ -579,6 +579,9 @@ def test_docs_route_renders_localized_graph_dashboard_help(tmp_path):
     assert "Документация BSL Graph" in payload["body"]
     assert "Пересобрать" in payload["body"]
     assert "RU / EN" in payload["body"]
+    assert "История навигации" in payload["body"]
+    assert "Очистить всё кроме закреплённых" in payload["body"]
+    assert "↶ Назад" in payload["body"]
 
     handler_en = module.Handler.__new__(module.Handler)
     handler_en.path = "/docs?lang=en"
@@ -593,3 +596,6 @@ def test_docs_route_renders_localized_graph_dashboard_help(tmp_path):
     assert "BSL Graph Documentation" in payload_en["body"]
     assert "Rebuild" in payload_en["body"]
     assert "RU / EN" in payload_en["body"]
+    assert "Navigation history" in payload_en["body"]
+    assert "Clear all except pinned" in payload_en["body"]
+    assert "↶ Back" in payload_en["body"]
