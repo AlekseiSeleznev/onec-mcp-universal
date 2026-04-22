@@ -560,3 +560,36 @@ def test_http_path_endpoint_returns_payload(tmp_path):
     assert payload["code"] == 200
     assert payload["body"]["pathFound"] is True
     assert payload["body"]["hopCount"] == 1
+
+
+def test_docs_route_renders_localized_graph_dashboard_help(tmp_path):
+    module, _workspace, _hostfs_home, _data_dir = _load_module(tmp_path)
+
+    handler = module.Handler.__new__(module.Handler)
+    handler.path = "/docs?lang=ru"
+    payload: dict = {}
+    handler._send_bytes = lambda code, body, mime, cache=False: payload.update(
+        {"code": code, "body": body.decode("utf-8"), "mime": mime}
+    )
+
+    module.Handler.do_GET(handler)
+
+    assert payload["code"] == 200
+    assert payload["mime"].startswith("text/html")
+    assert "Документация BSL Graph" in payload["body"]
+    assert "Пересобрать" in payload["body"]
+    assert "RU / EN" in payload["body"]
+
+    handler_en = module.Handler.__new__(module.Handler)
+    handler_en.path = "/docs?lang=en"
+    payload_en: dict = {}
+    handler_en._send_bytes = lambda code, body, mime, cache=False: payload_en.update(
+        {"code": code, "body": body.decode("utf-8"), "mime": mime}
+    )
+
+    module.Handler.do_GET(handler_en)
+
+    assert payload_en["code"] == 200
+    assert "BSL Graph Documentation" in payload_en["body"]
+    assert "Rebuild" in payload_en["body"]
+    assert "RU / EN" in payload_en["body"]

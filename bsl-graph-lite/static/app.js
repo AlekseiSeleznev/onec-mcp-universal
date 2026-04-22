@@ -109,6 +109,7 @@
     ru: {
       search_placeholder: 'Поиск (слова через пробел)…',
       btn_clear: 'Очистить',
+      btn_docs: 'Документация',
       btn_list: 'Список',
       btn_list_title: 'Показать список найденных объектов',
       btn_rebuild: 'Пересобрать',
@@ -190,6 +191,7 @@
     en: {
       search_placeholder: 'Search (space-separated words)…',
       btn_clear: 'Clear',
+      btn_docs: 'Docs',
       btn_list: 'List',
       btn_list_title: 'Show list of matched objects',
       btn_rebuild: 'Rebuild',
@@ -1218,6 +1220,9 @@
     const t = state.t;
     document.getElementById('q').placeholder = t.search_placeholder;
     document.getElementById('btn-clear').textContent = t.btn_clear;
+    const btnDocs = document.getElementById('btn-docs');
+    btnDocs.textContent = t.btn_docs;
+    btnDocs.href = `/docs?lang=${state.lang}`;
     const btnList = document.getElementById('btn-list');
     btnList.textContent = t.btn_list;
     btnList.title = t.btn_list_title;

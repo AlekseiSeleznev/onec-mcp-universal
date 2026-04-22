@@ -751,6 +751,142 @@ _MIME = {
     ".txt": "text/plain; charset=utf-8",
 }
 
+_DOC_STYLE = """*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f172a;color:#e2e8f0;padding:32px;max-width:980px;margin:0 auto;line-height:1.7}
+h1{color:#f8fafc;margin-bottom:8px;font-size:1.5rem}h2{color:#38bdf8;margin:28px 0 10px;font-size:1.15rem;border-bottom:1px solid #334155;padding-bottom:6px}h3{color:#94a3b8;margin:18px 0 6px;font-size:.95rem}
+p,li{color:#94a3b8;font-size:.88rem;margin-bottom:8px}ul,ol{padding-left:24px;margin-bottom:12px}code{background:#334155;padding:2px 6px;border-radius:3px;font-size:.82rem;color:#e2e8f0}
+pre{background:#1e293b;padding:12px 16px;border-radius:6px;overflow-x:auto;margin:10px 0;border:1px solid #334155}pre code{background:none;padding:0}
+a{color:#38bdf8}.back{display:inline-block;margin-bottom:20px;font-size:.85rem}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:.85rem}th,td{padding:8px 10px;border:1px solid #334155;text-align:left}th{background:#1e293b;color:#64748b}
+.note{background:#1e293b;border-left:3px solid #38bdf8;padding:10px 14px;margin:12px 0;border-radius:0 4px 4px 0}
+.warn{background:#1e293b;border-left:3px solid #eab308;padding:10px 14px;margin:12px 0;border-radius:0 4px 4px 0}"""
+
+
+def render_docs(lang: str = "ru") -> str:
+    use_lang = "en" if lang == "en" else "ru"
+    if use_lang == "ru":
+        return f"""<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Документация BSL Graph</title><style>{_DOC_STYLE}</style></head><body>
+<a class="back" href="/?lang=ru">&larr; Назад к графу</a>
+<h1>Документация BSL Graph</h1>
+<p>Viewer предназначен для анализа зависимостей между объектами конфигурации 1С и BSL-файлами на основе уже построенного графа.</p>
+
+<h2>Что показывает граф</h2>
+<p>Узлы графа представляют объекты метаданных 1С и связанные BSL-файлы. Рёбра показывают два основных вида связей:</p>
+<ul>
+<li><code>Использует</code> — один объект ссылается на другой по имени или через код.</li>
+<li><code>Содержит BSL-файл</code> — объект связан со своим исходным BSL-модулем.</li>
+</ul>
+
+<h2>Верхняя панель</h2>
+<table>
+<tr><th>Элемент</th><th>Назначение</th></tr>
+<tr><td>Поиск</td><td>Находит объекты по имени. Можно вводить несколько слов через пробел.</td></tr>
+<tr><td>RU / EN</td><td>Переключает язык интерфейса и подписей типов.</td></tr>
+<tr><td>Документация</td><td>Открывает эту страницу.</td></tr>
+<tr><td>Пересобрать</td><td>Полностью перестраивает граф из текущего рабочего каталога BSL.</td></tr>
+<tr><td>Имя базы</td><td>Показывает активную базу, для которой сейчас строится анализ.</td></tr>
+<tr><td>Узлы / рёбра</td><td>Показывает размер текущего среза графа по активной базе.</td></tr>
+</table>
+
+<h2>Левая панель</h2>
+<p><b>Базы</b> позволяют переключать активную БД. <b>Типы</b> — это быстрый вход в поиск по категориям метаданных, например «Справочник» или «Документ».</p>
+
+<h2>Режимы работы</h2>
+<h3>Обзор</h3>
+<p>Используйте для разведки окрестности узла. Выберите узел, затем раскрывайте соседей и сужайте картину фильтрами.</p>
+<h3>Путь</h3>
+<p>Используйте для impact analysis: задайте стартовый и целевой узел, затем постройте кратчайший путь между ними.</p>
+
+<h2>Правая панель</h2>
+<table>
+<tr><th>Блок</th><th>Назначение</th></tr>
+<tr><td>Контекст</td><td>Показывает активную базу, режим анализа, число узлов и активные фильтры.</td></tr>
+<tr><td>Узел</td><td>Детали выбранного узла и действия: закрепить, выбрать как старт, выбрать как цель.</td></tr>
+<tr><td>Анализ</td><td>Фильтры по направлению, типам связей, типам узлов и скрытие BSL-файлов.</td></tr>
+<tr><td>Путь</td><td>Выбор старта/цели, глубины поиска и список шагов найденного пути.</td></tr>
+</table>
+
+<h2>Практические сценарии</h2>
+<ol>
+<li><b>Что сломается при изменении объекта:</b> найдите объект, задайте его как старт, затем укажите зависимый объект как цель и постройте путь.</li>
+<li><b>Кто использует объект:</b> в режиме «Обзор» переключите направление на «Входящие» и раскройте соседей.</li>
+<li><b>Убрать шум BSL-файлов:</b> включите «Скрыть BSL-файлы».</li>
+<li><b>Держать рабочий контекст:</b> закрепите важные узлы и используйте «Очистить всё кроме закреплённых».</li>
+</ol>
+
+<h2>Ограничения</h2>
+<div class="warn"><p>Viewer анализирует граф только в пределах активной базы. Если результат усечён лимитами или путь не найден, это явно показывается в правой панели.</p></div>
+
+<h2>Deep links</h2>
+<p>Viewer поддерживает открытие с параметрами URL:</p>
+<pre><code>?lang=ru|en
+?db=Z01
+?q=Номенклатура
+?nodeId=Z01:Catalogs:Номенклатура
+?mode=overview|path</code></pre>
+<p>Это позволяет открывать graph viewer прямо из dashboard уже в нужном контексте.</p>
+</body></html>"""
+    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BSL Graph Documentation</title><style>{_DOC_STYLE}</style></head><body>
+<a class="back" href="/?lang=en">&larr; Back to graph</a>
+<h1>BSL Graph Documentation</h1>
+<p>This viewer is designed for dependency analysis between 1C configuration objects and BSL source files using a prebuilt graph.</p>
+
+<h2>What the graph shows</h2>
+<p>Graph nodes represent 1C metadata objects and related BSL files. Edges currently show two main relation types:</p>
+<ul>
+<li><code>Uses</code> — one object references another through code or symbol usage.</li>
+<li><code>Contains BSL file</code> — an object is connected to its BSL source module.</li>
+</ul>
+
+<h2>Top bar</h2>
+<table>
+<tr><th>Element</th><th>Purpose</th></tr>
+<tr><td>Search</td><td>Finds objects by name. Multiple words are supported.</td></tr>
+<tr><td>RU / EN</td><td>Switches UI language and localized type labels.</td></tr>
+<tr><td>Docs</td><td>Opens this documentation page.</td></tr>
+<tr><td>Rebuild</td><td>Fully rebuilds the graph from the current BSL workspace.</td></tr>
+<tr><td>Database name</td><td>Shows the active database currently used for analysis.</td></tr>
+<tr><td>Nodes / edges</td><td>Shows the size of the current graph slice for the active DB.</td></tr>
+</table>
+
+<h2>Left panel</h2>
+<p><b>Databases</b> let you switch the active DB. <b>Types</b> are quick entry points for metadata categories such as Catalog, Document, or Information register.</p>
+
+<h2>Modes</h2>
+<h3>Overview</h3>
+<p>Use it for neighborhood exploration. Select a node, expand related nodes, and narrow the picture with filters.</p>
+<h3>Path</h3>
+<p>Use it for impact analysis: set source and target nodes and build the shortest path between them.</p>
+
+<h2>Right panel</h2>
+<table>
+<tr><th>Block</th><th>Purpose</th></tr>
+<tr><td>Context</td><td>Shows active DB, analysis mode, node count, and active filters.</td></tr>
+<tr><td>Node</td><td>Selected node details and actions: pin, set as source, set as target.</td></tr>
+<tr><td>Analysis</td><td>Filters for direction, edge types, node types, and hiding BSL files.</td></tr>
+<tr><td>Path</td><td>Source/target selection, search depth, and step-by-step path list.</td></tr>
+</table>
+
+<h2>Practical scenarios</h2>
+<ol>
+<li><b>What breaks if I change this object:</b> find the object, set it as source, pick a dependent object as target, then build the path.</li>
+<li><b>Who uses this object:</b> in Overview mode switch direction to Incoming and expand the node.</li>
+<li><b>Reduce BSL noise:</b> enable “Hide BSL files”.</li>
+<li><b>Keep a working context:</b> pin important nodes and use “Clear all except pinned”.</li>
+</ol>
+
+<h2>Limits</h2>
+<div class="warn"><p>The viewer analyzes paths only inside the active database. If a result is truncated by limits or a path is not found, the right panel reports that explicitly.</p></div>
+
+<h2>Deep links</h2>
+<p>The viewer supports direct URL bootstrap parameters:</p>
+<pre><code>?lang=ru|en
+?db=Z01
+?q=Номенклатура
+?nodeId=Z01:Catalogs:Номенклатура
+?mode=overview|path</code></pre>
+<p>This lets the dashboard open the graph viewer directly in the needed context.</p>
+</body></html>"""
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "bsl-graph-lite/0.1"
@@ -824,6 +960,11 @@ class Handler(BaseHTTPRequestHandler):
                     dbs=STORE._parse_csv_values(params.get("dbs")),
                 ),
             )
+            return
+        if parsed.path == "/docs" or parsed.path == "/ui/docs":
+            lang = str((parse_qs(parsed.query).get("lang") or ["ru"])[0]).lower()
+            body = render_docs("en" if lang == "en" else "ru").encode("utf-8")
+            self._send_bytes(200, body, "text/html; charset=utf-8")
             return
         # Static UI
         if parsed.path == "/" or parsed.path == "/ui" or parsed.path == "/ui/":

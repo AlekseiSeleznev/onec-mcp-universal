@@ -79,6 +79,24 @@ header button {
 }
 header button:hover { background: #334155; color: #f8fafc; }
 header button:disabled { opacity: 0.4; cursor: not-allowed; background: #1e293b; color: #64748b; }
+.header-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 5px;
+  font-size: .78rem;
+  cursor: pointer;
+  border: 1px solid #475569;
+  background: #1e293b;
+  color: #94a3b8;
+  text-decoration: none;
+}
+.header-link:hover {
+  background: #334155;
+  color: #f8fafc;
+  text-decoration: none;
+}
 header select {
   background: #1e293b;
   border: 1px solid #475569;
