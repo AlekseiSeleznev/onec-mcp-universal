@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>BSL Graph</title>
-<link rel="stylesheet" href="/static/style.css?v=1.10.0">
+<link rel="stylesheet" href="/static/style.css?v=1.10.1">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -11,6 +11,10 @@
 <body>
 <header>
   <h1>BSL Graph</h1>
+  <div class="lang-sw" id="lang-sw" title="Language / Язык">
+    <a href="#" data-lang="ru">RU</a>
+    <a href="#" data-lang="en">EN</a>
+  </div>
   <input id="q" type="search" autofocus>
   <button id="btn-back" class="nav-btn" title="" disabled>◀</button>
   <button id="btn-fwd" class="nav-btn" title="" disabled>▶</button>
@@ -23,10 +27,6 @@
   <div class="sp"></div>
   <span class="stats" id="stats">—</span>
   <button id="btn-rebuild"></button>
-  <select id="lang-select" title="Language / Язык">
-    <option value="ru">RU</option>
-    <option value="en">EN</option>
-  </select>
 </header>
 <main>
   <aside class="panel">
@@ -75,7 +75,11 @@
       <div class="row"><span class="k" id="lbl-target"></span> <span class="v" id="path-target">—</span></div>
       <div class="row controls">
         <label for="path-depth" id="lbl-max-depth"></label>
-        <input id="path-depth" type="number" min="1" max="12" value="6">
+        <div class="stepper">
+          <button id="path-depth-dec" type="button" class="step-btn" aria-label="Decrease">−</button>
+          <input id="path-depth" type="number" min="1" max="12" value="6">
+          <button id="path-depth-inc" type="button" class="step-btn" aria-label="Increase">+</button>
+        </div>
       </div>
       <div class="row actions">
         <button id="btn-build-path"></button>
@@ -94,8 +98,16 @@
     </div>
     <div id="rp-body" class="rp-body"></div>
   </div>
+  <div id="dialog-modal" class="dialog-modal" hidden>
+    <div class="dialog-card">
+      <div id="dialog-message" class="dialog-message"></div>
+      <div class="dialog-actions">
+        <button id="dialog-ok" type="button">OK</button>
+      </div>
+    </div>
+  </div>
 </main>
 <script src="/static/cytoscape.min.js"></script>
-<script src="/static/app.js?v=1.10.0"></script>
+<script src="/static/app.js?v=1.10.1"></script>
 </body>
 </html>

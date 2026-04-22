@@ -26,6 +26,28 @@ header h1 {
   font-weight: 600;
   color: #f8fafc;
 }
+.lang-sw {
+  display: flex;
+  border: 1px solid #475569;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.lang-sw a {
+  padding: 3px 8px;
+  font-size: .7rem;
+  color: #94a3b8;
+  display: block;
+  text-decoration: none;
+}
+.lang-sw a:hover {
+  background: #334155;
+  color: #f8fafc;
+  text-decoration: none;
+}
+.lang-sw a.on {
+  background: #334155;
+  color: #f8fafc;
+}
 header .sp { flex: 1; }
 header input[type=search] {
   background: #0f172a;
@@ -165,6 +187,39 @@ main {
   padding: 4px 8px;
   border-radius: 5px;
   font-size: .74rem;
+}
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.path-panel input[type=number] {
+  width: 52px;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+.path-panel input[type=number]::-webkit-outer-spin-button,
+.path-panel input[type=number]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.step-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 5px;
+  border: 1px solid #475569;
+  background: #1e293b;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: .82rem;
+}
+.step-btn:hover {
+  background: #334155;
+  color: #f8fafc;
 }
 .analysis-panel .checkbox-row label {
   display: flex;
@@ -308,6 +363,54 @@ main {
 .rp-item .rp-name { color: #f1f5f9; word-break: break-word; }
 .rp-item .rp-meta { color: #64748b; font-size: .65rem; margin-top: 1px; }
 .rp-empty { color: #64748b; font-size: .72rem; text-align: center; padding: 20px; }
+
+.dialog-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dialog-modal[hidden] {
+  display: none;
+}
+.dialog-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 20px;
+  width: 360px;
+  max-width: 90vw;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+.dialog-message {
+  color: #e2e8f0;
+  font-size: .84rem;
+  line-height: 1.45;
+  margin-bottom: 16px;
+  text-align: center;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: center;
+}
+.dialog-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 14px;
+  border-radius: 5px;
+  border: 1px solid #0369a1;
+  background: #0369a1;
+  color: #fff;
+  cursor: pointer;
+  font-size: .78rem;
+}
+.dialog-actions button:hover {
+  background: #0284c7;
+}
 
 @media (max-width: 1100px) {
   main {

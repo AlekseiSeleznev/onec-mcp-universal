@@ -937,10 +937,6 @@ def render_dashboard(
                 f'<button class="btn" style="font-size:.65rem;padding:2px 6px" '
                 f'onclick="act(\'/api/action/reindex-bsl?name={_esc(db["name"])}\')">{t["reindex_bsl"]}</button> '
             )
-            graph_btn = (
-                f'<a class="btn" style="font-size:.65rem;padding:2px 6px" '
-                f'href="http://localhost:8888/?lang={lang}&db={_esc(db["name"])}" target="_blank" rel="noopener">{t["open_graph"]}</a> '
-            )
             if backend_connected:
                 connect_toggle_btn = (
                     f'<button class="btn" style="font-size:.65rem;padding:2px 6px;{_crimson}" '
@@ -967,7 +963,7 @@ def render_dashboard(
                 f'<td style="text-align:center">{default_cell}</td>'
                 f'</tr>'
                 f'<tr><td colspan="4" style="padding:2px 6px">'
-                f'{edit_btn}{reindex_btn}{graph_btn}{connect_toggle_btn} {remove_btn}'
+                f'{edit_btn}{reindex_btn}{connect_toggle_btn} {remove_btn}'
                 f'</td></tr>'
             )
         db_mgmt_html = (

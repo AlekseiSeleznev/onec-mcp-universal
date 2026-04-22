@@ -523,10 +523,15 @@ def test_bsl_graph_viewer_exposes_analysis_modes_and_path_api():
     assert 'value="path"' in html
     assert 'id="path-panel"' in html
     assert 'id="analysis-panel"' in html
+    assert 'id="lang-sw"' in html
+    assert 'id="dialog-modal"' in html
+    assert 'id="path-depth-dec"' in html
+    assert 'id="path-depth-inc"' in html
     assert "/api/graph/path" in js
     assert "selectedSourceId" in js
     assert "selectedTargetId" in js
     assert "hide-bsl-files" in html
+    assert "showDialog(" in js
 
 
 def test_bsl_graph_viewer_supports_bootstrap_query_params():
@@ -558,6 +563,7 @@ def test_dashboard_links_database_rows_to_graph_viewer():
     assert '"open_graph": "Открыть граф"' in text
     assert '"open_graph": "Open Graph"' in text
     assert 'http://localhost:8888/?lang={lang}&db=' in text
+    assert text.count('http://localhost:8888/?lang={lang}&db=') == 1
 
 
 def test_compose_does_not_ship_legacy_bsl_graph_stack():

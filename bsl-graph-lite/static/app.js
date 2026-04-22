@@ -475,6 +475,19 @@
   const apiGet = (p) => api(p);
   const apiPost = (p, body) => api(p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
 
+  function showDialog(message) {
+    const modal = document.getElementById('dialog-modal');
+    const messageEl = document.getElementById('dialog-message');
+    if (!modal || !messageEl) return;
+    messageEl.textContent = String(message || '');
+    modal.hidden = false;
+  }
+
+  function hideDialog() {
+    const modal = document.getElementById('dialog-modal');
+    if (modal) modal.hidden = true;
+  }
+
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
@@ -514,6 +527,15 @@
 
   function displayEdgeType(type) {
     return EDGE_LABELS[state.lang]?.[type] || type;
+  }
+
+  function adjustPathDepth(delta) {
+    const input = document.getElementById('path-depth');
+    const min = Number(input.min || 1);
+    const max = Number(input.max || 12);
+    const current = Number(input.value || DEFAULT_PATH_DEPTH);
+    const next = Math.max(min, Math.min(max, current + delta));
+    input.value = String(next);
   }
 
   function dbsParam() {
@@ -1053,7 +1075,7 @@
 
   function clearExceptPinned() {
     if (!state.pinnedNodeIds.size) {
-      window.alert(state.t.no_pinned_nodes);
+      showDialog(state.t.no_pinned_nodes);
       return;
     }
     cy.nodes().forEach(node => {
@@ -1065,11 +1087,11 @@
 
   async function focusCurrentNeighborhood() {
     if (!state.currentSelectedNodeId) {
-      window.alert(state.t.no_selected_node);
+      showDialog(state.t.no_selected_node);
       return;
     }
     const data = await expand(state.currentSelectedNodeId, { replace: true, depth: 2, limitNodes: 120, limitEdges: 240 });
-    if (!data) window.alert(state.t.focus_failed);
+    if (!data) showDialog(state.t.focus_failed);
   }
 
   function computeTypeCounts() {
@@ -1204,7 +1226,9 @@
     document.getElementById('btn-back').title = t.btn_back_title;
     document.getElementById('btn-fwd').title = t.btn_fwd_title;
     document.getElementById('mode-select').value = state.mode;
-    document.getElementById('lang-select').value = state.lang;
+    document.querySelectorAll('#lang-sw [data-lang]').forEach(link => {
+      link.classList.toggle('on', link.dataset.lang === state.lang);
+    });
     document.getElementById('h-dbs').textContent = t.h_dbs;
     document.getElementById('h-types').textContent = t.h_types;
     document.getElementById('h-context').textContent = t.h_context;
@@ -1285,12 +1309,15 @@
     if (evt.target === cy) showDetails(null);
   });
 
-  document.getElementById('lang-select').addEventListener('change', e => {
-    const newLang = e.target.value;
-    localStorage.setItem('bslgraph.lang', newLang);
-    const url = new URL(window.location.href);
-    url.searchParams.set('lang', newLang);
-    window.location.href = url.toString();
+  document.querySelectorAll('#lang-sw [data-lang]').forEach(link => {
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      const newLang = link.dataset.lang;
+      localStorage.setItem('bslgraph.lang', newLang);
+      const url = new URL(window.location.href);
+      url.searchParams.set('lang', newLang);
+      window.location.href = url.toString();
+    });
   });
   document.getElementById('mode-select').addEventListener('change', e => {
     state.mode = e.target.value === 'path' ? 'path' : 'overview';
@@ -1305,10 +1332,16 @@
     renderContextSummary();
   });
   document.getElementById('path-depth').value = String(DEFAULT_PATH_DEPTH);
+  document.getElementById('path-depth-dec').addEventListener('click', () => adjustPathDepth(-1));
+  document.getElementById('path-depth-inc').addEventListener('click', () => adjustPathDepth(1));
   document.getElementById('btn-build-path').addEventListener('click', buildPath);
   document.getElementById('btn-clear-path').addEventListener('click', clearPath);
   document.getElementById('btn-focus-current').addEventListener('click', focusCurrentNeighborhood);
   document.getElementById('btn-clear-unpinned').addEventListener('click', clearExceptPinned);
+  document.getElementById('dialog-ok').addEventListener('click', hideDialog);
+  document.getElementById('dialog-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) hideDialog();
+  });
   document.getElementById('q').addEventListener('keydown', e => {
     if (e.key === 'Enter') searchByQuery(e.target.value);
   });
@@ -1334,7 +1367,7 @@
       await apiPost('/api/graph/rebuild', {});
       await loadStats();
     } catch (e) {
-      window.alert(`${state.t.rebuild_failed}: ${e.message}`);
+      showDialog(`${state.t.rebuild_failed}: ${e.message}`);
     } finally {
       btn.textContent = prev;
       btn.disabled = false;
