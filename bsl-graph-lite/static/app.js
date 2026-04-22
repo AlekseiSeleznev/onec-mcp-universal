@@ -955,7 +955,6 @@
 
   function applySnapshot(snapshot) {
     state.restoringNav = true;
-    flushCurrentHistoryRefresh();
     state.selectedDb = snapshot.selectedDb;
     state.mode = snapshot.mode;
     state.selectedSourceId = snapshot.selectedSourceId;
@@ -1009,6 +1008,7 @@
   }
 
   async function navigateHistory(delta) {
+    flushCurrentHistoryRefresh();
     const next = state.navCursor + delta;
     if (next < 0 || next >= state.navHistory.length) return;
     state.navCursor = next;
