@@ -652,13 +652,16 @@
 
   function addElements(nodes, edges, opts) {
     const options = opts || {};
+    const positions = options.positions || {};
     const existingIds = new Set(cy.nodes().map(n => n.id()));
     const toAddNodes = [];
     for (const n of nodes || []) {
       if (existingIds.has(n.id)) continue;
       if (!dbVisible(dbOf(n))) continue;
       if (cy.nodes().length + toAddNodes.length >= MAX_NODES) break;
-      toAddNodes.push({ data: { id: n.id, type: n.type, label: nodeLabel(n), db: dbOf(n), raw: n } });
+      const entry = { data: { id: n.id, type: n.type, label: nodeLabel(n), db: dbOf(n), raw: n } };
+      if (positions[n.id]) entry.position = positions[n.id];
+      toAddNodes.push(entry);
     }
     const existingEdges = new Set(cy.edges().map(e => `${e.data('source')}|${e.data('target')}|${e.data('label')}`));
     const toAddEdges = [];
@@ -860,6 +863,9 @@
       currentSelectedNodeId: state.currentSelectedNodeId,
       lastResults: JSON.parse(JSON.stringify(state.lastResults || [])),
       pathDepth: Number(document.getElementById('path-depth').value || DEFAULT_PATH_DEPTH),
+      zoom: cy.zoom(),
+      pan: cy.pan(),
+      positions: Object.fromEntries(cy.nodes().map(node => [node.id(), node.position()])),
       nodes: cy.nodes().map(node => node.data('raw')).filter(Boolean),
       edges: cy.edges().map(edge => ({
         sourceId: edge.data('source'),
@@ -882,6 +888,8 @@
       hide: snapshot.filters.hideBslFiles,
       et: snapshot.filters.edgeTypes,
       nt: snapshot.filters.nodeTypes,
+      zoom: snapshot.zoom,
+      pan: snapshot.pan,
       path: snapshot.currentPathData ? {
         found: snapshot.currentPathData.pathFound,
         reason: snapshot.currentPathData.reason,
@@ -944,7 +952,13 @@
     renderFilters();
     renderLegend();
     resetGraph(true);
-    addElements(snapshot.nodes || [], snapshot.edges || [], { skipLayout: true });
+    addElements(snapshot.nodes || [], snapshot.edges || [], {
+      skipLayout: true,
+      positions: snapshot.positions || {},
+    });
+    if (typeof snapshot.zoom === 'number') cy.zoom(snapshot.zoom);
+    if (snapshot.pan && typeof snapshot.pan.x === 'number' && typeof snapshot.pan.y === 'number') cy.pan(snapshot.pan);
+    else if (cy.elements().length) cy.fit(cy.elements(), 60);
     renderResultsPanel();
     updatePathSummary();
     renderPathSteps();
