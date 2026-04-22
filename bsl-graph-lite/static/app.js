@@ -295,7 +295,6 @@
     navCursor: -1,
     restoringNav: false,
     lastSnapshotKey: '',
-    historyPushTimer: null,
     lastResults: [],
     mode: queryParams().get('mode') === 'path' ? 'path' : 'overview',
     selectedSourceId: '',
@@ -651,7 +650,7 @@
     }
   }
 
-  function addElements(nodes, edges, opts) {
+  async function addElements(nodes, edges, opts) {
     const options = opts || {};
     const positions = options.positions || {};
     const existingIds = new Set(cy.nodes().map(n => n.id()));
@@ -679,7 +678,11 @@
     cy.add([...toAddNodes, ...toAddEdges]);
     applyNodeDecorations();
     cy.style().update();
-    if (!options.skipLayout) cy.layout(LAYOUT_OPTS).run();
+    if (options.skipLayout) return;
+    const layout = cy.layout(LAYOUT_OPTS);
+    const done = layout.promiseOn('layoutstop').catch(() => {});
+    layout.run();
+    await done;
   }
 
   function nodeDisplayNameById(id) {
@@ -690,11 +693,14 @@
   }
 
   function focusCyNode(node) {
-    cy.animate({
-      center: { eles: node },
-      zoom: Math.max(cy.zoom(), 1.15),
-      duration: 400,
-      easing: 'ease-out',
+    return new Promise(resolve => {
+      cy.animate({
+        center: { eles: node },
+        zoom: Math.max(cy.zoom(), 1.15),
+        duration: 400,
+        easing: 'ease-out',
+        complete: resolve,
+      });
     });
   }
 
@@ -914,14 +920,6 @@
     updateNavButtons();
   }
 
-  function queueGraphHistory(delay = 0) {
-    if (state.historyPushTimer) window.clearTimeout(state.historyPushTimer);
-    state.historyPushTimer = window.setTimeout(() => {
-      state.historyPushTimer = null;
-      pushGraphHistory();
-    }, delay);
-  }
-
   function updateNavButtons() {
     const back = document.getElementById('btn-back');
     const fwd = document.getElementById('btn-fwd');
@@ -1003,7 +1001,7 @@
       };
       const data = await apiPost('/api/graph/search', payload);
       resetGraph();
-      addElements(data.nodes || [], data.edges || []);
+      await addElements(data.nodes || [], data.edges || []);
       state.lastResults = data.nodes || [];
       renderResultsPanel();
       renderContextSummary();
@@ -1055,14 +1053,14 @@
       if (options.replace) {
         resetGraph();
       }
-      addElements(data.nodes || [], data.edges || []);
+      await addElements(data.nodes || [], data.edges || []);
       const node = cy.getElementById(nodeId);
       if (node.nonempty()) {
         showDetails(node);
-        focusCyNode(node);
+        await focusCyNode(node);
       }
       renderContextSummary();
-      queueGraphHistory(node.nonempty() ? 450 : 0);
+      pushGraphHistory();
       return data;
     } catch (e) {
       console.error(e);
@@ -1070,15 +1068,15 @@
     }
   }
 
-  function focusNode(id) {
+  async function focusNode(id) {
     const node = cy.getElementById(id);
     if (node.nonempty()) {
-      focusCyNode(node);
       showDetails(node);
-      queueGraphHistory(450);
+      await focusCyNode(node);
+      pushGraphHistory();
       return;
     }
-    expand(id);
+    await expand(id);
   }
 
   function pathStatusMessage(reason, hopCount) {
@@ -1168,7 +1166,7 @@
       state.truncatedState.path = !!data.truncated;
       state.truncatedState.reason = data.reason || '';
       resetGraph();
-      addElements(data.nodes || [], data.edges || []);
+      await addElements(data.nodes || [], data.edges || []);
       const src = cy.getElementById(state.selectedSourceId);
       const tgt = cy.getElementById(state.selectedTargetId);
       if (src.nonempty()) showDetails(src);
