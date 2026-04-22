@@ -408,7 +408,7 @@
           'arrow-scale': 0.8,
           'curve-style': 'bezier',
           'opacity': 0.7,
-          'label': 'data(label)',
+          'label': ele => displayEdgeType(ele.data('rawLabel') || ele.data('label')),
           'font-size': 8,
           'color': '#94a3b8',
           'text-background-color': '#0f172a',
@@ -642,7 +642,7 @@
       if (!allNodeIds.has(src) || !allNodeIds.has(tgt)) continue;
       const key = `${src}|${tgt}|${label}`;
       if (existingEdges.has(key)) continue;
-      toAddEdges.push({ data: { source: src, target: tgt, label } });
+      toAddEdges.push({ data: { source: src, target: tgt, label, rawLabel: label } });
     }
     cy.add([...toAddNodes, ...toAddEdges]);
     applyNodeDecorations();
