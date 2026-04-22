@@ -527,11 +527,13 @@ def test_bsl_graph_viewer_exposes_analysis_modes_and_path_api():
     assert 'id="dialog-modal"' in html
     assert 'id="path-depth-dec"' in html
     assert 'id="path-depth-inc"' in html
+    assert html.index('id="lang-sw"') < html.index('id="current-db"') < html.index('id="btn-rebuild"') < html.index('id="stats"')
     assert "/api/graph/path" in js
     assert "selectedSourceId" in js
     assert "selectedTargetId" in js
     assert "hide-bsl-files" in html
     assert "showDialog(" in js
+    assert 'getElementById(\'current-db\')' in js
 
 
 def test_bsl_graph_viewer_supports_bootstrap_query_params():

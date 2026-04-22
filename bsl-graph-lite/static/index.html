@@ -11,10 +11,6 @@
 <body>
 <header>
   <h1>BSL Graph</h1>
-  <div class="lang-sw" id="lang-sw" title="Language / Язык">
-    <a href="#" data-lang="ru">RU</a>
-    <a href="#" data-lang="en">EN</a>
-  </div>
   <input id="q" type="search" autofocus>
   <button id="btn-back" class="nav-btn" title="" disabled>◀</button>
   <button id="btn-fwd" class="nav-btn" title="" disabled>▶</button>
@@ -25,8 +21,13 @@
     <option value="path">Путь</option>
   </select>
   <div class="sp"></div>
-  <span class="stats" id="stats">—</span>
+  <div class="lang-sw" id="lang-sw" title="Language / Язык">
+    <a href="#" data-lang="ru">RU</a>
+    <a href="#" data-lang="en">EN</a>
+  </div>
+  <span class="current-db" id="current-db">—</span>
   <button id="btn-rebuild"></button>
+  <span class="stats" id="stats">—</span>
 </header>
 <main>
   <aside class="panel">

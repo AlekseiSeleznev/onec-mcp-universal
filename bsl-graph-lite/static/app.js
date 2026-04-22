@@ -1192,8 +1192,9 @@
       nodes = Object.values(byTypeByDb[state.selectedDb] || {}).reduce((a, b) => a + b, 0);
       edges = edgesByDb[state.selectedDb] || 0;
     }
-    const suffix = state.selectedDb && state.allDbs.length > 1 ? ` · ${escapeHtml(state.selectedDb)}` : '';
-    document.getElementById('stats').innerHTML = `<strong>${nodes}</strong> ${t.nodes_word} · <strong>${edges}</strong> ${t.edges_word}${suffix}`;
+    const currentDb = document.getElementById('current-db');
+    currentDb.textContent = state.selectedDb || '—';
+    document.getElementById('stats').innerHTML = `<strong>${nodes}</strong> ${t.nodes_word} · <strong>${edges}</strong> ${t.edges_word}`;
   }
 
   function onDbSelect(e) {

@@ -26,6 +26,14 @@ header h1 {
   font-weight: 600;
   color: #f8fafc;
 }
+.current-db {
+  color: #cbd5e1;
+  font-size: .78rem;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .lang-sw {
   display: flex;
   border: 1px solid #475569;
