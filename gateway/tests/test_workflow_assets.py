@@ -276,7 +276,7 @@ def test_readme_documents_workflow_and_compatibility_examples():
 def test_readme_mcp_tool_count_is_marked_as_dynamic():
     root = _repo_root()
     text = (root / "README.md").read_text(encoding="utf-8")
-    assert "40+ MCP-инструментов + 1 ресурс" in text
+    assert "48+ MCP-инструментов + 1 ресурс" in text
     assert "0-1" in text and "NAPARNIK_API_KEY" in text
 
 
@@ -293,8 +293,8 @@ def test_web_ui_docs_do_not_contain_stale_tool_counts():
     assert "46-47 tools" not in text
     assert "полный список MCP-инструментов" in text
     assert "complete list of MCP tools" in text
-    assert "19 инструментов +" in text
-    assert "19 tools +" in text
+    assert "26 инструментов +" in text
+    assert "26 tools +" in text
 
 
 def test_web_ui_docs_describe_explicit_docker_stats_refresh():

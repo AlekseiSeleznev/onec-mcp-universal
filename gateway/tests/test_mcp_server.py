@@ -99,6 +99,33 @@ def patch_session_id(patch_mcp_server):
 
 
 # ---------------------------------------------------------------------------
+# prompts
+# ---------------------------------------------------------------------------
+
+
+class TestPrompts:
+    @pytest.mark.asyncio
+    async def test_list_prompts_and_get_prompt_format_known_arguments(self, patch_mcp_server):
+        ms = patch_mcp_server
+
+        prompts = await ms.list_prompts()
+        result = await ms.get_prompt("describe_object", {"metadata_object": "Справочник.Валюты"})
+
+        assert any(prompt.name == "describe_object" for prompt in prompts)
+        assert "Справочник.Валюты" in result.messages[0].content.text
+
+    @pytest.mark.asyncio
+    async def test_get_prompt_falls_back_to_template_when_argument_missing_and_rejects_unknown(self, patch_mcp_server):
+        ms = patch_mcp_server
+
+        result = await ms.get_prompt("describe_object", {})
+
+        assert "{metadata_object}" in result.messages[0].content.text
+        with pytest.raises(ValueError, match="Unknown prompt"):
+            await ms.get_prompt("missing")
+
+
+# ---------------------------------------------------------------------------
 # list_tools
 # ---------------------------------------------------------------------------
 
@@ -1441,6 +1468,41 @@ class TestExportBsl:
 
             result = await ms._run_export_bsl("Srvr=srv;Ref=base;", "/workspace/test")
             assert "Export OK" in result
+
+    @pytest.mark.asyncio
+    async def test_run_export_bsl_refresh_lsp_helper_skips_empty_slug_and_analyzes_success(self, patch_mcp_server):
+        ms = patch_mcp_server
+
+        async def fake_impl(**kwargs):
+            await kwargs["refresh_lsp_fn"]("", "/workspace/Z01")
+            return "Export OK"
+
+        with patch.object(ms, "_run_export_bsl_impl", new=AsyncMock(side_effect=fake_impl)) as impl, patch.object(
+            ms, "_auto_analyze_reports_for_db", new=AsyncMock()
+        ) as analyze, patch("gateway.docker_manager.start_lsp") as start_lsp:
+            result = await ms._run_export_bsl("Srvr=srv;Ref=Z01;", "/workspace/Z01")
+
+        assert result == "Export OK"
+        assert impl.await_count == 1
+        start_lsp.assert_not_called()
+        analyze.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_run_export_bsl_refresh_lsp_helper_restarts_lsp_for_slug(self, patch_mcp_server):
+        ms = patch_mcp_server
+
+        async def fake_impl(**kwargs):
+            await kwargs["refresh_lsp_fn"]("Z01", "/workspace/Z01")
+            return "ERROR: export failed"
+
+        with patch.object(ms, "_run_export_bsl_impl", new=AsyncMock(side_effect=fake_impl)), patch(
+            "gateway.docker_manager.start_lsp", return_value="mcp-lsp-Z01"
+        ) as start_lsp, patch.object(ms, "_auto_analyze_reports_for_db", new=AsyncMock()) as analyze:
+            result = await ms._run_export_bsl("Srvr=srv;Ref=Z01;", "/workspace/Z01")
+
+        assert result == "ERROR: export failed"
+        start_lsp.assert_called_once_with("Z01", "/workspace/Z01")
+        analyze.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_export_no_1cv8_no_host(self, patch_mcp_server, monkeypatch):

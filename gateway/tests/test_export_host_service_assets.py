@@ -175,3 +175,37 @@ def test_run_export_replaces_existing_tree_only_after_success(tmp_path):
     assert "Export completed" in result
     assert (output_dir / "Catalogs" / "Items" / "Module.bsl").is_file()
     assert not (output_dir / "old" / "legacy.txt").exists()
+
+
+def test_choose_directory_with_os_dialog_uses_first_successful_strategy(tmp_path):
+    module = _load_export_host_service()
+    start = tmp_path / "bsl-root"
+    start.mkdir()
+    calls = []
+
+    def fake_runner(command, args):
+        calls.append(command)
+        if command == "zenity":
+            raise FileNotFoundError(command)
+        if command == "qarma":
+            return {"code": 0, "stdout": str(start / "selected"), "stderr": ""}
+        return {"code": 2, "stdout": "", "stderr": "unexpected"}
+
+    result = module.choose_directory_with_os_dialog(str(start), process_runner=fake_runner, platform_name="linux")
+
+    assert result == {"ok": True, "cancelled": False, "path": str(start / "selected")}
+    assert calls[:2] == ["zenity", "qarma"]
+
+
+def test_choose_directory_with_os_dialog_reports_cancelled_result(tmp_path):
+    module = _load_export_host_service()
+    start = tmp_path / "bsl-root"
+    start.mkdir()
+
+    result = module.choose_directory_with_os_dialog(
+        str(start),
+        process_runner=lambda command, args: {"code": 1, "stdout": "", "stderr": ""},
+        platform_name="linux",
+    )
+
+    assert result == {"ok": True, "cancelled": True, "path": ""}

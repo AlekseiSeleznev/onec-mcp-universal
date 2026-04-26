@@ -88,6 +88,19 @@ class TestFindFreePort:
 
         assert 6100 <= port < 7000
 
+    def test_skips_host_network_port_from_container_environment(self):
+        from gateway.docker_manager import _find_free_port
+
+        mock_container = MagicMock()
+        mock_container.ports = {}
+        mock_container.attrs = {"Config": {"Env": ["PORT=6100"]}}
+
+        with patch("gateway.docker_manager._docker") as mock_docker:
+            mock_docker.return_value.containers.list.return_value = [mock_container]
+            port = _find_free_port(6100)
+
+        assert port != 6100
+
 
 class TestHelperEnvReaders:
     def test_control_url_defaults_and_trims_trailing_slash(self):
@@ -523,6 +536,76 @@ class TestDockerControlHttpHelpers:
             json={},
             timeout=60,
         )
+
+    def test_recreate_bsl_graph_direct_recreates_container_with_current_workspace_mounts(self):
+        from gateway.docker_manager import _recreate_bsl_graph_direct
+
+        container = MagicMock()
+        container.attrs = {
+            "Config": {
+                "Env": ["EXISTING=1", "BROKEN"],
+                "Image": "old-image",
+                "Labels": {"app": "graph"},
+                "Cmd": ["python", "-m", "bsl_graph_lite"],
+            },
+            "HostConfig": {
+                "PortBindings": {
+                    "8888/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8888"}],
+                    "9999/tcp": [{}],
+                    "7777/tcp": [],
+                },
+                "NetworkMode": "bridge",
+                "RestartPolicy": {"Name": "unless-stopped"},
+            },
+            "Mounts": [
+                {"Destination": "", "Source": "/ignored"},
+                {"Destination": "/workspace", "Source": "/old-workspace", "RW": False},
+                {"Destination": "/hostfs-home", "Source": "/old-home", "RW": True},
+                {"Destination": "/data", "Name": "graph-data", "RW": True},
+                {"Destination": "/ignored", "Source": "/ignored", "RW": True},
+            ],
+        }
+        docker_client = MagicMock()
+        docker_client.containers.get.return_value = container
+
+        with patch("gateway.docker_manager._docker", return_value=docker_client), patch(
+            "gateway.docker_manager._bsl_workspace_host", return_value="/home/as/Z"
+        ), patch("gateway.docker_manager._hostfs_home_host", return_value=""):
+            _recreate_bsl_graph_direct()
+
+        container.remove.assert_called_once_with(force=True)
+        docker_client.containers.run.assert_called_once()
+        kwargs = docker_client.containers.run.call_args.kwargs
+        assert docker_client.containers.run.call_args.args[0] == "old-image"
+        assert kwargs["environment"]["GRAPH_WORKSPACE"] == "/workspace"
+        assert kwargs["environment"]["EXISTING"] == "1"
+        assert kwargs["volumes"]["/home/as/Z"] == {"bind": "/workspace", "mode": "ro"}
+        assert kwargs["volumes"]["/home"] == {"bind": "/hostfs-home", "mode": "rw"}
+        assert kwargs["volumes"]["graph-data"] == {"bind": "/data", "mode": "rw"}
+        assert kwargs["ports"] == {"8888/tcp": ("127.0.0.1", 8888)}
+        assert kwargs["network"] == "bridge"
+        assert kwargs["command"] == ["python", "-m", "bsl_graph_lite"]
+
+    def test_recreate_bsl_graph_direct_requires_workspace_and_reports_remove_errors(self):
+        from gateway.docker_manager import _recreate_bsl_graph_direct
+
+        container = MagicMock()
+        container.attrs = {"Config": {}, "HostConfig": {}, "Mounts": []}
+        docker_client = MagicMock()
+        docker_client.containers.get.return_value = container
+
+        with patch("gateway.docker_manager._docker", return_value=docker_client), patch(
+            "gateway.docker_manager._bsl_workspace_host", return_value=""
+        ):
+            with pytest.raises(RuntimeError, match="not configured"):
+                _recreate_bsl_graph_direct()
+
+        container.remove.side_effect = RuntimeError("remove failed")
+        with patch("gateway.docker_manager._docker", return_value=docker_client), patch(
+            "gateway.docker_manager._bsl_workspace_host", return_value="/home/as/Z"
+        ), patch("gateway.docker_manager._hostfs_home_host", return_value="/home"):
+            with pytest.raises(RuntimeError, match="Cannot remove existing"):
+                _recreate_bsl_graph_direct()
 
     def test_write_lsp_file_direct_puts_archive_and_chowns_new_directory(self):
         from gateway.docker_manager import _write_lsp_file_direct

@@ -148,6 +148,48 @@ class TestTryHandleGraphTool:
         assert parsed["totalCount"] == 1
 
     @pytest.mark.asyncio
+    async def test_graph_search_filter_handles_malformed_items_ids_edges_and_invalid_json(self):
+        invalid_requester = AsyncMock(return_value="not-json")
+        invalid = await try_handle_graph_tool(
+            "graph_search",
+            {"query": "Номенклатура"},
+            invalid_requester,
+            active_db="Z01",
+        )
+        requester = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "nodes": [
+                        "not-a-dict",
+                        {"id": "Z01:Catalogs:Номенклатура"},
+                        {"id": "NO_COLON"},
+                        {"properties": {"db": ""}},
+                    ],
+                    "edges": [
+                        "not-a-dict",
+                        {"sourceId": "NO_COLON", "targetId": "Z01:file:Catalogs/Номенклатура"},
+                        {"sourceId": "NO_COLON", "targetId": "NO_COLON"},
+                    ],
+                    "totalCount": 4,
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = await try_handle_graph_tool(
+            "graph_search",
+            {"query": "Номенклатура"},
+            requester,
+            active_db="Z01",
+        )
+
+        parsed = json.loads(result)
+        assert invalid == "not-json"
+        assert parsed["nodes"] == [{"id": "Z01:Catalogs:Номенклатура"}]
+        assert parsed["edges"] == [{"sourceId": "NO_COLON", "targetId": "Z01:file:Catalogs/Номенклатура"}]
+        assert parsed["totalCount"] == 1
+
+    @pytest.mark.asyncio
     async def test_graph_related_uses_depth_param(self):
         requester = AsyncMock(return_value='{"neighbors": []}')
 

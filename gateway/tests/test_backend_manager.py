@@ -368,6 +368,39 @@ async def test_add_db_backends_keeps_entry_even_if_lsp_start_fails(mgr):
 
 
 @pytest.mark.asyncio
+async def test_db_lsp_helpers_cover_missing_stop_failure_and_attach_paths(mgr):
+    toolkit = FakeBackend("tk-main", ["execute_query"])
+    lsp = StopFailingBackend("lsp-stop-fails", ["symbol_explore"])
+    await mgr.add_db_backends("db1", toolkit, lsp)
+
+    assert mgr.db_has_lsp("db1") is True
+    assert mgr.db_has_lsp("missing") is False
+
+    await mgr.detach_db_lsp("missing")
+    await mgr.detach_db_lsp("db1")
+    assert mgr.db_has_lsp("db1") is False
+
+    failing_lsp = FailingBackend("lsp-start-fails")
+    await mgr.attach_db_lsp("db1", failing_lsp)
+    assert mgr.get_db_backend("db1", "lsp") is failing_lsp
+
+    with pytest.raises(RuntimeError, match="not registered"):
+        await mgr.attach_db_lsp("missing", FakeBackend("lsp", ["symbol_explore"]))
+
+
+@pytest.mark.asyncio
+async def test_attach_db_lsp_starts_and_registers_successful_backend(mgr):
+    toolkit = FakeBackend("tk-main", ["execute_query"])
+    await mgr.add_db_backends("db1", toolkit, None)
+    lsp = FakeBackend("lsp-ok", ["symbol_explore"])
+
+    await mgr.attach_db_lsp("db1", lsp)
+
+    assert lsp.available is True
+    assert mgr.get_db_backend("db1", "lsp") is lsp
+
+
+@pytest.mark.asyncio
 async def test_find_db_backend_for_tool_supports_extra_roles(mgr):
     toolkit = FakeBackend("tk-main", ["execute_query"])
     extra = FakeBackend("graph-role", ["graph_search"])

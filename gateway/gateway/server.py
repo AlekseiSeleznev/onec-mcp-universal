@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import json
 import logging
 import os
 import httpx
@@ -24,6 +25,7 @@ from .backends.stdio_backend import StdioBackend
 from .config import VERSION as _version, settings
 from .db_registry import registry as _registry
 from .logging_utils import configure_logging
+from .report_catalog import ReportCatalog
 from .security.api_token import (
     DEFAULT_TOKEN_PROTECTED_PATHS,
     request_needs_api_token,
@@ -31,6 +33,8 @@ from .security.api_token import (
 )
 from .security.rate_limit import build_rate_limit_guard
 from .session_cleanup import drop_sessions, terminated_session_ids
+from .tool_handlers.reports import rebuild_report_catalog_for_db_info
+from .tool_handlers.reports import try_handle_report_tool
 
 configure_logging(settings.log_level, json_logs=settings.log_json)
 logger = logging.getLogger(__name__)
@@ -38,6 +42,7 @@ logger = logging.getLogger(__name__)
 _CHANNEL_ID_ALLOWED = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
 
 _manager = BackendManager()
+_report_catalog: ReportCatalog | None = None
 mcp_server.manager = _manager
 mcp_server.registry = _registry
 
@@ -273,6 +278,13 @@ async def lifespan(app: Starlette):
         _docker_manager._client = None
 
 
+def _get_report_catalog() -> ReportCatalog:
+    global _report_catalog
+    if _report_catalog is None:
+        _report_catalog = ReportCatalog()
+    return _report_catalog
+
+
 async def health(request: Request) -> JSONResponse:
     status = _manager.status()
     all_ok = all(v["ok"] for v in status.values()) if status else False
@@ -305,8 +317,11 @@ _MUTATING_ACTIONS = {
     "remove",
     "reconnect",
     "save-bsl-workspace",
+    "save-report-settings",
     "save-env",
     "reindex-bsl",
+    "reports-analyze",
+    "reports-run",
 }
 
 _TOKEN_PROTECTED_PATHS = set(DEFAULT_TOKEN_PROTECTED_PATHS)
@@ -629,6 +644,41 @@ async def export_status_api(request: Request) -> JSONResponse:
     return JSONResponse({"jobs": _export_jobs}, status_code=200)
 
 
+_REPORT_API_ACTIONS = {
+    "analyze": "analyze_reports",
+    "find": "find_reports",
+    "list": "list_reports",
+    "describe": "describe_report",
+    "run": "run_report",
+    "validate-all": "validate_all_reports",
+    "result": "get_report_result",
+    "explain": "explain_report_strategy",
+}
+
+
+async def reports_api(request: Request) -> JSONResponse:
+    """Dashboard REST facade for user-facing report discovery/execution."""
+    action = request.path_params.get("action", "")
+    tool_name = _REPORT_API_ACTIONS.get(action)
+    if not tool_name:
+        return JSONResponse({"ok": False, "error": "Unknown reports action"}, status_code=404)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON body"}, status_code=400)
+    result = await try_handle_report_tool(
+        tool_name,
+        body,
+        registry=_registry,
+        manager=_manager,
+    )
+    try:
+        payload = json.loads(result or "{}")
+    except json.JSONDecodeError:
+        payload = {"ok": False, "error": result or ""}
+    return JSONResponse(payload, status_code=200)
+
+
 async def export_cancel_api(request: Request) -> JSONResponse:
     """Cancel a running BSL export. POST {"connection": "..."}"""
     try:
@@ -762,6 +812,11 @@ async def dashboard(request: Request) -> HTMLResponse:
         ("NAPARNIK_API_KEY", "***" if settings.naparnik_api_key else "not configured"),
         ("METADATA_CACHE_TTL", f"{settings.metadata_cache_ttl}s"),
         ("EPF_HEARTBEAT_TTL_SECONDS", str(settings.epf_heartbeat_ttl_seconds)),
+        ("REPORT_AUTO_ANALYZE_ENABLED", "true" if settings.report_auto_analyze_enabled else "false"),
+        ("REPORT_RUN_DEFAULT_MAX_ROWS", str(settings.report_run_default_max_rows)),
+        ("REPORT_RUN_DEFAULT_TIMEOUT_SECONDS", str(settings.report_run_default_timeout_seconds)),
+        ("REPORT_VALIDATE_DEFAULT_MAX_ROWS", str(settings.report_validate_default_max_rows)),
+        ("REPORT_VALIDATE_DEFAULT_TIMEOUT_SECONDS", str(settings.report_validate_default_timeout_seconds)),
         ("TEST_RUNNER_URL", settings.test_runner_url),
         ("BSL_GRAPH_URL", settings.bsl_graph_url),
     ]
@@ -787,6 +842,8 @@ async def dashboard(request: Request) -> HTMLResponse:
         container_info=container_info,
         docker_system=docker_system,
         optional_services=optional_services,
+        reports_summary=_collect_reports_summary(None, [db.get("name", "") for db in databases_list]),
+        report_settings=_current_report_settings_payload(),
         lang=lang,
     )
     return HTMLResponse(html)
@@ -1270,6 +1327,34 @@ async def action_api(request: Request) -> JSONResponse:
             "placeholder": "C:\\Users\\user\\bsl-projects" if os_name == "windows" else "/home/user/bsl-projects",
         })
 
+    if path == "get-report-settings":
+        return JSONResponse({"ok": True, **_current_report_settings_payload()})
+
+    if path == "save-report-settings":
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+        try:
+            new_settings = _parse_report_settings_payload(body)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        result = _update_env_values({
+            "REPORT_AUTO_ANALYZE_ENABLED": "true" if new_settings["auto_analyze_enabled"] else "false",
+            "REPORT_RUN_DEFAULT_MAX_ROWS": str(new_settings["run_default_max_rows"]),
+            "REPORT_RUN_DEFAULT_TIMEOUT_SECONDS": str(new_settings["run_default_timeout_seconds"]),
+            "REPORT_VALIDATE_DEFAULT_MAX_ROWS": str(new_settings["validate_default_max_rows"]),
+            "REPORT_VALIDATE_DEFAULT_TIMEOUT_SECONDS": str(new_settings["validate_default_timeout_seconds"]),
+        })
+        if not result.get("ok"):
+            return JSONResponse(result)
+        _apply_report_settings_runtime(new_settings)
+        return JSONResponse({
+            "ok": True,
+            "message": "Настройки отчётов сохранены и применены без перезапуска.",
+            **_current_report_settings_payload(),
+        })
+
     if path == "save-bsl-workspace":
         try:
             body = await request.json()
@@ -1365,6 +1450,10 @@ async def action_api(request: Request) -> JSONResponse:
                         lsp_message = f"LSP переиндексация запущена.\n{resp}"
                 except Exception as exc:
                     lsp_message = f"Ошибка LSP-переиндексации: {exc}"
+            try:
+                await rebuild_report_catalog_for_db_info(db_name, db)
+            except Exception as exc:
+                logger.info("Skipping report catalog refresh after dashboard reindex for %s: %s", db_name, exc)
             return JSONResponse({"ok": True, "message": f"{index_message}\n{lsp_message}"})
         from . import mcp_server as _ms
         result = await _ms._reindex_bsl("")
@@ -1380,6 +1469,7 @@ async def action_api(request: Request) -> JSONResponse:
                         include_runtime_stats=True,
                         include_image_size=True,
                     ),
+                    "reports_summary": _collect_reports_summary(None, [db.get("name", "") for db in _registry.list()]),
                 },
             }
         )
@@ -1616,25 +1706,84 @@ def _read_env_value(key: str) -> str:
 
 def _update_env_value(key: str, value: str) -> dict:
     """Update or append a key=value line in the .env file, preserving comments."""
+    return _update_env_values({key: value})
+
+
+def _update_env_values(updates: dict[str, str]) -> dict:
+    """Update or append several key=value lines in the .env file atomically."""
     content = _read_env_file()
     lines = content.splitlines(keepends=True)
-    found = False
+    pending = {str(key): str(value) for key, value in updates.items()}
     new_lines = []
     for line in lines:
         stripped = line.strip()
         if not stripped.startswith("#") and "=" in stripped:
             k, _, _ = stripped.partition("=")
-            if k.strip() == key:
-                new_lines.append(f"{key}={value}\n")
-                found = True
+            key_name = k.strip()
+            if key_name in pending:
+                new_lines.append(f"{key_name}={pending.pop(key_name)}\n")
                 continue
         new_lines.append(line)
-    if not found:
-        # Append to end
+    for key, value in pending.items():
         if new_lines and not new_lines[-1].endswith("\n"):
             new_lines.append("\n")
         new_lines.append(f"{key}={value}\n")
     return _write_env_file("".join(new_lines))
+
+
+def _current_report_settings_payload() -> dict:
+    return {
+        "auto_analyze_enabled": bool(settings.report_auto_analyze_enabled),
+        "run_default_max_rows": int(settings.report_run_default_max_rows),
+        "run_default_timeout_seconds": int(settings.report_run_default_timeout_seconds),
+        "validate_default_max_rows": int(settings.report_validate_default_max_rows),
+        "validate_default_timeout_seconds": int(settings.report_validate_default_timeout_seconds),
+    }
+
+
+def _parse_bool_value(value, field_name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    raise ValueError(f"{field_name} must be true or false")
+
+
+def _parse_non_negative_int(value, field_name: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a non-negative integer") from exc
+    if parsed < 0:
+        raise ValueError(f"{field_name} must be a non-negative integer")
+    return parsed
+
+
+def _parse_report_settings_payload(body: dict) -> dict:
+    return {
+        "auto_analyze_enabled": _parse_bool_value(body.get("auto_analyze_enabled", True), "auto_analyze_enabled"),
+        "run_default_max_rows": _parse_non_negative_int(body.get("run_default_max_rows", settings.report_run_default_max_rows), "run_default_max_rows"),
+        "run_default_timeout_seconds": _parse_non_negative_int(body.get("run_default_timeout_seconds", settings.report_run_default_timeout_seconds), "run_default_timeout_seconds"),
+        "validate_default_max_rows": _parse_non_negative_int(body.get("validate_default_max_rows", settings.report_validate_default_max_rows), "validate_default_max_rows"),
+        "validate_default_timeout_seconds": _parse_non_negative_int(body.get("validate_default_timeout_seconds", settings.report_validate_default_timeout_seconds), "validate_default_timeout_seconds"),
+    }
+
+
+def _apply_report_settings_runtime(new_settings: dict) -> None:
+    os.environ["REPORT_AUTO_ANALYZE_ENABLED"] = "true" if new_settings["auto_analyze_enabled"] else "false"
+    os.environ["REPORT_RUN_DEFAULT_MAX_ROWS"] = str(new_settings["run_default_max_rows"])
+    os.environ["REPORT_RUN_DEFAULT_TIMEOUT_SECONDS"] = str(new_settings["run_default_timeout_seconds"])
+    os.environ["REPORT_VALIDATE_DEFAULT_MAX_ROWS"] = str(new_settings["validate_default_max_rows"])
+    os.environ["REPORT_VALIDATE_DEFAULT_TIMEOUT_SECONDS"] = str(new_settings["validate_default_timeout_seconds"])
+    settings.report_auto_analyze_enabled = new_settings["auto_analyze_enabled"]
+    settings.report_run_default_max_rows = new_settings["run_default_max_rows"]
+    settings.report_run_default_timeout_seconds = new_settings["run_default_timeout_seconds"]
+    settings.report_validate_default_max_rows = new_settings["validate_default_max_rows"]
+    settings.report_validate_default_timeout_seconds = new_settings["validate_default_timeout_seconds"]
 
 
 def _is_managed_project_path(path: str) -> bool:
@@ -1760,6 +1909,7 @@ def _collect_diagnostics() -> dict:
         "docker": _get_docker_system_info(),
         "containers": container_info,
         "optional_services": _get_optional_services_status(backends_status, container_info),
+        "reports_summary": _collect_reports_summary(None, [db.get("name", "") for db in _registry.list()]),
         "config": {
             "ENABLED_BACKENDS": settings.enabled_backends,
             "ONEC_TOOLKIT_URL": settings.onec_toolkit_url,
@@ -1772,6 +1922,11 @@ def _collect_diagnostics() -> dict:
             "NAPARNIK_API_KEY": "***" if settings.naparnik_api_key else "",
             "METADATA_CACHE_TTL": settings.metadata_cache_ttl,
             "EPF_HEARTBEAT_TTL_SECONDS": settings.epf_heartbeat_ttl_seconds,
+            "REPORT_AUTO_ANALYZE_ENABLED": settings.report_auto_analyze_enabled,
+            "REPORT_RUN_DEFAULT_MAX_ROWS": settings.report_run_default_max_rows,
+            "REPORT_RUN_DEFAULT_TIMEOUT_SECONDS": settings.report_run_default_timeout_seconds,
+            "REPORT_VALIDATE_DEFAULT_MAX_ROWS": settings.report_validate_default_max_rows,
+            "REPORT_VALIDATE_DEFAULT_TIMEOUT_SECONDS": settings.report_validate_default_timeout_seconds,
             "TEST_RUNNER_URL": settings.test_runner_url,
             "BSL_GRAPH_URL": settings.bsl_graph_url,
         },
@@ -1784,6 +1939,16 @@ def _collect_diagnostics() -> dict:
         diag["container_logs"] = {"error": str(exc)}
 
     return diag
+
+
+def _collect_reports_summary(catalog: ReportCatalog | None = None, databases: list[str] | None = None) -> list[dict]:
+    try:
+        catalog = catalog or _get_report_catalog()
+        names = [str(name or "").strip() for name in (databases or []) if str(name or "").strip()]
+        return catalog.summarize_databases(names or None)
+    except Exception as exc:
+        logger.warning("Report summary unavailable: %s", exc)
+        return []
 
 
 def _restart_gateway() -> None:
@@ -1836,6 +2001,48 @@ async def _browse_via_host_service(path: str) -> dict | None:
     if resp.status_code != 200 and "error" not in data:
         data = {"error": f"Host browse failed with HTTP {resp.status_code}"}
     return data
+
+
+async def _select_directory_via_host_service(current_path: str) -> dict | None:
+    """Ask the host-side service to open the native OS directory chooser."""
+    base_url = (settings.export_host_url or "").strip()
+    if not base_url:
+        return {
+            "ok": False,
+            "error": "Сервис выгрузки BSL на хосте не настроен. Укажите EXPORT_HOST_URL и запустите export-host-service.py.",
+        }
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            resp = await client.post(
+                base_url.rstrip("/") + "/select-directory",
+                json={"currentPath": current_path},
+            )
+    except Exception:
+        return {
+            "ok": False,
+            "error": "Не удалось связаться с сервисом выгрузки BSL на хосте.",
+        }
+
+    try:
+        data = resp.json()
+    except ValueError:
+        return {
+            "ok": False,
+            "error": "Сервис выгрузки BSL вернул некорректный ответ.",
+        }
+
+    if resp.status_code != 200 and "error" not in data:
+        data = {"ok": False, "error": f"Host directory selection failed with HTTP {resp.status_code}"}
+    return data
+
+
+async def select_directory_api(request: Request) -> JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON body"}, status_code=400)
+    result = await _select_directory_via_host_service(str(body.get("currentPath", "") or ""))
+    return JSONResponse(result or {"ok": False, "error": "Directory selection is unavailable."})
 
 
 async def browse_api(request: Request) -> JSONResponse:
@@ -1914,10 +2121,12 @@ _starlette = Starlette(
         Route("/api/export-preview", export_preview_api, methods=["POST"]),
         Route("/api/export-status", export_status_api, methods=["GET", "POST"]),
         Route("/api/export-cancel", export_cancel_api, methods=["POST"]),
+        Route("/api/reports/{action}", reports_api, methods=["POST"]),
         Route("/api/databases", databases_status_api, methods=["GET"]),
         Route("/api/unregister", unregister_epf_api, methods=["POST"]),
         Route("/api/register", register_epf_api, methods=["POST"]),
         Route("/api/epf-heartbeat", epf_heartbeat_api, methods=["POST"]),
+        Route("/api/select-directory", select_directory_api, methods=["POST"]),
         Route("/api/action/{action}", action_api, methods=["GET", "POST"]),
         Route("/api/browse", browse_api, methods=["GET"]),
     ],

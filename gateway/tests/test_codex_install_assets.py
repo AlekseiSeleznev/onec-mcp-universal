@@ -699,6 +699,8 @@ def test_repo_contains_codex_and_agents_guides():
     root = _repo_root()
     codex_text = (root / "CODEX.md").read_text(encoding="utf-8")
     agents_text = (root / "AGENTS.md").read_text(encoding="utf-8")
+    claude_text = (root / "CLAUDE.md").read_text(encoding="utf-8")
+    mcp_server_text = (root / "gateway/gateway/mcp_server.py").read_text(encoding="utf-8")
 
     assert "Codex" in codex_text
     assert "./setup.sh" in codex_text
@@ -707,6 +709,17 @@ def test_repo_contains_codex_and_agents_guides():
     assert "ANONYMIZER_SALT" in codex_text
     assert "AI-agnostic" in agents_text or "нейтраль" in agents_text.lower()
     assert "http://localhost:8080/mcp" in agents_text
+    assert "find_reports(database, query)" in codex_text
+    assert "describe_report(database, title|report|variant)" in codex_text
+    assert "run_report(database, title|report" in codex_text
+    assert "get_report_result(database, run_id)" in codex_text
+    assert "получить данные отчёта" in agents_text
+    assert "find_reports(database, query)" in agents_text
+    assert "get_report_result(database, run_id)" in agents_text
+    assert "Перед получением данных отчёта" in claude_text
+    assert "get_report_result(database, run_id)" in claude_text
+    assert "use report tools first, not execute_query/execute_code" in mcp_server_text
+    assert "get_report_result(database=..., run_id=...)" in mcp_server_text
 
 
 def test_gateway_runtime_assets_drop_privileges_for_main_process():

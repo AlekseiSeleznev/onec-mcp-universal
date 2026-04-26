@@ -37,6 +37,9 @@ from .tool_handlers.export import pick_1cv8 as _pick_1cv8_impl
 from .tool_handlers.export import run_designer_export as _run_designer_export_impl
 from .tool_handlers.export import run_export_bsl as _run_export_bsl_impl
 from .tool_handlers.reindex import reindex_bsl as _reindex_bsl_impl
+from .tool_handlers.reports import report_tools
+from .tool_handlers.reports import rebuild_report_catalog_for_db_info
+from .tool_handlers.reports import try_handle_report_tool
 from .tool_handlers.validate_query import add_limit_zero as _add_limit_zero_impl
 from .tool_handlers.validate_query import validate_query as _validate_query_impl
 from .tool_handlers.validate_query import validate_query_static as _validate_query_static_impl
@@ -80,6 +83,18 @@ Core flows:
       symbol_explore or bsl_search_tool → hover / definition → then write.
   • Before running a query:
       get_metadata (structure) → validate_query → execute_query.
+  • Before answering from a 1C report:
+      use report tools first, not execute_query/execute_code against
+      registers. Start with
+      find_reports(database=..., query=user-visible title) or
+      list_reports(database=...) when browsing the catalog →
+      describe_report(database=..., title/report/variant=...) →
+      run_report(database=..., title/report=..., period/filters/params/context).
+      If the result is paged, continue with
+      get_report_result(database=..., run_id=...).
+      If run_report returns needs_input, fill only the explicitly requested
+      fields and call run_report again. Report tools require explicit
+      `database`; do not rely on the active session.
   • Before modifying a module:
       document_diagnostics → write_bsl (never edit BSL files directly).
   • For BSP / ITS questions (works when NAPARNIK_API_KEY is set):
@@ -98,6 +113,8 @@ Tool categories:
   data: execute_query, execute_code, get_metadata, get_event_log,
         get_object_by_link, get_link_of_object, find_references_to_object,
         get_access_rights, query_stats.
+  reports: analyze_reports, find_reports, list_reports, describe_report,
+        run_report, get_report_result, explain_report_strategy.
   BSL search: bsl_index, bsl_search_tool, reindex_bsl.
   LSP navigation: symbol_explore, definition, hover, document_diagnostics,
         call_hierarchy, call_graph, project_analysis, code_actions, rename,
@@ -551,6 +568,7 @@ GW_TOOLS = [
         inputSchema={"type": "object", "properties": {}},
     ),
 ]
+GW_TOOLS.extend(report_tools())
 
 _SYNTAX_RESOURCE_PATH = Path(__file__).parent.parent / "resources" / "syntax_1c.txt"
 
@@ -674,7 +692,7 @@ async def _run_export_bsl(connection: str, output_dir: str) -> str:
             timeout=60,
         )
 
-    return await _run_export_bsl_impl(
+    result = await _run_export_bsl_impl(
         connection=connection,
         output_dir=output_dir,
         settings=settings,
@@ -689,6 +707,9 @@ async def _run_export_bsl(connection: str, output_dir: str) -> str:
         logger=log,
         refresh_lsp_fn=_refresh_lsp,
     )
+    if not result.startswith("ERROR") and not result.startswith("Export failed"):
+        await _auto_analyze_reports_for_db(_get_connection_active(connection), "export_bsl_sources")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1099,6 +1120,7 @@ async def _sync_export_status_from_host(connection: str) -> None:
             )
             if index_ok:
                 _index_jobs[connection] = {"status": "done", "result": index_result}
+                await _auto_analyze_reports_for_db(_get_connection_active(connection), "host_export_status")
             else:
                 _index_jobs[connection] = {"status": "error", "result": index_result}
         except Exception as exc:
@@ -1188,6 +1210,15 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
     if name == "reindex_bsl":
         return _result(await _reindex_bsl(arguments.get("path", "")))
 
+    report_result = await try_handle_report_tool(
+        name,
+        arguments,
+        registry=registry,
+        manager=manager,
+    )
+    if report_result is not None:
+        return _ok(report_result)
+
     graph_result = await try_handle_graph_tool(
         name,
         arguments,
@@ -1213,7 +1244,10 @@ async def call_tool(name: str, arguments: dict) -> CallToolResult:
         )
         active = _get_session_active()
         container = active.lsp_container if active else ""
-        return _result(bsl_search.build_index(path, container=container))
+        result = bsl_search.build_index(path, container=container)
+        if not str(result).startswith("ERROR"):
+            await _auto_analyze_reports_for_db(active, "bsl_index")
+        return _result(result)
     if name == "bsl_search_tool":
         _ensure_active_bsl_search_index_loaded()
         results = bsl_search.search(
@@ -1334,13 +1368,33 @@ async def _validate_query(query: str) -> str:
 
 async def _reindex_bsl(path: str) -> str:
     # Backward-compatible wrapper kept for existing tests and integrations.
-    return await _reindex_bsl_impl(
+    result = await _reindex_bsl_impl(
         path=path,
         get_active=_get_session_active,
         has_tool=manager.has_tool,
         call_tool=manager.call_tool,
         build_search_index=bsl_search.build_index,
     )
+    if not result.startswith("ERROR"):
+        await _auto_analyze_reports_for_db(_get_session_active(), "reindex_bsl")
+    return result
+
+
+async def _auto_analyze_reports_for_db(db, reason: str) -> None:
+    """Best-effort report catalog refresh after export/index lifecycle events."""
+    if not settings.report_auto_analyze_enabled:
+        return
+    if db is None:
+        return
+    database = str(getattr(db, "name", "") or "").strip()
+    project_path = str(getattr(db, "project_path", "") or "").strip()
+    if not database or not project_path:
+        return
+    try:
+        summary = await rebuild_report_catalog_for_db_info(database, db)
+        log.info("Report catalog refreshed after %s: %s", reason, summary)
+    except Exception as exc:
+        log.info("Skipping report catalog refresh after %s for %s: %s", reason, database, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1399,7 +1453,7 @@ async def _connect_database(name: str, connection: str, project_path: str) -> st
         normalized_project_path = "/hostfs-home/" + normalized_project_path[len("/home/") :]
 
     # Backward-compatible wrapper kept for existing tests and integrations.
-    return await _connect_database_impl(
+    result = await _connect_database_impl(
         name=name,
         connection=connection,
         project_path=normalized_project_path,
@@ -1416,6 +1470,9 @@ async def _connect_database(name: str, connection: str, project_path: str) -> st
             project_path=backend_project_path,
         ),
     )
+    if not result.startswith("ERROR"):
+        await _auto_analyze_reports_for_db(registry.get(name), "connect_database")
+    return result
 
 
 async def _disconnect_database(name: str) -> str:

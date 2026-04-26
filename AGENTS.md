@@ -43,6 +43,7 @@
 - **Все 1С-задачи — через MCP `onec-mcp-universal`** (`http://localhost:8080/mcp`). Запросы, метаданные, BSL, БСП, граф зависимостей — только через MCP-инструменты, не из памяти LLM.
 - **Цепочки инструментов:**
   - запрос → `get_metadata` → `validate_query` → `execute_query`;
+  - получение данных отчёта → сначала инструменты отчётов `onec-mcp-universal`, а не прямой запрос к регистрам: `find_reports(database, query)` → `describe_report(database, title|report|variant)` → `run_report(database, title|report, period, filters, params, context)` → при большом результате `get_report_result(database, run_id)`; если запуск вернул `needs_input`, дозаполнить явно запрошенные поля и повторить `run_report`;
   - BSL-вызов → `symbol_explore`/`bsl_search_tool` → `hover`/`definition` → `write_bsl`;
   - БСП-вопрос → `its_search` (если `NAPARNIK_API_KEY` задан) → `bsl_search_tool` → `hover`.
 - **Выдуманный запасной ответ запрещён**. Если инструмент/бэкенд/БД недоступны — сообщить пользователю, не имитировать ответ.
@@ -65,4 +66,5 @@
 - **Активная БД — per-session**. Вызови `switch_database` один раз на сессию. Разные параллельные сессии могут работать с разными БД — у каждой свой toolkit (порты 6100, 6101…) и свой LSP.
 - **HTTP 404 или зависшая сессия** — переинициализируй (`initialize` + `notifications/initialized`), не ретраи со старым `Mcp-Session-Id`.
 - **`epf_connected: false`** — 1С-обработка не запущена; `execute_query` вернёт `EPF for database 'X' is not connected`. Просишь пользователя открыть MCPToolkit.epf и нажать «Подключиться», ответ не выдумываешь.
+- **Пользователь просит "получить данные отчёта"** — это в первую очередь сценарий report-tools, а не `execute_query`/`execute_code`. Сначала `find_reports` или `list_reports`, потом `describe_report`, затем `run_report`, и только если ответ постраничный — `get_report_result`. Для report-tools `database` обязателен; не полагайся на активную БД сессии.
 - **Перед деструктивом** (`write_bsl` на существующий модуль, `execute_code` с INSERT/UPDATE/DELETE) — показать план пользователю и дождаться подтверждения.

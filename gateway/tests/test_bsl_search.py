@@ -335,6 +335,17 @@ def test_ensure_loaded_returns_true_when_build_index_succeeds_for_existing_root(
         assert idx.ensure_loaded(str(root)) is True
 
 
+def test_ensure_loaded_builds_when_root_exists_check_is_permission_denied(tmp_path):
+    idx = BslSearchIndex()
+
+    with patch.object(idx, "load_index", return_value=False), patch.object(
+        idx, "_load_compatible_snapshot", return_value=False
+    ), patch.object(Path, "exists", side_effect=PermissionError("denied")), patch.object(
+        idx, "build_index", return_value="Indexed 1 symbols from 1 BSL files"
+    ):
+        assert idx.ensure_loaded(str(tmp_path / "Z01")) is True
+
+
 def test_clear_resets_loaded_index(tmp_path):
     _create_bsl_tree(tmp_path)
     idx = BslSearchIndex()
@@ -392,6 +403,12 @@ def test_container_bsl_root_translation():
     assert idx._container_bsl_root("/projects") == "/projects"
     assert idx._container_bsl_root("/projects/Test") == "/projects/Test"
     assert idx._container_bsl_root("/hostfs-home/as/Z/ERP") == "/projects"
+
+
+def test_snapshot_match_name_handles_container_prefix_without_suffix():
+    idx = BslSearchIndex()
+
+    assert idx._snapshot_match_name("mcp-lsp-:/projects") == "projects"
 
 
 def test_gateway_visible_root_defaults_to_workspace():
@@ -498,6 +515,18 @@ def test_build_index_uses_compatible_snapshot_when_root_exists_check_is_denied(t
     assert "cached snapshot" in result
 
 
+def test_build_index_delegates_to_container_when_exists_check_is_denied_with_container(tmp_path):
+    idx = BslSearchIndex()
+
+    with patch.object(Path, "exists", side_effect=PermissionError("denied")), patch.object(
+        idx, "_build_index_docker", return_value="Indexed via container"
+    ) as docker_build:
+        result = idx.build_index(str(tmp_path / "blocked-root" / "Z01"), container="mcp-lsp-z01")
+
+    assert result == "Indexed via container"
+    docker_build.assert_called_once_with("mcp-lsp-z01", "/projects")
+
+
 def test_build_index_reports_permission_denied_when_exists_check_blocked_without_snapshot(tmp_path):
     idx = BslSearchIndex()
     idx._cache_dir = tmp_path / "empty-cache"
@@ -524,6 +553,22 @@ def test_build_index_reports_permission_denied_when_rglob_blocked_without_snapsh
         result = idx.build_index(str(root))
 
     assert "ERROR: Permission denied listing BSL files" in result
+
+
+def test_build_index_delegates_to_container_when_rglob_blocked_or_no_files(tmp_path):
+    idx = BslSearchIndex()
+    root = tmp_path / "Z01"
+    root.mkdir(parents=True)
+
+    with patch.object(Path, "rglob", side_effect=PermissionError("denied")), patch.object(
+        idx, "_build_index_docker", return_value="Indexed via container"
+    ) as docker_build:
+        assert idx.build_index(str(root), container="mcp-lsp-z01") == "Indexed via container"
+    docker_build.assert_called_once_with("mcp-lsp-z01", "/projects")
+
+    with patch.object(idx, "_build_index_docker", return_value="Indexed empty via container") as docker_build_empty:
+        assert idx.build_index(str(root), container="mcp-lsp-z01") == "Indexed empty via container"
+    docker_build_empty.assert_called_once_with("mcp-lsp-z01", "/projects")
 
 
 def test_build_index_docker_timeout():
@@ -561,6 +606,39 @@ def test_build_index_docker_uses_docker_control_when_configured(monkeypatch):
     run_mock.assert_not_called()
     headers = post_mock.call_args.kwargs["headers"]
     assert headers["Authorization"] == "Bearer secret"
+
+
+def test_docker_control_config_helpers_use_settings_fallback_and_handle_import_errors(monkeypatch):
+    import builtins
+    from gateway.config import settings
+
+    idx = BslSearchIndex()
+    monkeypatch.delenv("DOCKER_CONTROL_URL", raising=False)
+    monkeypatch.delenv("DOCKER_CONTROL_TOKEN", raising=False)
+    monkeypatch.setattr(settings, "docker_control_url", "http://settings-control")
+    monkeypatch.setattr(settings, "docker_control_token", "settings-token")
+
+    assert idx._docker_control_url() == "http://settings-control"
+    assert idx._docker_control_token() == "settings-token"
+
+    original_import = builtins.__import__
+
+    def blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "gateway.config" or (level == 1 and name == "config"):
+            raise ImportError("blocked")
+        return original_import(name, globals, locals, fromlist, level)
+
+    with patch("builtins.__import__", side_effect=blocked_import):
+        assert idx._docker_control_url() == ""
+        assert idx._docker_control_token() == ""
+
+
+def test_build_index_via_docker_control_returns_none_without_url(monkeypatch):
+    idx = BslSearchIndex()
+    monkeypatch.delenv("DOCKER_CONTROL_URL", raising=False)
+    monkeypatch.setattr("gateway.config.settings.docker_control_url", "")
+
+    assert idx._build_index_via_docker_control("container") is None
 
 
 def test_build_index_docker_returns_docker_control_error(monkeypatch):

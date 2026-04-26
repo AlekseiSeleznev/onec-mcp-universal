@@ -250,6 +250,7 @@ def test_bsl_workspace_ignores_host_path_variable(monkeypatch):
     """BSL_WORKSPACE in .env is the HOST path (used by docker-compose) and
     MUST NOT bleed into settings.bsl_workspace — otherwise the gateway would
     try to write exports to a host path inside the container."""
+    monkeypatch.delenv("BSL_HOST_WORKSPACE", raising=False)
     monkeypatch.setenv("BSL_WORKSPACE", "/home/user/bsl-projects")
     s = Settings(_env_file=None)
     assert s.bsl_workspace == "/workspace"

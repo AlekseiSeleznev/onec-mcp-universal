@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -121,6 +122,22 @@ async def test_http_backend_stateless_uses_fresh_session_per_call():
 
 
 @pytest.mark.asyncio
+async def test_http_backend_stateless_streamable_uses_open_session_streamable_branch():
+    probe = MagicMock()
+    probe.initialize = AsyncMock()
+    probe.list_tools = AsyncMock(return_value=MagicMock(tools=[_tool("info")]))
+
+    with patch("gateway.backends.http_backend.streamablehttp_client", side_effect=lambda *_: _http_stream_ctx()) as streamable_client, \
+         patch("gateway.backends.http_backend.ClientSession", side_effect=lambda *_: _SessionContext(probe)):
+        backend = HttpBackend("http-test", "http://localhost:8080/mcp", "streamable", stateless=True)
+        await backend.start()
+
+    streamable_client.assert_called_once_with("http://localhost:8080/mcp")
+    assert backend.available is True
+    assert backend._session is None
+
+
+@pytest.mark.asyncio
 async def test_http_backend_stateless_applies_call_timeout():
     probe = MagicMock()
     probe.initialize = AsyncMock()
@@ -182,6 +199,30 @@ async def test_http_backend_reconnects_after_failed_call():
     backend._connect.assert_awaited_once()
     fresh.call_tool.assert_awaited_once_with("ping", {})
     assert result.content[0].text == "ok"
+
+
+@pytest.mark.asyncio
+async def test_http_backend_call_tool_once_raises_when_session_not_initialized():
+    backend = HttpBackend("http-test", "http://localhost:8080/mcp")
+
+    with pytest.raises(RuntimeError, match="not initialized"):
+        await backend._call_tool_once("ping", {})
+
+
+@pytest.mark.asyncio
+async def test_http_backend_cancel_pending_calls_cancels_and_awaits_tasks():
+    backend = HttpBackend("http-test", "http://localhost:8080/mcp")
+
+    async def _sleep_forever():
+        await asyncio.sleep(3600)
+
+    task = asyncio.create_task(_sleep_forever())
+    backend._pending_calls.add(task)
+
+    await backend._cancel_pending_calls()
+
+    assert backend._pending_calls == set()
+    assert task.cancelled()
 
 
 @pytest.mark.asyncio

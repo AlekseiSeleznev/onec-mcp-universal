@@ -52,6 +52,7 @@ class TestRenderDashboard:
             "config_items": [("PORT", "8080")],
             "container_info": [],
             "docker_system": {},
+            "reports_summary": [],
             "lang": lang,
         }
         defaults.update(kwargs)
@@ -103,10 +104,11 @@ class TestRenderDashboard:
         assert "<img" not in html  # Should be escaped
         assert "&lt;img" in html
 
-    def test_contains_version(self):
+    def test_dashboard_footer_hides_version(self):
         from gateway.config import VERSION
         html = self._render()
-        assert f"v{VERSION}" in html
+        assert f"v{VERSION}" not in html
+        assert "onec-mcp-universal &mdash;" in html
 
     def test_contains_refresh_button(self):
         html = self._render()
@@ -312,6 +314,88 @@ class TestRenderDashboard:
             "backend_connected": True,
         }])
         assert "/api/action/switch?name=TestDB" in html
+
+    def test_report_tab_is_hidden_and_optional_service_links_are_rendered(self):
+        html = self._render(
+            databases=[{
+                "name": "Z01",
+                "connection": "Srvr=localhost;Ref=Z01;",
+                "project_path": "/projects/Z01",
+                "epf_connected": True,
+                "active": True,
+                "backend_connected": True,
+            }],
+            optional_services=[{
+                "name": "bsl-graph",
+                "state": "custom",
+                "details": "ok",
+                "url": "http://localhost:8888",
+                "title": "Graph",
+            }],
+        )
+
+        assert '>Отчёты<' not in html
+        assert 'id="t-reports"' not in html
+        assert "Расчетный листок" not in html
+        assert "/api/reports/" not in html
+        assert "http://localhost:8888" in html
+        assert 'id="report-auto-analyze"' in html
+        assert "saveReportSettings()" in html
+
+    def test_report_summary_card_renders_empty_state(self):
+        html = self._render(reports_summary=[])
+
+        assert "Отчёты 1С" in html
+        assert "Каталог ещё не построен" in html
+
+    def test_report_summary_card_renders_database_metrics(self):
+        html = self._render(
+            reports_summary=[
+                {
+                    "database": "ERP_DEMO",
+                    "catalog_ready": True,
+                    "analyzed_at": "2026-04-26 14:38:52",
+                    "reports_count": 1120,
+                    "variants_count": 1450,
+                    "runs_count": 1120,
+                    "artifacts_count": 37,
+                    "status_counts": {"done": 347, "needs_input": 737, "unsupported": 36, "error": 0},
+                }
+            ]
+        )
+
+        assert "ERP_DEMO" in html
+        assert "1120" in html
+        assert "1450" in html
+        assert "347" in html
+        assert "737" in html
+        assert "Проверено" in html
+        assert "Результатов" in html
+        assert "Готово" in html
+        assert "Нужен ввод" in html
+        assert "Не поддерживается" in html
+        assert "Ошибки" in html
+        assert "Технический хвост" not in html
+
+    def test_bsl_workspace_uses_native_directory_chooser(self):
+        html = self._render(lang="ru")
+
+        assert "Обзор..." in html
+        assert "openSystemDirectoryDialog('bsl-ws-input')" in html
+        assert "/api/select-directory" in html
+        assert "folder-modal" not in html
+        assert "openFolderBrowser()" not in html
+
+    def test_report_settings_card_renders_russian_labels(self):
+        html = self._render(lang="ru")
+
+        assert "ДВИЖОК ОТЧЁТОВ 1С" in html
+        assert "Автоанализ после подключения, выгрузки и переиндексации BSL" in html
+        assert "Строк при запуске" in html
+        assert "Таймаут проверки, сек" in html
+        assert 'class="num-wrap"' in html
+        assert "stepNumberInput('report-run-rows',1)" in html
+        assert "stepNumberInput('report-run-rows',-1)" in html
 
 
 def test_translation_dict_has_no_duplicate_keys_in_source():

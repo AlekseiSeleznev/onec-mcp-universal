@@ -24,6 +24,17 @@ def _make_fake_status(ok: bool = True):
     return {"onec-toolkit": {"ok": ok, "tools": 5}}
 
 
+class _AsyncContext:
+    def __init__(self, value):
+        self.value = value
+
+    async def __aenter__(self):
+        return self.value
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -1370,6 +1381,23 @@ class TestActionApi:
         assert data["value"] == "/home/as/Z"
         assert data["placeholder"]
 
+    def test_get_report_settings_returns_runtime_defaults(self, test_client):
+        with patch("gateway.server.settings.report_auto_analyze_enabled", True), \
+             patch("gateway.server.settings.report_run_default_max_rows", 1200), \
+             patch("gateway.server.settings.report_run_default_timeout_seconds", 15), \
+             patch("gateway.server.settings.report_validate_default_max_rows", 7), \
+             patch("gateway.server.settings.report_validate_default_timeout_seconds", 90):
+            resp = test_client.post("/api/action/get-report-settings")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["auto_analyze_enabled"] is True
+        assert data["run_default_max_rows"] == 1200
+        assert data["run_default_timeout_seconds"] == 15
+        assert data["validate_default_max_rows"] == 7
+        assert data["validate_default_timeout_seconds"] == 90
+
     def test_reindex_bsl_uses_public_manager_accessor(self, test_client):
         from gateway.db_registry import DatabaseInfo
         from mcp.types import CallToolResult, TextContent
@@ -1523,6 +1551,42 @@ class TestActionApi:
         data = resp.json()
         assert data["ok"] is False
         assert "value required" in data["error"]
+
+    def test_save_report_settings_applies_runtime_without_restart(self, test_client):
+        payload = {
+            "auto_analyze_enabled": False,
+            "run_default_max_rows": 250,
+            "run_default_timeout_seconds": 30,
+            "validate_default_max_rows": 3,
+            "validate_default_timeout_seconds": 120,
+        }
+
+        with patch("gateway.server._update_env_values", return_value={"ok": True, "message": "saved"}) as update_env, \
+             patch("gateway.server._apply_report_settings_runtime") as apply_runtime, \
+             patch("gateway.server._current_report_settings_payload", return_value=dict(payload)):
+            resp = test_client.post("/api/action/save-report-settings", json=payload)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["auto_analyze_enabled"] is False
+        assert data["run_default_max_rows"] == 250
+        assert data["run_default_timeout_seconds"] == 30
+        assert data["validate_default_max_rows"] == 3
+        assert data["validate_default_timeout_seconds"] == 120
+        update_env.assert_called_once()
+        apply_runtime.assert_called_once_with(payload)
+
+    def test_save_report_settings_rejects_invalid_values(self, test_client):
+        with patch("gateway.server._update_env_values") as update_env:
+            resp = test_client.post(
+                "/api/action/save-report-settings",
+                json={"auto_analyze_enabled": True, "run_default_max_rows": -1},
+            )
+
+        assert resp.status_code == 400
+        assert resp.json()["ok"] is False
+        update_env.assert_not_called()
 
     def test_save_bsl_workspace_applies_runtime_without_restart(self, test_client):
         with patch("gateway.server._update_env_value", return_value={"ok": True, "message": "saved"}) as mock_update:
@@ -2308,6 +2372,118 @@ class TestCollectDiagnostics:
         assert "profiling" in diag
         assert "cache" in diag
         assert "anonymization" in diag
+
+    def test_collect_diagnostics_includes_reports_summary(self):
+        from gateway import server
+
+        with patch("gateway.server._get_container_info", return_value=[]), \
+             patch("gateway.server._get_docker_system_info", return_value={}), \
+             patch("gateway.server._manager.status", return_value={}), \
+             patch("gateway.server._registry.list", return_value=[]), \
+             patch("gateway.server._collect_reports_summary", return_value=[{"database": "ERP", "catalog_ready": True}]), \
+             patch("gateway.profiler.profiler.get_stats", return_value={}), \
+             patch("gateway.metadata_cache.metadata_cache.stats", return_value={}), \
+             patch("gateway.anonymizer.anonymizer.enabled", False):
+            diag = server._collect_diagnostics()
+
+        assert diag["reports_summary"] == [{"database": "ERP", "catalog_ready": True}]
+
+    def test_collect_reports_summary_reads_catalog_and_result_files(self, tmp_path):
+        from gateway.report_catalog import ReportCatalog
+        from gateway.server import _collect_reports_summary
+
+        catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "report-results")
+        catalog.replace_analysis(
+            "ERP",
+            "/projects/ERP",
+            {
+                "reports": [
+                    {
+                        "name": "Продажи",
+                        "aliases": [{"alias": "Продажи", "confidence": 1.0}],
+                        "variants": [{"key": "Основной", "presentation": "Основной"}],
+                    },
+                    {
+                        "name": "Закупки",
+                        "aliases": [{"alias": "Закупки", "confidence": 1.0}],
+                    },
+                    {
+                        "name": "Остатки",
+                        "aliases": [{"alias": "Остатки", "confidence": 1.0}],
+                    },
+                ]
+            },
+        )
+        stale_run = catalog.create_run(
+            database="ERP",
+            report_name="Продажи",
+            variant_key="Основной",
+            title="Продажи",
+            strategy="raw_skd_runner",
+            params={},
+        )
+        catalog.finish_run(
+            "ERP",
+            stale_run,
+            status="error",
+            diagnostics={},
+            error='Ошибка компоновки макета: Не установлено значение параметра "Организация"',
+        )
+        run_id = catalog.create_run(
+            database="ERP",
+            report_name="Продажи",
+            variant_key="Основной",
+            title="Продажи",
+            strategy="raw_skd_runner",
+            params={},
+        )
+        result_ref = str((tmp_path / "report-results" / "ERP" / "done.json.gz").relative_to(tmp_path / "report-results"))
+        done_path = tmp_path / "report-results" / result_ref
+        done_path.parent.mkdir(parents=True, exist_ok=True)
+        done_path.write_bytes(b"gz-placeholder")
+        catalog.finish_run(
+            "ERP",
+            run_id,
+            status="done",
+            result={"rows": [{"A": 1}]},
+            diagnostics={"attempts": []},
+        )
+        with catalog._connect() as conn:
+            conn.execute("UPDATE report_runs SET result_ref = ? WHERE db_slug = ? AND run_id = ?", (result_ref, "ERP", run_id))
+        for report_name, status, error, diagnostics in (
+            ("Закупки", "error", 'Ошибка компоновки макета: Не установлено значение параметра "Организация"', {}),
+            ("Остатки", "error", '{(14, 2)}: Таблица не найдена "ВТКандидаты"', {}),
+        ):
+            other_run = catalog.create_run(
+                database="ERP",
+                report_name=report_name,
+                variant_key="",
+                title=report_name,
+                strategy="raw_skd_runner",
+                params={},
+            )
+            catalog.finish_run(
+                "ERP",
+                other_run,
+                status=status,
+                diagnostics=diagnostics,
+                error=error,
+            )
+
+        summary = _collect_reports_summary(catalog)
+
+        assert len(summary) == 1
+        item = summary[0]
+        assert item["database"] == "ERP"
+        assert item["catalog_ready"] is True
+        assert item["reports_count"] == 3
+        assert item["variants_count"] == 1
+        assert item["runs_count"] == 3
+        assert item["history_runs_count"] == 4
+        assert item["artifacts_count"] == 1
+        assert item["status_counts"] == {"done": 1, "needs_input": 1, "unsupported": 1, "error": 0}
+        assert item["summary_mode"] == "latest_report_run"
+        assert item["top_issues"][0]["label"] in {'Ошибка компоновки макета: Не установлено значение параметра "Организация"', "dynamic_temporary_table"}
 
 
 class TestContainerInfo:
@@ -3603,6 +3779,33 @@ class TestEnvHelpers:
         assert resp.json()["path"] == "/home/as/Z"
         assert resp.json()["dirs"] == ["ERP"]
 
+    def test_select_directory_api_proxies_to_host_service(self, test_client):
+        client = AsyncMock()
+        client.__aenter__.return_value = client
+        client.__aexit__.return_value = False
+        response = MagicMock(status_code=200)
+        response.json.return_value = {"ok": True, "cancelled": False, "path": "/home/as/Z2"}
+        client.post = AsyncMock(return_value=response)
+
+        with patch("gateway.server.settings.export_host_url", "http://localhost:8082"), \
+             patch("gateway.server.httpx.AsyncClient", return_value=client):
+            resp = test_client.post("/api/select-directory", json={"currentPath": "/home/as/Z"})
+
+        assert resp.status_code == 200
+        assert resp.json()["path"] == "/home/as/Z2"
+        client.post.assert_awaited_once_with(
+            "http://localhost:8082/select-directory",
+            json={"currentPath": "/home/as/Z"},
+        )
+
+    def test_select_directory_api_reports_host_service_unavailable(self, test_client):
+        with patch("gateway.server.settings.export_host_url", ""):
+            resp = test_client.post("/api/select-directory", json={"currentPath": "/home/as/Z"})
+
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is False
+        assert "EXPORT_HOST_URL" in resp.json()["error"]
+
 
 class TestAsgiAppRouter:
     @pytest.mark.asyncio
@@ -4020,3 +4223,305 @@ class TestAdditionalServerBranches:
 
         assert resp.status_code == 200
         assert resp.json()["path"] == "/home/as/Z"
+
+
+class TestRemainingServerCoverage:
+    def test_channel_and_toolkit_url_helpers_cover_edge_cases(self):
+        from gateway import server
+
+        assert server._normalize_channel_id("") == "default"
+        assert server._normalize_channel_id("x" * 65) == "default"
+        assert server._normalize_channel_id("bad channel!") == "default"
+        assert server._normalize_channel_id("live-Z01_1") == "live-Z01_1"
+
+        assert server._build_db_toolkit_mcp_url(SimpleNamespace(toolkit_port=0, toolkit_url=""), "default") == ""
+        assert (
+            server._build_db_toolkit_mcp_url(
+                SimpleNamespace(toolkit_port=0, toolkit_url="http://localhost:6100/mcp?old=1"),
+                "live channel",
+            )
+            == "http://localhost:6100/mcp?channel=live%20channel"
+        )
+        assert server._build_db_toolkit_poll_url(SimpleNamespace(toolkit_port=0, toolkit_url="")) == ""
+
+    @pytest.mark.asyncio
+    async def test_rebind_db_toolkit_backend_covers_missing_plain_and_async_rebind(self):
+        from gateway import server
+
+        manager = MagicMock()
+        manager.get_db_backend.return_value = None
+        with patch("gateway.server._manager", manager):
+            await server._rebind_db_toolkit_backend("missing", "http://localhost:6100/mcp")
+
+        plain_backend = SimpleNamespace(rebind=lambda url: "ok")
+        manager.get_db_backend.return_value = plain_backend
+        with patch("gateway.server._manager", manager):
+            await server._rebind_db_toolkit_backend("db1", "http://localhost:6100/mcp")
+
+        manager.get_db_backend.return_value = SimpleNamespace(rebind="not-callable")
+        with patch("gateway.server._manager", manager):
+            await server._rebind_db_toolkit_backend("db1", "http://localhost:6100/mcp")
+
+        async_rebind = AsyncMock()
+        manager.get_db_backend.return_value = SimpleNamespace(rebind=async_rebind)
+        with patch("gateway.server._manager", manager):
+            await server._rebind_db_toolkit_backend("db1", "http://localhost:6101/mcp")
+        async_rebind.assert_awaited_once_with("http://localhost:6101/mcp")
+
+    @pytest.mark.asyncio
+    async def test_recreate_bsl_graph_runtime_disabled_success_and_error(self):
+        from gateway import server
+
+        with patch("gateway.server.settings.bsl_graph_url", ""):
+            assert await server._recreate_bsl_graph_runtime() == {
+                "attempted": False,
+                "ok": False,
+                "reason": "graph disabled",
+            }
+
+        with patch("gateway.server.settings.bsl_graph_url", "http://localhost:8888"), \
+             patch("gateway.server._docker_manager.recreate_bsl_graph") as recreate, \
+             patch("gateway.server._trigger_graph_rebuild", new=AsyncMock()) as rebuild:
+            assert await server._recreate_bsl_graph_runtime() == {"attempted": True, "ok": True}
+        recreate.assert_called_once()
+        rebuild.assert_awaited_once()
+
+        with patch("gateway.server.settings.bsl_graph_url", "http://localhost:8888"), \
+             patch("gateway.server._docker_manager.recreate_bsl_graph", side_effect=RuntimeError("boom")):
+            errored = await server._recreate_bsl_graph_runtime()
+        assert errored["attempted"] is True
+        assert errored["ok"] is False
+        assert "boom" in errored["error"]
+
+    def test_export_preview_api_errors_and_success(self, test_client):
+        invalid = test_client.post("/api/export-preview", content=b"bad", headers={"content-type": "application/json"})
+        missing = test_client.post("/api/export-preview", json={})
+        with patch("gateway.server._resolve_export_paths", return_value=("", "", "bad path")):
+            resolved_error = test_client.post("/api/export-preview", json={"connection": "Srvr=srv;Ref=Z01;"})
+        with patch("gateway.server._resolve_export_paths", return_value=("/workspace/Z01", "/home/as/Z/Z01", None)):
+            ok = test_client.post("/api/export-preview", json={"connection": "Srvr=srv;Ref=Z01;"})
+
+        assert invalid.status_code == 400
+        assert missing.status_code == 400
+        assert resolved_error.status_code == 400
+        assert resolved_error.json()["error"] == "bad path"
+        assert ok.status_code == 200
+        assert ok.json()["output_dir"] == "/workspace/Z01"
+
+    @pytest.mark.asyncio
+    async def test_ensure_lsp_started_edge_paths(self, tmp_path):
+        from gateway import server
+
+        await server._ensure_lsp_started("Srvr=srv;")
+
+        registry = MagicMock()
+        registry.get.return_value = None
+        with patch("gateway.server._registry", registry):
+            await server._ensure_lsp_started("Srvr=srv;Ref=Z01;")
+
+        db = SimpleNamespace(project_path="", slug="Z01")
+        registry.get.return_value = db
+        with patch("gateway.server._registry", registry):
+            await server._ensure_lsp_started("Srvr=srv;Ref=Z01;")
+
+        file_path = tmp_path / "not-dir"
+        file_path.write_text("x", encoding="utf-8")
+        registry.get.return_value = SimpleNamespace(project_path=str(file_path), slug="Z01")
+        with patch("gateway.server._registry", registry):
+            await server._ensure_lsp_started("Srvr=srv;Ref=Z01;")
+
+        missing = tmp_path / "missing"
+        registry.get.return_value = SimpleNamespace(project_path=str(missing), slug="Z01")
+        with patch("gateway.server._registry", registry):
+            await server._ensure_lsp_started("Srvr=srv;Ref=Z01;")
+
+        broken = tmp_path / "broken"
+        broken.mkdir()
+        registry.get.return_value = SimpleNamespace(project_path=str(broken), slug="Z01")
+        with patch("gateway.server._registry", registry), patch("gateway.server.os.scandir", side_effect=OSError("boom")):
+            await server._ensure_lsp_started("Srvr=srv;Ref=Z01;")
+
+        registry.get.return_value = SimpleNamespace(project_path=str(broken), slug="Z01")
+        with patch("gateway.server._registry", registry), patch("gateway.server.os.stat", side_effect=PermissionError("denied")), patch(
+            "gateway.server._docker_manager.start_lsp", return_value=""
+        ):
+            await server._ensure_lsp_started("Srvr=srv;Ref=Z01;")
+
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        registry.get.return_value = SimpleNamespace(project_path=str(empty), slug="Z01")
+        with patch("gateway.server._registry", registry):
+            await server._ensure_lsp_started("Srvr=srv;Ref=Z01;")
+
+        await server._ensure_lsp_started(None)
+
+    @pytest.mark.asyncio
+    async def test_ensure_lsp_started_starts_detaches_and_handles_start_attach_failures(self, tmp_path):
+        from gateway import server
+
+        project = tmp_path / "Z01"
+        project.mkdir()
+        (project / "x.bsl").write_text("Процедура X()\nКонецПроцедуры", encoding="utf-8")
+        db = SimpleNamespace(project_path=str(project), slug="Z01")
+        registry = MagicMock()
+        registry.get.return_value = db
+        manager = MagicMock()
+        manager.db_has_lsp.return_value = True
+        manager.detach_db_lsp = AsyncMock()
+        manager.attach_db_lsp = AsyncMock()
+
+        with patch("gateway.server._registry", registry), patch("gateway.server._manager", manager), patch(
+            "gateway.server._docker_manager.start_lsp", return_value="mcp-lsp-Z01"
+        ):
+            await server._ensure_lsp_started("Srvr=srv;Ref=Z01;")
+
+        registry.update_runtime.assert_called_once_with("Z01", lsp_container="mcp-lsp-Z01")
+        manager.detach_db_lsp.assert_awaited_once_with("Z01")
+        manager.attach_db_lsp.assert_awaited_once()
+
+        manager.attach_db_lsp.reset_mock()
+        manager.db_has_lsp.return_value = False
+        with patch("gateway.server._registry", registry), patch("gateway.server._manager", manager), patch(
+            "gateway.server._docker_manager.start_lsp", side_effect=RuntimeError("start failed")
+        ):
+            await server._ensure_lsp_started("Srvr=srv;Ref=Z01;")
+        manager.attach_db_lsp.assert_not_awaited()
+
+        with patch("gateway.server._registry", registry), patch("gateway.server._manager", manager), patch(
+            "gateway.server._docker_manager.start_lsp", return_value=""
+        ):
+            await server._ensure_lsp_started("Srvr=srv;Ref=Z01;")
+        manager.attach_db_lsp.assert_not_awaited()
+
+        manager.attach_db_lsp = AsyncMock(side_effect=RuntimeError("attach failed"))
+        with patch("gateway.server._registry", registry), patch("gateway.server._manager", manager), patch(
+            "gateway.server._docker_manager.start_lsp", return_value="mcp-lsp-Z01"
+        ):
+            await server._ensure_lsp_started("Srvr=srv;Ref=Z01;")
+
+    @pytest.mark.asyncio
+    async def test_register_heartbeat_custom_channel_rebinds_toolkit_backend(self, test_client):
+        db = SimpleNamespace(toolkit_port=6100, toolkit_url="", project_path="/workspace/Z01")
+        with patch("gateway.server._registry") as registry, patch(
+            "gateway.server._sync_managed_project_path_if_needed", new=AsyncMock(return_value=False)
+        ), patch("gateway.server._rebind_db_toolkit_backend", new=AsyncMock()) as rebind:
+            registry.mark_epf_heartbeat.return_value = True
+            registry.get.return_value = db
+            resp = test_client.post("/api/epf-heartbeat", json={"name": "Z01", "channel": "live"})
+
+        assert resp.status_code == 200
+        registry.update_runtime.assert_called_once_with(
+            "Z01",
+            toolkit_url="http://localhost:6100/mcp?channel=live",
+            channel_id="live",
+        )
+        rebind.assert_awaited_once_with("Z01", "http://localhost:6100/mcp?channel=live")
+
+    @pytest.mark.asyncio
+    async def test_register_heartbeat_covers_default_missing_db_and_empty_toolkit_url(self, test_client):
+        with patch("gateway.server._registry") as registry, patch(
+            "gateway.server._sync_managed_project_path_if_needed", new=AsyncMock()
+        ) as sync_path:
+            registry.mark_epf_heartbeat.return_value = True
+            registry.get.return_value = None
+            missing_db = test_client.post("/api/epf-heartbeat", json={"name": "Z01", "channel": "live"})
+
+        assert missing_db.status_code == 200
+        sync_path.assert_not_awaited()
+
+        db = SimpleNamespace(toolkit_port=0, toolkit_url="", project_path="/workspace/Z01")
+        with patch("gateway.server._registry") as registry, patch(
+            "gateway.server._sync_managed_project_path_if_needed", new=AsyncMock(return_value=False)
+        ) as sync_path, patch("gateway.server._rebind_db_toolkit_backend", new=AsyncMock()) as rebind:
+            registry.mark_epf_heartbeat.return_value = True
+            registry.get.return_value = db
+            default_channel = test_client.post("/api/epf-heartbeat", json={"name": "Z01", "channel": ""})
+            custom_without_url = test_client.post("/api/epf-heartbeat", json={"name": "Z01", "channel": "live"})
+
+        assert default_channel.status_code == 200
+        assert custom_without_url.status_code == 200
+        assert sync_path.await_count == 2
+        rebind.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_sync_managed_project_path_no_db_and_triggers_lsp_for_running_db(self):
+        from gateway import server
+
+        with patch("gateway.server._registry") as registry:
+            registry.get.return_value = None
+            assert await server._sync_managed_project_path_if_needed("missing") is False
+
+        db = SimpleNamespace(slug="Z01", project_path="/workspace/Z01", connection="Srvr=srv;Ref=Z01;")
+        refreshed = SimpleNamespace(slug="Z01", project_path="/hostfs-home/as/Z/Z01", connection="Srvr=srv;Ref=Z01;")
+        registry = MagicMock()
+        registry.get.side_effect = [refreshed]
+        manager = MagicMock()
+        manager.has_db.return_value = True
+        with patch("gateway.server._registry", registry), patch("gateway.server._manager", manager), patch(
+            "gateway.server._normalize_runtime_project_path", return_value="/hostfs-home/as/Z/Z01"
+        ), patch("gateway.server._ensure_lsp_started", new=AsyncMock()) as ensure_lsp, patch(
+            "gateway.server._trigger_graph_rebuild", new=AsyncMock()
+        ) as rebuild:
+            assert await server._sync_managed_project_path_if_needed("Z01", db) is True
+
+        registry.update.assert_called_once_with("Z01", project_path="/hostfs-home/as/Z/Z01")
+        ensure_lsp.assert_awaited_once_with("Srvr=srv;Ref=Z01;")
+        rebuild.assert_awaited_once()
+
+    def test_env_helpers_cover_standard_file_skip_lines_and_not_found_prepare(self, tmp_path, monkeypatch):
+        from gateway import server
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("A=1\n", encoding="utf-8")
+        real_open = open
+
+        def fake_open(path, *args, **kwargs):
+            if path == "/data/.env":
+                return real_open(env_file, *args, **kwargs)
+            raise FileNotFoundError(path)
+
+        with patch("gateway.server.os.environ", {}), patch("builtins.open", side_effect=fake_open):
+            assert server._read_env_file() == "A=1\n"
+
+        assert server._iter_env_assignments("# c\nNOEQUALS\nA=1\n") == [("A", "1")]
+        with patch("gateway.server._read_env_file", return_value="# .env file not found\n"):
+            assert server._prepare_env_content_for_write("B=2", replace=False) == "B=2"
+        with patch("gateway.server._read_env_file", return_value="A=1\n"):
+            assert server._prepare_env_content_for_write("A=2\n", replace=False) == "A=2\n"
+
+    def test_save_bsl_workspace_message_omits_graph_suffix_when_recreate_not_attempted(self, test_client):
+        with patch("gateway.server._update_env_value", return_value={"ok": True, "message": "saved"}), patch(
+            "gateway.server._read_env_value", return_value="http://localhost:8082"
+        ), patch(
+            "gateway.server._apply_bsl_workspace_runtime",
+            new=AsyncMock(return_value={"db_reconfigured": 1, "db_errors": 0, "errors": []}),
+        ), patch("gateway.server._recreate_bsl_graph_runtime", new=AsyncMock(return_value={"attempted": False, "ok": False})):
+            resp = test_client.post("/api/action/save-bsl-workspace", json={"value": "/home/as/Z"})
+
+        assert resp.status_code == 200
+        assert "Базы обновлены: 1" in resp.json()["message"]
+        assert "Граф" not in resp.json()["message"]
+
+    @pytest.mark.asyncio
+    async def test_apply_bsl_workspace_runtime_permission_and_missing_directory_skip(self):
+        from gateway import server
+
+        registry = MagicMock()
+        registry.list.return_value = [{"name": "PERM"}, {"name": "MISSING"}]
+        registry.get.side_effect = lambda name: SimpleNamespace(slug=name, project_path=f"/workspace/{name}")
+        manager = MagicMock()
+        manager.has_db.return_value = True
+
+        def fake_isdir(path):
+            if path.endswith("/PERM"):
+                raise PermissionError("denied")
+            return False
+
+        with patch("gateway.server._registry", registry), patch("gateway.server._manager", manager), patch(
+            "gateway.server.os.path.isdir", side_effect=fake_isdir
+        ), patch("gateway.server._docker_manager.start_lsp", return_value="mcp-lsp-PERM") as start_lsp:
+            result = await server._apply_bsl_workspace_runtime("/workspace", "http://localhost:8082")
+
+        assert result["db_reconfigured"] == 1
+        assert result["db_errors"] == 0
+        start_lsp.assert_called_once()

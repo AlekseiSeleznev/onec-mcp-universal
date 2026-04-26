@@ -21,6 +21,17 @@ TARGETS=()
 # Codex: install unconditionally — ~/.codex is created on demand.
 TARGETS+=("$CODEX_HOME/skills|Codex")
 
+expected_skills=0
+for skill_dir in "$SKILLS_SRC"/*/; do
+    [ -f "$skill_dir/SKILL.md" ] || continue
+    expected_skills=$((expected_skills + 1))
+done
+
+if [ "$expected_skills" -eq 0 ]; then
+    echo "ERROR: No skills with SKILL.md found in $SKILLS_SRC"
+    exit 1
+fi
+
 total_installed=0
 for pair in "${TARGETS[@]}"; do
     dst="${pair%%|*}"
@@ -29,6 +40,7 @@ for pair in "${TARGETS[@]}"; do
     installed=0
     skipped=0
     for skill_dir in "$SKILLS_SRC"/*/; do
+        [ -f "$skill_dir/SKILL.md" ] || continue
         skill_name=$(basename "$skill_dir")
         target="$dst/$skill_name"
 
@@ -44,9 +56,22 @@ for pair in "${TARGETS[@]}"; do
             installed=$((installed + 1))
         fi
     done
-    echo "[$label] Installed: $installed | Skipped: $skipped | Location: $dst"
+    verified=0
+    for skill_dir in "$SKILLS_SRC"/*/; do
+        [ -f "$skill_dir/SKILL.md" ] || continue
+        skill_name=$(basename "$skill_dir")
+        target="$dst/$skill_name"
+        [ -e "$target" ] || continue
+        verified=$((verified + 1))
+    done
+    echo "[$label] Installed: $installed | Skipped: $skipped | Verified: $verified/$expected_skills | Location: $dst"
+    if [ "$verified" -ne "$expected_skills" ]; then
+        echo "ERROR: Skill installation verification failed for $label"
+        exit 1
+    fi
     total_installed=$((total_installed + installed))
 done
 
 echo ""
 echo "Skills installed for Codex."
+echo "Restart Codex to pick up newly installed or updated skills."

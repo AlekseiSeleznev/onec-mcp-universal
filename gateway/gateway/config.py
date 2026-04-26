@@ -4,7 +4,7 @@ from pathlib import Path
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-VERSION = "1.9.29"
+VERSION = "1.10.0"
 
 _platform_path = os.environ.get("PLATFORM_PATH", "/opt/1cv8/x86_64/8.3.27.2074")
 
@@ -101,6 +101,13 @@ class Settings(BaseSettings):
 
     # BSL export timeout in seconds (default 3600 = 1 hour, large configs like BP/ZUP need it)
     bsl_export_timeout: int = 3600
+
+    # 1C report engine defaults
+    report_auto_analyze_enabled: bool = True
+    report_run_default_max_rows: int = 1000
+    report_run_default_timeout_seconds: int = 0
+    report_validate_default_max_rows: int = 5
+    report_validate_default_timeout_seconds: int = 60
 
     # EPF liveness heartbeat TTL in seconds for dashboard status.
     # Must exceed the toolkit command timeout so long-running commands do not

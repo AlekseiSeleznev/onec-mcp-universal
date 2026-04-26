@@ -23,7 +23,7 @@ DOCS_HTML = {
 <h2>Содержание</h2>
 <ol>
 <li><a href="#overview-ru">Обзор</a> - что это, зачем нужно, архитектура</li>
-<li><a href="#status-ru">Вкладка "Статус"</a> - базы данных, профилирование, анонимизация, кеш, бэкенды, Docker</li>
+<li><a href="#status-ru">Вкладка "Статус"</a> - базы данных, профилирование, анонимизация, кеш, бэкенды, отчёты, Docker</li>
 <li><a href="#params-ru">Вкладка "Настройки"</a> - управление базами, конфигурация, действия</li>
 <li><a href="#epf-ru">Обработка MCPToolkit.epf</a> - интерфейс, кнопки, безопасность, журнал, автономный режим</li>
 <li><a href="#remote-ru">Удалённое подключение</a> - развёртывание на сервере 1С, что работает, что нет</li>
@@ -71,7 +71,7 @@ MCPToolkit.epf (обработка внутри клиента 1С)
 
 <!-- ================================================================== -->
 <h2 id="status-ru">2. Вкладка «Статус»</h2>
-<p>Вкладка «Статус» - главный экран дашборда. Она отображает текущее состояние всех компонентов системы в виде шести карточек. Информация на этой вкладке доступна только для чтения - все действия выполняются на вкладке «Настройки».</p>
+<p>Вкладка «Статус» - главный экран дашборда. Она отображает текущее состояние всех компонентов системы в виде информационных карточек. Информация на этой вкладке доступна только для чтения - все действия выполняются на вкладке «Настройки» или через MCP/API.</p>
 
 <h3>Карточка «Базы данных»</h3>
 <p>Таблица со списком всех подключённых информационных баз 1С. Каждая строка содержит три столбца:</p>
@@ -145,12 +145,23 @@ MCPToolkit.epf (обработка внутри клиента 1С)
 <p><b>Динамические бэкенды</b> (создаются при подключении каждой базы):</p>
 <ul>
 <li><code>onec-toolkit-{имя_базы}</code> - персональный бэкенд данных для конкретной базы</li>
-<li><code>mcp-lsp-{имя_базы}</code> - персональный BSL Language Server с индексом конфигурации конкретной базы</li>
+<li><code>mcp-lsp-{имя_базы}</code> - персональный сервер языка BSL с индексом конфигурации конкретной базы</li>
 </ul>
 <p><b>Опциональные бэкенды</b> (подключаются через <code>ENABLED_BACKENDS</code>):</p>
 <ul>
 <li><code>test-runner</code> - запуск тестов YaXUnit. Добавьте <code>test-runner</code> в <code>ENABLED_BACKENDS</code> и запустите: <code>docker compose --profile test-runner up -d</code>.</li>
 </ul>
+
+<h3>Карточка «Отчёты 1С»</h3>
+<p>Эта карточка показывает локальную сводку по контуру отчётов. Она не выполняет отчёты и не обращается к контуру выполнения 1С при каждом рендеринге. Источник данных - SQLite-каталог <code>/data/report-catalog.sqlite</code> и сохранённые файлы результатов в <code>/data/report-results</code>.</p>
+<table>
+<tr><th>Показатель</th><th>Описание</th></tr>
+<tr><td><b>Последний анализ</b></td><td>Когда для конкретной базы последний раз перестраивался каталог отчётов.</td></tr>
+<tr><td><b>Отчётов / Вариантов</b></td><td>Сколько каталогизированных отчётов и вариантов найдено в выгруженных BSL/XML-исходниках.</td></tr>
+<tr><td><b>Проверено / Результатов</b></td><td>Сколько каталогизированных отчётов уже имеют последний сохранённый запуск и сколько из них имеют доступный файл результата для повторного чтения.</td></tr>
+<tr><td><b>Готово / Нужен ввод / Не поддерживается / Ошибки</b></td><td>Распределение статусов по последнему сохранённому запуску каждого отчёта. Во внутреннем API этим значениям соответствуют <code>done</code>, <code>needs_input</code>, <code>unsupported</code> и <code>error</code>.</td></tr>
+</table>
+<div class="note"><p><b>Важно:</b> поиск и запуск отчётов не выполняются из дашборда. Они доступны через MCP/API-инструменты <code>find_reports</code>, <code>describe_report</code>, <code>run_report</code> и связанные методы. Кнопка <b>«Обновить статистику»</b> перечитывает и эту карточку тоже, но только из локального состояния шлюза.</p></div>
 
 <h3>Карточка «Docker-контейнеры»</h3>
 <p>Верхняя часть карточки показывает информацию о Docker-демоне: версия Docker, количество CPU, объём RAM, суммарный размер образов и томов.</p>
@@ -160,7 +171,7 @@ MCPToolkit.epf (обработка внутри клиента 1С)
 <tr><th>Столбец</th><th>Описание</th></tr>
 <tr><td><b>Контейнер</b></td><td>Имя Docker-контейнера с цветным индикатором состояния</td></tr>
 <tr><td><b>Образ</b></td><td>Docker-образ, из которого создан контейнер</td></tr>
-<tr><td><b>RAM сейчас</b></td><td>Текущее потребление оперативной памяти контейнером. Это живой runtime-показатель и он меняется во времени.</td></tr>
+<tr><td><b>RAM сейчас</b></td><td>Текущее потребление оперативной памяти контейнером. Это показатель во время работы контейнера, и он меняется со временем.</td></tr>
 <tr><td><b>Образ на диске</b></td><td>Размер Docker-образа на диске. Это не потребление RAM, а объём образа в локальном Docker-хранилище.</td></tr>
 <tr><td><b>Статус контейнера</b></td><td><code>запущен</code> или <code>остановлен</code></td></tr>
 </table>
@@ -187,7 +198,7 @@ MCPToolkit.epf (обработка внутри клиента 1С)
 <tr><td><b>Переиндексация BSL</b></td><td>Запускает повторную индексацию BSL-исходников в LSP-контейнере базы. Используйте после выгрузки новых исходников или обновления конфигурации.</td></tr>
 <tr><td><b style="color:#ef4444">Отключить</b></td><td>Мягкое отключение: останавливает Docker-контейнеры базы, удаляет активные бэкенды, но <b>оставляет запись в реестре</b>. После отключения кнопка меняется на «Подключить». Данные 1С, физические BSL-файлы и graph/state базы не удаляются.</td></tr>
 <tr><td><b>Подключить</b></td><td>Повторное подключение отключённой базы: запускает контейнеры заново из сохранённой конфигурации. Страница автоматически обновляется, когда контейнеры готовы. MCPToolkit.epf в 1С переподключится самостоятельно.</td></tr>
-<tr><td><b style="color:#ef4444">Удалить</b></td><td>Полное удаление: останавливает контейнеры, очищает runtime/state/graph базы и удаляет запись из реестра. Операция необратима — для повторного подключения потребуется заново заполнить форму «Добавить базу». Данные 1С и физические BSL-файлы на диске не затрагиваются.</td></tr>
+<tr><td><b style="color:#ef4444">Удалить</b></td><td>Полное удаление: останавливает контейнеры, очищает контур выполнения, служебное состояние и граф базы и удаляет запись из реестра. Операция необратима — для повторного подключения потребуется заново заполнить форму «Добавить базу». Данные 1С и физические BSL-файлы на диске не затрагиваются.</td></tr>
 </table>
 
 <h3>Добавление базы</h3>
@@ -220,6 +231,21 @@ AI вызовет инструмент <code>connect_database</code> с указ
 <li>Или нажмите <b>«Отмена»</b> - редактор закроется без сохранения.</li>
 </ol>
 <div class="note"><p><b>Монтирование:</b> gateway читает <code>.env</code> как <code>./.env:/data/.env:ro</code>, а sidecar <code>docker-control</code> получает <code>./.env:/data/.env:rw</code> только для записи изменений из дашборда обратно на хост. Работает на Linux и Windows (через <code>docker-compose.windows.yml</code>).</p></div>
+
+<h3>Папка выгрузки BSL</h3>
+<p>Отдельная карточка позволяет задать корневую папку на хосте, куда шлюз и хостовый сервис выгрузки будут складывать BSL-исходники. Для каждой базы внутри этого каталога создаётся свой подкаталог.</p>
+<p>Кнопка <b>«Обзор...»</b> открывает стандартный системный диалог выбора папки на самом хосте. Этот диалог запускает <code>export-host-service.py</code>, поэтому для его работы должен быть доступен <code>EXPORT_HOST_URL</code> и сам сервис выгрузки.</p>
+<div class="note"><p><b>Важно:</b> после сохранения новая папка применяется без перезапуска шлюза. Работающие базы автоматически переводятся на новый корень выгрузки, а контейнер графа пересоздаётся, чтобы подхватить новое монтирование.</p></div>
+
+<h3>Движок отчётов 1С</h3>
+<p>Карточка параметров отчётного контура задаёт значения по умолчанию для MCP/API-инструментов работы с отчётами.</p>
+<table>
+<tr><th>Параметр</th><th>Описание</th></tr>
+<tr><td><b>Автоанализ после подключения, выгрузки и переиндексации BSL</b></td><td>Если включён, шлюз автоматически перестраивает каталог отчётов после подключения базы, успешной выгрузки исходников и явной переиндексации BSL.</td></tr>
+<tr><td><b>Строк при запуске / Таймаут запуска</b></td><td>Значения по умолчанию для <code>run_report</code>, если вызывающий клиент не передал собственные <code>max_rows</code> и <code>timeout_seconds</code>.</td></tr>
+<tr><td><b>Строк при проверке / Таймаут проверки</b></td><td>Значения по умолчанию для <code>validate_all_reports</code>. Они ограничивают объём и длительность массового прогона каталога.</td></tr>
+</table>
+<p>Сохранение этой карточки не перезапускает шлюз: новые значения применяются сразу и одновременно записываются в <code>.env</code>.</p>
 
 <h3>Действия</h3>
 <p>Кнопки быстрых действий расположены над таблицей конфигурации:</p>
@@ -284,7 +310,7 @@ AI вызовет инструмент <code>connect_database</code> с указ
 <h3>Вкладка "Анонимизация"</h3>
 <p>Дополнительная вкладка в обработке позволяет настроить правила <b>точной анонимизации</b> на стороне EPF: regex-паттерны, словари замен, списки исключений. Эта анонимизация работает <b>независимо</b> от серверной анонимизации шлюза и может использоваться совместно с ней или отдельно.</p>
 
-<h3>Автономный режим (fallback)</h3>
+<h3>Автономный режим (резервный вариант)</h3>
 <p>Если шлюз недоступен (сеть не работает, контейнеры остановлены, сервер выключен), обработка MCPToolkit.epf переключается на <b>прямое подключение</b> к бэкенду onec-toolkit. В этом режиме обработка работает напрямую без шлюза.</p>
 <p><b>Как это работает:</b></p>
 <ol>
@@ -436,6 +462,23 @@ codex mcp add onec --url http://server-erp:8080/mcp
 <tr><td><code>get_access_rights</code></td><td>Анализ ролей и прав доступа на объекты метаданных. Показывает, какие роли имеют доступ и какие операции разрешены.</td></tr>
 </table>
 
+<h3>Отчёты 1С по пользовательскому названию (8 инструментов)</h3>
+<table>
+<tr><th>Инструмент</th><th>Описание</th></tr>
+<tr><td><code>analyze_reports</code></td><td>Строит SQLite-каталог отчётов для конкретной базы по выгруженным BSL/XML-исходникам.</td></tr>
+<tr><td><code>enrich_report_docs</code></td><td>Загружает и кеширует описание отчёта из ИТС/1С:Напарника для улучшения поиска по бухгалтерским формулировкам.</td></tr>
+<tr><td><code>find_reports</code></td><td>Ищет отчёт по названию из интерфейса 1С, синониму, варианту или техническому имени.</td></tr>
+<tr><td><code>list_reports</code></td><td>Показывает отчёты, найденные для указанной базы. Аргумент <code>database</code> обязателен.</td></tr>
+<tr><td><code>describe_report</code></td><td>Показывает технический отчёт, вариант, параметры и стратегию запуска.</td></tr>
+<tr><td><code>run_report</code></td><td>Запускает отчёт по пользовательскому названию через отдельный для базы контур <code>toolkit</code>/<code>EPF</code> и возвращает строки результата.</td></tr>
+<tr><td><code>get_report_result</code></td><td>Возвращает страницу сохранённого результата большого отчёта по <code>run_id</code>.</td></tr>
+<tr><td><code>explain_report_strategy</code></td><td>Объясняет, почему выбрана конкретная стратегия запуска.</td></tr>
+</table>
+<p><b>Архитектура:</b> инструменты работы с отчётами состоят из локального SQLite-каталога, анализатора выгруженных BSL/XML-исходников и модуля запуска, который выбирает стратегию выполнения. Шлюз хранит каталог в <code>/data/report-catalog.sqlite</code> и сохранённые файлы результатов в <code>/data/report-results</code>, а реальное выполнение отчёта делает через отдельный для базы контур <code>toolkit</code>/<code>EPF</code>.</p>
+<p><b>Как получать данные:</b> обычно поток такой: <code>find_reports</code> для поиска по пользовательскому названию, <code>describe_report</code> для просмотра параметров и вариантов, затем <code>run_report</code> с явным <code>database</code> и при необходимости с <code>period</code>, <code>filters</code>, <code>params</code> и <code>context</code>. Если ответ большой, его дочитывают через <code>get_report_result</code>. Если модуль запуска возвращает <code>needs_input</code>, это означает формализованный запрос недостающих параметров или контекста выполнения для повторного вызова, а не скрытую ошибку.</p>
+<p><b>Обновление каталога:</b> каталог можно перестроить вручную через <code>analyze_reports</code>. Он также может обновляться после операций экспорта и переиндексации, когда шлюз видит новые выгруженные исходники.</p>
+<div class="note"><p><b>Пример:</b> <code>run_report(database="MY_INFOBASE", title="Расчетный листок", period={"from":"2025-12-01","to":"2025-12-31"}, filters={"Организация":"Основная"}, params={"ВариантОтчета":"Основной"})</code>. Инструменты работы с отчётами всегда требуют явный <code>database</code>, чтобы несколько подключённых баз не смешивались. Для запросов вроде «расчетка сотрудника» можно предварительно вызвать <code>enrich_report_docs</code>; базовый каталог работает и без Напарника.</p></div>
+
 <h3>Документация платформы (через platform-context, 5 инструментов)</h3>
 <table>
 <tr><th>Инструмент</th><th>Описание</th></tr>
@@ -445,7 +488,7 @@ codex mcp add onec --url http://server-erp:8080/mcp
 <tr><td><code>getConstructors</code></td><td>Описание конструкторов типа (варианты создания через <code>Новый</code>).</td></tr>
 <tr><td><code>search</code></td><td>Полнотекстовый поиск по документации платформы: типы, методы, свойства.</td></tr>
 </table>
-<p><b>Важно:</b> live schema для platform-context строже, чем раньше: <code>search</code> требует <code>query</code>, <code>type</code> и <code>limit</code>; <code>info</code> — <code>name</code> и <code>type</code>; <code>getMembers</code>/<code>getConstructors</code> — <code>typeName</code>; <code>getMember</code> — <code>typeName</code> и <code>memberName</code>.</p>
+<p><b>Важно:</b> текущая схема `platform-context` строже, чем раньше: <code>search</code> требует <code>query</code>, <code>type</code> и <code>limit</code>; <code>info</code> — <code>name</code> и <code>type</code>; <code>getMembers</code>/<code>getConstructors</code> — <code>typeName</code>; <code>getMember</code> — <code>typeName</code> и <code>memberName</code>.</p>
 
 <h3>Навигация по BSL-коду (через bsl-lsp-bridge, 14 инструментов)</h3>
 <table>
@@ -466,15 +509,15 @@ codex mcp add onec --url http://server-erp:8080/mcp
 <tr><td><code>did_change_watched_files</code></td><td>Уведомление LSP об изменении файлов (для переиндексации).</td></tr>
 </table>
 
-<h3>Шлюзовые инструменты (встроены в шлюз, 19 инструментов + <code>its_search</code> при настроенном <code>NAPARNIK_API_KEY</code>)</h3>
+<h3>Шлюзовые инструменты (встроены в шлюз, 26 инструментов + <code>its_search</code> при настроенном <code>NAPARNIK_API_KEY</code>)</h3>
 <table>
 <tr><th>Инструмент</th><th>Описание</th></tr>
 <tr><td><code>get_server_status</code></td><td>Статус всех MCP-бэкендов: доступность, количество инструментов.</td></tr>
 <tr><td><code>export_bsl_sources</code></td><td>Выгрузка исходников конфигурации 1С через 1cv8 DESIGNER /DumpConfigToFiles. По умолчанию запускается в фоне; для синхронного ожидания передайте <code>wait=true</code>.</td></tr>
 <tr><td><code>get_export_status</code></td><td>Статус фоновой выгрузки BSL и последующей индексации для указанной строки подключения.</td></tr>
 <tr><td><code>connect_database</code></td><td>Подключение новой базы 1С: регистрация, создание Docker-контейнеров.</td></tr>
-<tr><td><code>disconnect_database</code></td><td>Мягкое отключение базы: остановка runtime-контейнеров и backends без удаления из реестра.</td></tr>
-<tr><td><code>switch_database</code></td><td>Переключение активной базы для текущей MCP-сессии (per-session routing).</td></tr>
+<tr><td><code>disconnect_database</code></td><td>Мягкое отключение базы: остановка контейнеров выполнения и служебных подключений без удаления из реестра.</td></tr>
+<tr><td><code>switch_database</code></td><td>Переключение активной базы для текущей MCP-сессии с маршрутизацией в пределах этой сессии.</td></tr>
 <tr><td><code>list_databases</code></td><td>Список всех зарегистрированных баз и их статусы подключения.</td></tr>
 <tr><td><code>validate_query</code></td><td>Проверка синтаксиса запроса 1С без выполнения: статические проверки (скобки, ключевые слова) + серверная валидация через <code>ПЕРВЫЕ 0</code>.</td></tr>
 <tr><td><code>reindex_bsl</code></td><td>Принудительная переиндексация BSL Language Server. Используйте после ручного изменения файлов, git pull или внешней выгрузки.</td></tr>
@@ -496,7 +539,7 @@ codex mcp add onec --url http://server-erp:8080/mcp
 <p><b>Тулбар:</b> поле поиска с токенизацией по пробелам — запрос «размеры пособий» находит <code>РазмерыГосударственныхПособий</code>; кнопки ◀ ▶ навигируют историю поиска как в браузере; кнопка <b>Список</b> открывает плавающую панель с результатами последнего поиска (клик по строке — камера летит к узлу); <b>Очистить</b> сбрасывает канвас; <b>Пересобрать</b> / <b>Rebuild</b> — синхронный <code>POST /api/graph/rebuild</code>. Селектор <b>RU/EN</b> переключает язык (полный reload страницы).</p>
 <p><b>Левая панель</b> содержит <i>Базы</i> (радиокнопки — одна база одновременно, по умолчанию первая; при единственной базе радио неактивно) и <i>Типы</i> (количество объектов по выбранной БД; клик — показать 30 узлов этого типа). <b>Центральный канвас</b> — cytoscape.js с layout'ом <code>cose</code>, плавная анимация 600–700 мс ease-out, smooth-zoom колёсиком (<code>wheelSensitivity: 0.2</code>). Заливка узла = тип объекта, цвет обводки = база. Длинные CamelCase-имена автоматически разбиваются по границам регистра. Одинарный клик — детали узла справа + подсветка его соседей (остальной граф приглушается). Двойной клик — drill-down через <code>/api/graph/related/&lt;id&gt;</code>. Лимит 200 узлов на канвасе.</p>
 <p><b>Правая панель</b>: узел (type, db, id, path) + кнопка <b>Развернуть соседей</b>; легенда «цвет обводки — база данных». <b>Плавающая панель «Список»</b> открывается кнопкой в тулбаре и показывает все объекты последнего поиска с цветными точками (заливка = тип, обводка = база).</p>
-<p><b>Интеграция с шлюзом:</b> сразу после успешной выгрузки BSL gateway дёргает <code>POST /api/graph/rebuild</code>, и граф актуализируется без ожидания автоцикла. Файлы <code>.bsl</code> в графе получают читаемые имена вида <code>ОбъектИмя/Форма/Module.bsl</code> — поиск и список становятся различимыми. В карточке <i>Опциональные сервисы</i> имя <code>bsl-graph</code> становится кликабельной ссылкой, когда контейнер активен, и обычным текстом — когда выключен. При смене <code>BSL_WORKSPACE</code> / <code>BSL_HOST_WORKSPACE</code> через дашборд gateway автоматически пересоздаёт <code>bsl-graph</code>, чтобы Docker обновил bind mount. Если вы редактируете <code>.env</code> вручную или обходите дашборд, используйте <code>docker compose --profile bsl-graph up -d --build --force-recreate bsl-graph</code> как fallback.</p>
+<p><b>Интеграция с шлюзом:</b> сразу после успешной выгрузки BSL шлюз вызывает <code>POST /api/graph/rebuild</code>, и граф актуализируется без ожидания автоцикла. Файлы <code>.bsl</code> в графе получают читаемые имена вида <code>ОбъектИмя/Форма/Module.bsl</code> — поиск и список становятся различимыми. В карточке <i>Опциональные сервисы</i> имя <code>bsl-graph</code> становится кликабельной ссылкой, когда контейнер активен, и обычным текстом — когда выключен. При смене <code>BSL_WORKSPACE</code> / <code>BSL_HOST_WORKSPACE</code> через дашборд шлюз автоматически пересоздаёт <code>bsl-graph</code>, чтобы Docker обновил bind mount. Если вы редактируете <code>.env</code> вручную или обходите дашборд, используйте <code>docker compose --profile bsl-graph up -d --build --force-recreate bsl-graph</code> как резервный вариант.</p>
 
 <h3>MCP-ресурс</h3>
 <p>Шлюз также предоставляет один MCP-ресурс: <code>syntax_1c.txt</code> - справочник синтаксиса встроенного языка 1С (BSL): типы, операторы, управляющие конструкции, процедуры, исключения, директивы препроцессора. AI использует его как контекст при написании BSL-кода.</p>
@@ -508,10 +551,11 @@ codex mcp add onec --url http://server-erp:8080/mcp
 <tr><th>Путь</th><th>Метод</th><th>Описание</th></tr>
 <tr><td><code>/mcp</code></td><td>POST/GET</td><td>MCP Streamable HTTP - основная точка входа для AI-ассистентов. Поддерживает stateful сессии с idle timeout 8 часов.</td></tr>
 <tr><td><code>/health</code></td><td>GET</td><td>JSON-статус всех бэкендов. Возвращает <code>{"status":"ok"}</code> если все бэкенды доступны, <code>{"status":"degraded"}</code> если хотя бы один недоступен.</td></tr>
-<tr><td><code>/dashboard</code></td><td>GET</td><td>Web UI дашборд. Параметр <code>?lang=ru|en</code> для переключения языка.</td></tr>
+<tr><td><code>/dashboard</code></td><td>GET</td><td>Веб-интерфейс дашборда. Параметр <code>?lang=ru|en</code> для переключения языка.</td></tr>
 <tr><td><code>/dashboard/docs</code></td><td>GET</td><td>Эта страница документации. Параметр <code>?lang=ru|en</code>.</td></tr>
 <tr><td><code>/dashboard/diagnostics</code></td><td>GET</td><td>Полный диагностический отчёт в формате JSON (открывается в новой вкладке).</td></tr>
 <tr><td><code>/api/export-bsl</code></td><td>POST</td><td>REST для выгрузки BSL-исходников. Вызывается обработкой MCPToolkit.epf при нажатии «Выгрузить BSL». Тело: <code>{"connection":"...","output_dir":"..."}</code>.</td></tr>
+<tr><td><code>/api/reports/{action}</code></td><td>POST</td><td>REST-обёртка над инструментами отчётов: <code>analyze</code>, <code>find</code>, <code>list</code>, <code>describe</code>, <code>run</code>, <code>validate-all</code>, <code>result</code>, <code>explain</code>. Контракт повторяет соответствующие MCP-инструменты отчётов.</td></tr>
 <tr><td><code>/api/register</code></td><td>POST</td><td>Регистрация обработки EPF в шлюзе. Вызывается MCPToolkit.epf при нажатии «Подключиться». Тело: <code>{"name":"...","connection":"...","channel":"..."}</code>, где <code>channel</code> опционален, но рекомендуется для точной привязки к текущему экземпляру формы. Если база не подключена - автоматически подключает.</td></tr>
 <tr><td><code>/api/unregister</code></td><td>POST</td><td>Отмена регистрации EPF. Вызывается при нажатии «Отключиться» в обработке. Тело: <code>{"name":"..."}</code>.</td></tr>
 <tr><td><code>/api/action/connect-db</code></td><td>POST</td><td>Подключение базы данных из дашборда. Тело: <code>{"name":"...","connection":"...","project_path":"..."}</code>.</td></tr>
@@ -649,7 +693,7 @@ codex mcp add onec --url http://server-erp:8080/mcp
 <ol>
 <li>Шлюз перегружен или перезапускается. Проверьте логи: <code>docker logs onec-mcp-gw --tail 50</code>.</li>
 <li>Long-polling соединение разорвалось. Нажмите «Отключиться» и затем «Подключиться» повторно.</li>
-<li>При самом первом подключении после cold start подождите дольше обычного: регистрация EPF допускает до 240 секунд, пока шлюз поднимает runtime для базы.</li>
+<li>При самом первом подключении после холодного запуска подождите дольше обычного: регистрация EPF допускает до 240 секунд, пока шлюз поднимает контур выполнения для базы.</li>
 <li>Проблемы с Docker-сетью. Перезапустите контейнеры: <code>docker compose restart</code>.</li>
 </ol>
 
@@ -673,7 +717,7 @@ codex mcp add onec --url http://server-erp:8080/mcp
 <h2>Contents</h2>
 <ol>
 <li><a href="#overview-en">Overview</a> - what it is, why it exists, architecture</li>
-<li><a href="#status-en">Status Tab</a> - databases, profiling, anonymization, cache, backends, Docker</li>
+<li><a href="#status-en">Status Tab</a> - databases, profiling, anonymization, cache, backends, reports, Docker</li>
 <li><a href="#params-en">Settings Tab</a> - database management, configuration, actions</li>
 <li><a href="#epf-en">MCPToolkit.epf Data Processor</a> - interface, buttons, security, event log, fallback mode</li>
 <li><a href="#remote-en">Remote Deployment</a> - deploying on 1C server, what works, what does not</li>
@@ -721,7 +765,7 @@ MCPToolkit.epf (data processor inside 1C client)
 
 <!-- ================================================================== -->
 <h2 id="status-en">2. Status Tab</h2>
-<p>The Status tab is the main dashboard screen. It displays the current state of all system components as six cards. Information on this tab is read-only. All actions are performed on the Settings tab.</p>
+<p>The Status tab is the main dashboard screen. It displays the current state of all system components as read-only cards. Information on this tab is read-only. All actions are performed on the Settings tab or through MCP/API.</p>
 
 <h3>Databases Card</h3>
 <p>A table listing all connected 1C databases. Each row contains three columns:</p>
@@ -802,6 +846,17 @@ MCPToolkit.epf (data processor inside 1C client)
 <li><code>test-runner</code> - YaXUnit test execution. Add <code>test-runner</code> to <code>ENABLED_BACKENDS</code> and start: <code>docker compose --profile test-runner up -d</code>.</li>
 </ul>
 
+<h3>1C Reports Card</h3>
+<p>This card shows a local summary of the report runtime. It does not execute reports and does not call the 1C runtime while rendering. Data comes from the SQLite catalog <code>/data/report-catalog.sqlite</code> and stored result artifacts in <code>/data/report-results</code>.</p>
+<table>
+<tr><th>Metric</th><th>Description</th></tr>
+<tr><td><b>Last analysis</b></td><td>When the report catalog for a database was last rebuilt.</td></tr>
+<tr><td><b>Reports / Variants</b></td><td>How many cataloged reports and variants were found in exported BSL/XML sources.</td></tr>
+<tr><td><b>Checked / Results</b></td><td>How many cataloged reports already have a latest stored run and how many of those latest runs still have a readable result artifact.</td></tr>
+<tr><td><b>Done / Needs input / Unsupported / Errors</b></td><td>Status distribution by the latest stored run of each report. In the underlying API these values correspond to <code>done</code>, <code>needs_input</code>, <code>unsupported</code>, and <code>error</code>.</td></tr>
+</table>
+<div class="note"><p><b>Important:</b> report discovery and execution are not performed from the dashboard. They remain available through MCP/API tools such as <code>find_reports</code>, <code>describe_report</code>, <code>run_report</code>, and related methods. The <b>"Refresh stats"</b> button refreshes this card too, but only from local gateway state.</p></div>
+
 <h3>Docker Containers Card</h3>
 <p>The upper part of the card shows Docker daemon information: Docker version, CPU count, RAM, total image and volume sizes.</p>
 <p>When the dashboard first opens, this card is rendered in a <b>lightweight mode</b>: expensive Docker statistics are not queried automatically, so the page stays responsive. RAM and image-size values are initially shown as <code>n/a</code>. To fetch them explicitly, use the <b>"Refresh stats"</b> button next to the regular page refresh button.</p>
@@ -870,6 +925,21 @@ The AI will call the <code>connect_database</code> tool with the specified param
 <li>Or click <b>"Cancel"</b>. The editor closes without saving.</li>
 </ol>
 <div class="note"><p><b>Mounting:</b> the gateway reads <code>.env</code> as <code>./.env:/data/.env:ro</code>, while the <code>docker-control</code> sidecar gets <code>./.env:/data/.env:rw</code> only to write dashboard changes back to the host file. Works on Linux and Windows (via <code>docker-compose.windows.yml</code>).</p></div>
+
+<h3>BSL Export Folder</h3>
+<p>A dedicated card sets the host-side root folder where the gateway and the host export service store exported BSL sources. Each connected database gets its own subdirectory inside that root.</p>
+<p>The <b>"Browse..."</b> button opens the standard operating-system directory chooser on the host itself. The chooser is provided by <code>export-host-service.py</code>, so <code>EXPORT_HOST_URL</code> must be configured and the export service must be reachable.</p>
+<div class="note"><p><b>Important:</b> saving a new folder applies it without restarting the gateway. Running databases are switched to the new export root immediately, and the graph container is recreated so Docker picks up the new bind mount.</p></div>
+
+<h3>1C Report Engine</h3>
+<p>This card exposes the default parameters used by the report MCP/API tools.</p>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><b>Auto-analyze after connect, export, and BSL reindex</b></td><td>If enabled, the gateway refreshes the report catalog automatically after database connection, successful source export, and explicit BSL reindex.</td></tr>
+<tr><td><b>Rows per run / Run timeout</b></td><td>Default values for <code>run_report</code> when the caller does not pass its own <code>max_rows</code> and <code>timeout_seconds</code>.</td></tr>
+<tr><td><b>Rows per validation / Validation timeout</b></td><td>Default values for <code>validate_all_reports</code>. They bound the size and duration of bulk validation runs.</td></tr>
+</table>
+<p>Saving this card does not restart the gateway: the new values are applied immediately and written to <code>.env</code> at the same time.</p>
 
 <h3>Actions</h3>
 <p>Quick action buttons are located above the configuration table:</p>
@@ -1086,6 +1156,23 @@ For full functionality: docker compose on the 1C server.</code></pre>
 <tr><td><code>get_access_rights</code></td><td>Analyze roles and access rights for metadata objects. Shows which roles have access and which operations are permitted.</td></tr>
 </table>
 
+<h3>1C Reports by user-facing title (8 tools)</h3>
+<table>
+<tr><th>Tool</th><th>Description</th></tr>
+<tr><td><code>analyze_reports</code></td><td>Builds a per-database SQLite report catalog from exported BSL/XML sources.</td></tr>
+<tr><td><code>enrich_report_docs</code></td><td>Fetches and caches ITS/1C:Naparnik report descriptions to improve accountant-facing search.</td></tr>
+<tr><td><code>find_reports</code></td><td>Finds a report by UI title, synonym, variant, or technical name.</td></tr>
+<tr><td><code>list_reports</code></td><td>Lists cataloged reports for the explicit database. The <code>database</code> argument is required.</td></tr>
+<tr><td><code>describe_report</code></td><td>Shows the technical report, variant, parameters, and launch strategy.</td></tr>
+<tr><td><code>run_report</code></td><td>Runs a report by user-facing title via the per-db toolkit/EPF and returns result rows.</td></tr>
+<tr><td><code>get_report_result</code></td><td>Fetches a stored large report result page by <code>run_id</code>.</td></tr>
+<tr><td><code>explain_report_strategy</code></td><td>Explains why a specific launch strategy was selected.</td></tr>
+</table>
+<p><b>Architecture:</b> report tools combine a local SQLite catalog, an analyzer over exported BSL/XML sources, and a runner that selects a launch strategy. The gateway stores the catalog in <code>/data/report-catalog.sqlite</code> and result artifacts in <code>/data/report-results</code>, while actual report execution is delegated to the per-database toolkit/EPF runtime.</p>
+<p><b>How to get data:</b> the typical flow is <code>find_reports</code> to search by user-facing title, <code>describe_report</code> to inspect parameters and variants, then <code>run_report</code> with explicit <code>database</code> and, when needed, <code>period</code>, <code>filters</code>, <code>params</code>, and <code>context</code>. If the response is large, continue with <code>get_report_result</code>. If the runner returns <code>needs_input</code>, that is a structured request for missing parameters or runtime context rather than a hidden failure.</p>
+<p><b>Catalog refresh:</b> the catalog can be rebuilt explicitly through <code>analyze_reports</code>. It may also refresh after export and reindex operations when the gateway detects new exported sources.</p>
+<div class="note"><p><b>Example:</b> <code>run_report(database="MY_INFOBASE", title="Расчетный листок", period={"from":"2025-12-01","to":"2025-12-31"}, filters={"Организация":"Основная"}, params={"ВариантОтчета":"Основной"})</code>. Report tools always require explicit <code>database</code> so concurrently connected databases do not mix. For accountant phrasing like "payroll slip", call <code>enrich_report_docs</code> first; the static catalog still works without Naparnik.</p></div>
+
 <h3>Platform Documentation (via platform-context, 5 tools)</h3>
 <table>
 <tr><th>Tool</th><th>Description</th></tr>
@@ -1116,7 +1203,7 @@ For full functionality: docker compose on the 1C server.</code></pre>
 <tr><td><code>did_change_watched_files</code></td><td>Notify LSP about file changes (for re-indexing).</td></tr>
 </table>
 
-<h3>Gateway Tools (built into the gateway, 19 tools + <code>its_search</code> when <code>NAPARNIK_API_KEY</code> is configured)</h3>
+<h3>Gateway Tools (built into the gateway, 26 tools + <code>its_search</code> when <code>NAPARNIK_API_KEY</code> is configured)</h3>
 <table>
 <tr><th>Tool</th><th>Description</th></tr>
 <tr><td><code>get_server_status</code></td><td>Status of all MCP backends: availability, tool counts.</td></tr>
@@ -1161,6 +1248,7 @@ For full functionality: docker compose on the 1C server.</code></pre>
 <tr><td><code>/dashboard/docs</code></td><td>GET</td><td>This documentation page. Parameter <code>?lang=ru|en</code>.</td></tr>
 <tr><td><code>/dashboard/diagnostics</code></td><td>GET</td><td>Full diagnostic report in JSON format (opens in a new tab).</td></tr>
 <tr><td><code>/api/export-bsl</code></td><td>POST</td><td>REST endpoint for BSL source export. Called by MCPToolkit.epf when "Export BSL" is clicked. Body: <code>{"connection":"...","output_dir":"..."}</code>.</td></tr>
+<tr><td><code>/api/reports/{action}</code></td><td>POST</td><td>REST facade over the report tools: <code>analyze</code>, <code>find</code>, <code>list</code>, <code>describe</code>, <code>run</code>, <code>validate-all</code>, <code>result</code>, <code>explain</code>. The contract mirrors the corresponding MCP report tools.</td></tr>
 <tr><td><code>/api/register</code></td><td>POST</td><td>EPF registration in the gateway. Called by MCPToolkit.epf when "Connect" is clicked. Body: <code>{"name":"...","connection":"...","channel":"..."}</code>; <code>channel</code> is optional but recommended for exact routing to the currently opened form instance. If the database is not connected, auto-connects it.</td></tr>
 <tr><td><code>/api/unregister</code></td><td>POST</td><td>EPF unregistration. Called when "Disconnect" is clicked in the data processor. Body: <code>{"name":"..."}</code>.</td></tr>
 <tr><td><code>/api/action/connect-db</code></td><td>POST</td><td>Connect a database from the dashboard. Body: <code>{"name":"...","connection":"...","project_path":"..."}</code>.</td></tr>

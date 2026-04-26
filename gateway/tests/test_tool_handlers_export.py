@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gateway.tool_handlers.export import (
     _extract_bsl_file_count,
+    _extract_symbol_count,
     _existing_bsl_file_count,
     _finalize_index_result,
     _reuse_existing_export_tree,
@@ -136,6 +137,10 @@ class TestRunExportBsl:
     def test_extract_bsl_file_count_parses_export_messages(self):
         assert _extract_bsl_file_count("Export completed: 11622 BSL files in /home/as/Z/Z01") == 11622
         assert _extract_bsl_file_count("Выгрузка завершена") is None
+
+    def test_extract_symbol_count_handles_empty_and_unknown_summaries(self):
+        assert _extract_symbol_count("") is None
+        assert _extract_symbol_count("Индекс построен без счетчика") is None
 
     def test_build_index_with_fallback_returns_last_error_when_all_attempts_fail(self):
         calls: list[tuple[str, str]] = []
@@ -759,6 +764,44 @@ class TestRunExportBsl:
             ("/hostfs-home/as/Z/Z01", ""),
             ("/home/as/Z/Z01", "mcp-lsp-z01"),
         ]
+
+    @pytest.mark.asyncio
+    async def test_host_service_done_logs_lsp_refresh_failure_and_continues_indexing(self):
+        start_response = MagicMock()
+        start_response.status_code = 200
+        start_response.json = MagicMock(return_value={"ok": True})
+
+        status_response = MagicMock()
+        status_response.json = MagicMock(
+            return_value={"status": "done", "result": "Export completed: 3 BSL files in /home/as/Z/Z01"}
+        )
+
+        deps = _deps()
+        active = SimpleNamespace(slug="z01", name="Z01", lsp_container="")
+        deps["get_session_active"] = lambda: active
+        deps["refresh_lsp_fn"] = AsyncMock(side_effect=RuntimeError("stale mount"))
+        deps["build_index"] = lambda *_args, **_kwargs: "Indexed 88 symbols"
+
+        with patch("gateway.tool_handlers.export.httpx.AsyncClient") as client_cls, patch(
+            "gateway.tool_handlers.export.asyncio.sleep", new=AsyncMock()
+        ):
+            client = MagicMock()
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=False)
+            client.post = AsyncMock(return_value=start_response)
+            client.get = AsyncMock(return_value=status_response)
+            client_cls.return_value = client
+
+            result = await run_export_bsl(
+                connection="Srvr=srv;Ref=Z01;",
+                output_dir="/home/as/Z/Z01",
+                settings=_settings(export_host_url="http://host:8082"),
+                **deps,
+            )
+
+        assert "Индекс: 88 символов." in result
+        deps["refresh_lsp_fn"].assert_awaited_once_with("z01", "/home/as/Z/Z01")
+        deps["logger"].warning.assert_any_call("LSP refresh before indexing failed: stale mount")
 
     @pytest.mark.asyncio
     async def test_host_service_done_retries_zero_symbol_large_export(self):

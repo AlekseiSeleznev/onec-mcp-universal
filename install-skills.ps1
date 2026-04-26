@@ -19,6 +19,14 @@ $Targets = @()
 # Codex — install unconditionally.
 $Targets += @{ Path = (Join-Path $CodexHome "skills"); Label = "Codex" }
 
+$SkillDirs = @(Get-ChildItem -Path $SkillsSrc -Directory | Where-Object { Test-Path (Join-Path $_.FullName "SKILL.md") })
+$ExpectedSkills = $SkillDirs.Count
+
+if ($ExpectedSkills -eq 0) {
+    Write-Error "No skills with SKILL.md found in $SkillsSrc"
+    exit 1
+}
+
 # Check if symlinks are available (Developer Mode or admin)
 $canSymlink = $false
 $testLink = Join-Path $env:TEMP "skill_symlink_test_$PID"
@@ -38,7 +46,7 @@ foreach ($target in $Targets) {
     }
     $installed = 0
     $skipped = 0
-    foreach ($skillDir in Get-ChildItem -Path $SkillsSrc -Directory) {
+    foreach ($skillDir in $SkillDirs) {
         $t = Join-Path $dst $skillDir.Name
         if (Test-Path $t) {
             $item = Get-Item $t
@@ -57,8 +65,20 @@ foreach ($target in $Targets) {
         }
         $installed++
     }
-    Write-Host "[$label] Installed: $installed | Skipped: $skipped | Location: $dst"
+    $verified = 0
+    foreach ($skillDir in $SkillDirs) {
+        $t = Join-Path $dst $skillDir.Name
+        if (Test-Path $t) {
+            $verified++
+        }
+    }
+    Write-Host "[$label] Installed: $installed | Skipped: $skipped | Verified: $verified/$ExpectedSkills | Location: $dst"
+    if ($verified -ne $ExpectedSkills) {
+        Write-Error "Skill installation verification failed for $label"
+        exit 1
+    }
 }
 
 Write-Host ""
 Write-Host "Skills installed for Codex."
+Write-Host "Restart Codex to pick up newly installed or updated skills."

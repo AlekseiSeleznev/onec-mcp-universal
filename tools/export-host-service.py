@@ -117,6 +117,138 @@ def browse_directories(raw_path: str) -> dict:
         }
 
 
+def _normalize_directory_dialog_path(raw_path: str) -> str:
+    raw = (raw_path or "").strip()
+    if raw == "~" or not raw:
+        raw = current_workspace()
+
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = (Path(current_workspace()) / path).resolve()
+    else:
+        path = path.resolve()
+
+    if not path.is_dir():
+        path = path.parent
+    return str(path)
+
+
+def _build_windows_directory_dialog_script(initial_path: str) -> str:
+    escaped = initial_path.replace("'", "''")
+    return "; ".join(
+        [
+            "Add-Type -AssemblyName System.Windows.Forms",
+            "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
+            '$dialog.Description = "Select BSL Export Folder"',
+            "$dialog.ShowNewFolderButton = $true",
+            f"$dialog.SelectedPath = '{escaped}'",
+            "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {",
+            "  Write-Output $dialog.SelectedPath",
+            "  exit 0",
+            "}",
+            "exit 1",
+        ]
+    )
+
+
+def _build_mac_directory_dialog_script(initial_path: str) -> list[str]:
+    escaped = initial_path.replace('"', '\\"')
+    return [
+        (
+            'set chosenFolder to choose folder with prompt "Select BSL Export Folder" '
+            f'default location POSIX file "{escaped}"'
+        ),
+        "POSIX path of chosenFolder",
+    ]
+
+
+def _build_native_directory_dialog_strategies(initial_path: str, platform_name: str | None = None) -> list[tuple[str, list[str]]]:
+    platform_name = (platform_name or _platform.system()).lower()
+    candidate = _normalize_directory_dialog_path(initial_path)
+    trailing = candidate if candidate.endswith(os.path.sep) else f"{candidate}{os.path.sep}"
+
+    if platform_name.startswith("win"):
+        return [
+            (
+                "powershell",
+                ["-NoProfile", "-STA", "-Command", _build_windows_directory_dialog_script(candidate)],
+            )
+        ]
+    if platform_name == "darwin":
+        args: list[str] = []
+        for line in _build_mac_directory_dialog_script(candidate):
+            args.extend(["-e", line])
+        return [("osascript", args)]
+    return [
+        (
+            "zenity",
+            ["--file-selection", "--directory", "--title=Select BSL Export Folder", f"--filename={trailing}"],
+        ),
+        (
+            "qarma",
+            ["--file-selection", "--directory", "--title=Select BSL Export Folder", f"--filename={trailing}"],
+        ),
+        (
+            "yad",
+            ["--file-selection", "--directory", "--title=Select BSL Export Folder", f"--filename={trailing}"],
+        ),
+        ("kdialog", ["--getexistingdirectory", candidate]),
+    ]
+
+
+def _run_dialog_process(command: str, args: list[str]) -> dict:
+    env = dict(os.environ)
+    if not _IS_WINDOWS and _platform.system() != "Darwin":
+        env.setdefault("DISPLAY", env.get("DISPLAY") or ":0")
+    completed = subprocess.run(
+        [command, *args],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
+        check=False,
+    )
+    return {
+        "code": completed.returncode,
+        "stdout": completed.stdout,
+        "stderr": completed.stderr,
+    }
+
+
+def choose_directory_with_os_dialog(
+    initial_path: str,
+    *,
+    process_runner=None,
+    platform_name: str | None = None,
+) -> dict:
+    runner = process_runner or _run_dialog_process
+    last_error = ""
+    for command, args in _build_native_directory_dialog_strategies(initial_path, platform_name):
+        try:
+            result = runner(command, args)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            last_error = str(exc)
+            continue
+
+        raw_code = result.get("code", 1)
+        code = 1 if raw_code is None else int(raw_code)
+        stdout = str(result.get("stdout", "") or "").strip()
+        stderr = str(result.get("stderr", "") or "").strip()
+
+        if code == 0 and stdout:
+            return {"ok": True, "cancelled": False, "path": stdout}
+        if code == 1:
+            return {"ok": True, "cancelled": True, "path": ""}
+        last_error = stderr or f"Dialog exited with code {code}"
+
+    return {
+        "ok": False,
+        "error": last_error or "No supported native directory dialog is available on this host.",
+    }
+
+
 def _find_v8_binaries() -> dict:
     """Scan host filesystem for installed 1cv8 thick-client binaries."""
     result = {}
@@ -460,6 +592,11 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 self._send_json(400, {"ok": False, "result": "Invalid JSON"})
                 return
+
+        if self.path == "/select-directory":
+            result = choose_directory_with_os_dialog(body.get("currentPath", ""))
+            self._send_json(200 if result.get("ok", False) else 500, result)
+            return
 
         if self.path == "/cancel":
             conn = body.get("connection", "").strip()

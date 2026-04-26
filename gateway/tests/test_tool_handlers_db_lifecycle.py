@@ -101,6 +101,81 @@ class TestConnectDatabaseHandler:
         manager.switch_db.assert_called_once_with("ERP")
         registry.switch.assert_called_once_with("ERP")
 
+    @pytest.mark.parametrize(
+        ("stat_side_effect", "stat_mode", "expected_lsp"),
+        [
+            (PermissionError("denied"), None, "mcp-lsp-ERP"),
+            (OSError("broken"), None, None),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_connect_database_handles_project_path_stat_edge_cases(
+        self,
+        stat_side_effect,
+        stat_mode,
+        expected_lsp,
+    ):
+        db_info = SimpleNamespace(toolkit_port=0, toolkit_url="", lsp_container="", slug="ERP")
+        registry = MagicMock()
+        registry.register.return_value = db_info
+        registry.switch = MagicMock(return_value=True)
+        manager = MagicMock()
+        manager.add_db_backends = AsyncMock()
+        manager.switch_db = MagicMock(return_value=True)
+
+        with patch("gateway.tool_handlers.db_lifecycle.os.stat", side_effect=stat_side_effect):
+            result = await connect_database(
+                name="ERP",
+                connection="Srvr=srv;Ref=ERP;",
+                project_path="/projects/ERP",
+                registry=registry,
+                manager=manager,
+                db_name_re=_DB_NAME_RE,
+                slugify=lambda s: s.lower(),
+                start_toolkit=lambda _: (6101, "onec-toolkit-ERP"),
+                start_lsp=lambda *_: expected_lsp or "unexpected",
+                http_backend_factory=lambda name, url, transport: ("http", name, url, transport),
+                stdio_backend_factory=lambda name, cmd, args: ("stdio", name, cmd, args),
+            )
+
+        assert "Database 'ERP' connected successfully." in result
+        assert db_info.lsp_container == (expected_lsp or "")
+        assert (manager.add_db_backends.await_args.args[2] is not None) == bool(expected_lsp)
+
+    @pytest.mark.asyncio
+    async def test_connect_database_skips_lsp_when_project_path_is_not_directory(self):
+        db_info = SimpleNamespace(toolkit_port=0, toolkit_url="", lsp_container="", slug="ERP")
+        registry = MagicMock()
+        registry.register.return_value = db_info
+        registry.switch = MagicMock(return_value=True)
+        manager = MagicMock()
+        manager.add_db_backends = AsyncMock()
+        manager.switch_db = MagicMock(return_value=True)
+
+        import stat as _stat
+
+        with patch(
+            "gateway.tool_handlers.db_lifecycle.os.stat",
+            return_value=SimpleNamespace(st_mode=_stat.S_IFREG | 0o644),
+        ):
+            result = await connect_database(
+                name="ERP",
+                connection="Srvr=srv;Ref=ERP;",
+                project_path="/projects/ERP",
+                registry=registry,
+                manager=manager,
+                db_name_re=_DB_NAME_RE,
+                slugify=lambda s: s.lower(),
+                start_toolkit=lambda _: (6101, "onec-toolkit-ERP"),
+                start_lsp=lambda *_: "unexpected",
+                http_backend_factory=lambda name, url, transport: ("http", name, url, transport),
+                stdio_backend_factory=lambda name, cmd, args: ("stdio", name, cmd, args),
+            )
+
+        assert "Database 'ERP' connected successfully." in result
+        assert db_info.lsp_container == ""
+        assert manager.add_db_backends.await_args.args[2] is None
+
     @pytest.mark.asyncio
     async def test_rolls_back_registry_on_start_failure(self):
         db_info = SimpleNamespace(toolkit_port=0, toolkit_url="", lsp_container="", slug="ERP")

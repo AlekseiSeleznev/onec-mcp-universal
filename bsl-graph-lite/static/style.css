@@ -362,17 +362,22 @@ main {
 .details button,
 .analysis-panel button,
 .path-panel button {
-  background: #0369a1;
-  border: 1px solid #0369a1;
-  color: #fff;
+  background: #1e293b;
+  border: 1px solid #475569;
+  color: #94a3b8;
   padding: 4px 10px;
   border-radius: 5px;
   font-size: .72rem;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .details button:hover,
 .analysis-panel button:hover,
-.path-panel button:hover { background: #0284c7; }
+.path-panel button:hover {
+  background: #334155;
+  color: #f8fafc;
+  border-color: #64748b;
+}
 
 .badge {
   display: inline-block;
@@ -490,14 +495,17 @@ main {
   justify-content: center;
   padding: 5px 14px;
   border-radius: 5px;
-  border: 1px solid #0369a1;
-  background: #0369a1;
-  color: #fff;
+  border: 1px solid #475569;
+  background: #1e293b;
+  color: #94a3b8;
   cursor: pointer;
   font-size: .78rem;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .dialog-actions button:hover {
-  background: #0284c7;
+  background: #334155;
+  color: #f8fafc;
+  border-color: #64748b;
 }
 
 @media (max-width: 1100px) {

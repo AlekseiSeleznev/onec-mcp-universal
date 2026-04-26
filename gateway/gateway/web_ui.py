@@ -7,9 +7,7 @@ from __future__ import annotations
 
 import html as _html
 
-from .config import VERSION as _CFG_VERSION
 from .web_docs import render_docs
-VERSION = f"v{_CFG_VERSION}"
 GITHUB_URL = "https://github.com/AlekseiSeleznev/onec-mcp-universal"
 
 # Simple text-based logo
@@ -26,6 +24,7 @@ _T = {
         "title": "onec-mcp-universal",
         "subtitle": "MCP-шлюз для 1С:Предприятие",
         "tab_info": "Статус",
+        "tab_reports": "Отчёты",
         "tab_settings": "Настройки",
         "btn_docs": "Документация",
         "btn_refresh": "Обновить",
@@ -37,6 +36,30 @@ _T = {
         "h_cache": "Кеш метаданных",
         "h_anon": "Анонимизация",
         "h_system": "Docker-контейнеры",
+        "h_reports": "Отчёты 1С",
+        "h_report_engine": "ДВИЖОК ОТЧЁТОВ 1С",
+        "reports_none": "Каталог ещё не построен",
+        "reports_analyzed": "Последний анализ",
+        "reports_snapshot_hint": "Статусы по последнему запуску каждого отчёта",
+        "reports_found": "Отчётов",
+        "reports_variants": "Вариантов",
+        "reports_runs": "Проверено",
+        "reports_artifacts": "Результатов",
+        "reports_done": "Готово",
+        "reports_needs_input": "Нужен ввод",
+        "reports_unsupported": "Не поддерживается",
+        "reports_error": "Ошибки",
+        "reports_no_validation": "Нет данных валидации",
+        "reports_hint": "Поиск и запуск отчётов по пользовательскому названию, например «Расчетный листок».",
+        "reports_database": "База",
+        "reports_query": "Название отчёта",
+        "reports_find": "Найти",
+        "reports_analyze": "Проанализировать отчёты",
+        "reports_run": "Запустить",
+        "reports_period_from": "Период с",
+        "reports_period_to": "по",
+        "reports_filters": "Фильтры JSON",
+        "reports_result": "Результат",
         "h_config": "Конфигурация шлюза",
         "h_db_mgmt": "Управление базами данных",
         "h_actions": "Действия",
@@ -111,12 +134,21 @@ _T = {
         "reindex_bsl": "Переиндексировать BSL",
         "h_params": "Настройки",
         "h_bsl_workspace": "ПАПКА ВЫГРУЗКИ BSL",
+        "h_report_settings": "Параметры",
         "bsl_workspace_save": "Сохранить",
         "bsl_workspace_edit": "Изменить",
         "bsl_workspace_saving": "Сохранение...",
         "bsl_workspace_saved": "Сохранено и применено без перезапуска.",
         "bsl_workspace_select": "Выбрать эту папку",
         "bsl_workspace_hint": "Папка на этом компьютере для хранения выгруженных BSL-исходников. Для каждой базы создаётся подкаталог.",
+        "browse_btn": "Обзор...",
+        "report_settings_hint": "Эти значения используются по умолчанию для запуска одного отчёта и массовой проверки каталога.",
+        "report_auto_analyze": "Автоанализ после подключения, выгрузки и переиндексации BSL",
+        "report_run_rows": "Строк при запуске",
+        "report_run_timeout": "Таймаут запуска, сек",
+        "report_validate_rows": "Строк при проверке",
+        "report_validate_timeout": "Таймаут проверки, сек",
+        "report_settings_saved": "Настройки отчётов сохранены и применены без перезапуска.",
         "api_token_prompt": "Введите GATEWAY_API_TOKEN для API-действий:",
         "progress_connecting_db": "Подключаем базу...",
         "progress_reconnecting_db": "Подключаем базу...",
@@ -128,6 +160,7 @@ _T = {
         "progress_toggling_anon": "Переключаем анонимизацию...",
         "progress_saving_db": "Сохраняем параметры базы...",
         "progress_saving_workspace": "Сохраняем папку выгрузки BSL...",
+        "progress_saving_report_settings": "Сохраняем настройки отчётов...",
         "progress_saving_env": "Сохраняем конфигурацию шлюза...",
         "progress_refreshing_stats": "Обновляем статистику Docker...",
         "stats_updated": "Статистика обновлена.",
@@ -136,6 +169,7 @@ _T = {
         "title": "onec-mcp-universal",
         "subtitle": "MCP Gateway for 1C:Enterprise",
         "tab_info": "Status",
+        "tab_reports": "Reports",
         "tab_settings": "Settings",
         "btn_docs": "Docs",
         "btn_refresh": "Refresh",
@@ -147,6 +181,30 @@ _T = {
         "h_cache": "Metadata Cache",
         "h_anon": "Anonymization",
         "h_system": "Docker Containers",
+        "h_reports": "1C Reports",
+        "h_report_engine": "1C REPORT ENGINE",
+        "reports_none": "Catalog has not been built yet",
+        "reports_analyzed": "Last analysis",
+        "reports_snapshot_hint": "Statuses by the latest run of each report",
+        "reports_found": "Reports",
+        "reports_variants": "Variants",
+        "reports_runs": "Checked",
+        "reports_artifacts": "Results",
+        "reports_done": "Done",
+        "reports_needs_input": "Needs input",
+        "reports_unsupported": "Unsupported",
+        "reports_error": "Errors",
+        "reports_no_validation": "No validation data",
+        "reports_hint": "Find and run reports by user-facing title, for example \"Payroll sheet\".",
+        "reports_database": "Database",
+        "reports_query": "Report title",
+        "reports_find": "Find",
+        "reports_analyze": "Analyze reports",
+        "reports_run": "Run",
+        "reports_period_from": "Period from",
+        "reports_period_to": "to",
+        "reports_filters": "Filters JSON",
+        "reports_result": "Result",
         "h_config": "Gateway Configuration",
         "h_db_mgmt": "Database Management",
         "h_actions": "Actions",
@@ -221,12 +279,21 @@ _T = {
         "reindex_bsl": "Reindex BSL",
         "h_params": "Settings",
         "h_bsl_workspace": "BSL EXPORT FOLDER",
+        "h_report_settings": "Parameters",
         "bsl_workspace_save": "Save",
         "bsl_workspace_edit": "Edit",
         "bsl_workspace_saving": "Saving...",
         "bsl_workspace_saved": "Saved and applied without restart.",
         "bsl_workspace_select": "Select this folder",
         "bsl_workspace_hint": "Local folder on this machine for storing exported BSL sources. A subdirectory is created per database.",
+        "browse_btn": "Browse...",
+        "report_settings_hint": "These values are used as defaults for running a single report and for validating the catalog in bulk.",
+        "report_auto_analyze": "Auto-analyze after connect, export, and BSL reindex",
+        "report_run_rows": "Rows per run",
+        "report_run_timeout": "Run timeout, sec",
+        "report_validate_rows": "Rows per validation",
+        "report_validate_timeout": "Validation timeout, sec",
+        "report_settings_saved": "Report settings saved and applied without restart.",
         "api_token_prompt": "Enter GATEWAY_API_TOKEN for API actions:",
         "progress_connecting_db": "Connecting database...",
         "progress_reconnecting_db": "Connecting database...",
@@ -238,6 +305,7 @@ _T = {
         "progress_toggling_anon": "Toggling anonymization...",
         "progress_saving_db": "Saving database settings...",
         "progress_saving_workspace": "Saving BSL export folder...",
+        "progress_saving_report_settings": "Saving report settings...",
         "progress_saving_env": "Saving gateway configuration...",
         "progress_refreshing_stats": "Refreshing Docker stats...",
         "stats_updated": "Stats refreshed.",
@@ -264,7 +332,7 @@ a{color:#38bdf8;text-decoration:none}a:hover{text-decoration:underline}
 .lang-sw a.on{background:#334155;color:#f8fafc}
 .btn{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:5px;font-size:.78rem;cursor:pointer;border:1px solid #475569;background:#1e293b;color:#94a3b8;text-decoration:none}
 .btn:hover{background:#334155;color:#f8fafc;text-decoration:none}
-.btn-p{background:#0369a1;border-color:#0369a1;color:#fff}.btn-p:hover{background:#0284c7}
+.btn-p{background:#1e293b;border-color:#475569;color:#94a3b8}.btn-p:hover{background:#334155;color:#f8fafc}
 .tabs{display:flex;background:#1e293b;border-bottom:1px solid #334155;padding:0 20px;flex-shrink:0}
 .tab{padding:8px 16px;font-size:.78rem;color:#64748b;cursor:pointer;border-bottom:2px solid transparent}
 .tab:hover{color:#94a3b8}.tab.on{color:#38bdf8;border-bottom-color:#38bdf8}
@@ -293,6 +361,16 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 .form-row label{font-size:.78rem;color:#94a3b8;text-align:right}
 .form-row input{padding:5px 8px;border-radius:4px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:.8rem;width:100%}
 .form-row input:focus{outline:none;border-color:#38bdf8}
+.num-wrap{display:flex;align-items:stretch;width:100%;border:1px solid #475569;border-radius:4px;overflow:hidden;background:#0f172a}
+.num-wrap:focus-within{border-color:#38bdf8}
+.num-wrap input{border:none!important;border-radius:0!important;background:transparent!important}
+.num-wrap input:focus{border-color:transparent!important}
+.num-wrap input[type=number]{appearance:textfield;-moz-appearance:textfield}
+.num-wrap input[type=number]::-webkit-outer-spin-button,.num-wrap input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.num-stepper{display:flex;flex-direction:column;flex-shrink:0;border-left:1px solid #334155}
+.num-stepper button{width:28px;height:16px;border:0;background:#1e293b;color:#94a3b8;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.58rem;line-height:1}
+.num-stepper button + button{border-top:1px solid #334155}
+.num-stepper button:hover{background:#334155;color:#f8fafc}
 </style>
 </head>
 <body>
@@ -322,6 +400,7 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <div class="card"><h2>{{h_cache}}</h2>{{cache_html}}</div>
 <div class="card"><h2>{{h_backends}}</h2>{{backends_html}}</div>
 <div class="card"><h2>{{h_optional_services}}</h2>{{optional_services_html}}</div>
+<div class="card"><h2>{{h_reports}}</h2><div id="reports-summary-root">{{reports_summary_html}}</div></div>
 <div class="card"><h2>{{h_system}}</h2>{{docker_info_html}}{{system_html}}</div>
 </div>
 </div>
@@ -374,33 +453,28 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <div id="bsl-ws-edit" style="display:none;margin-top:8px">
 <div style="display:flex;gap:6px;align-items:center">
 <input id="bsl-ws-input" style="flex:1;min-width:0" placeholder="">
-<button class="btn" style="font-size:.7rem;padding:3px 8px;flex-shrink:0" onclick="openFolderBrowser()">...</button>
+<button class="btn" style="font-size:.7rem;padding:3px 8px;flex-shrink:0" onclick="openSystemDirectoryDialog('bsl-ws-input')">{{browse_btn}}</button>
 </div>
 <div class="ag" style="margin-top:6px">
-<button class="btn btn-p" style="font-size:.7rem;padding:3px 8px" onclick="saveBslWorkspace()">{{bsl_workspace_save}}</button>
+<button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="saveBslWorkspace()">{{bsl_workspace_save}}</button>
 <button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="cancelBslWorkspace()">{{cancel}}</button>
 </div>
 </div>
-<!-- Folder browser modal -->
-<div id="folder-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center">
-<div style="background:#1e293b;border-radius:8px;width:480px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;overflow:hidden">
-<div style="padding:12px 16px;border-bottom:1px solid #334155;display:flex;align-items:center;gap:8px">
-<button class="btn" style="font-size:.7rem;padding:2px 8px" onclick="browseTo(_fbParent)" id="fb-up">↑</button>
-<code id="fb-path" style="font-size:.75rem;color:#94a3b8;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></code>
-<button class="btn" style="font-size:.7rem;padding:2px 8px" onclick="closeFolderBrowser()">✕</button>
 </div>
-<div id="fb-list" style="overflow-y:auto;flex:1;padding:8px"></div>
-<div style="padding:10px 16px;border-top:1px solid #334155;display:flex;gap:8px;justify-content:flex-end">
-<button class="btn btn-p" style="font-size:.75rem" onclick="selectCurrentFolder()">{{bsl_workspace_select}}</button>
-<button class="btn" style="font-size:.75rem" onclick="closeFolderBrowser()">{{cancel}}</button>
-</div>
-</div>
-</div>
+<div class="card">
+<h2>{{h_report_engine}}</h2>
+<p style="color:#64748b;font-size:.72rem;margin-bottom:8px">{{report_settings_hint}}</p>
+<div class="form-row"><label>{{report_auto_analyze}}</label><input id="report-auto-analyze" type="checkbox" style="width:auto;justify-self:start"></div>
+<div class="form-row"><label>{{report_run_rows}}</label><div class="num-wrap"><input id="report-run-rows" type="number" min="0" step="1"><div class="num-stepper"><button type="button" onclick="stepNumberInput('report-run-rows',1)">▲</button><button type="button" onclick="stepNumberInput('report-run-rows',-1)">▼</button></div></div></div>
+<div class="form-row"><label>{{report_run_timeout}}</label><div class="num-wrap"><input id="report-run-timeout" type="number" min="0" step="1"><div class="num-stepper"><button type="button" onclick="stepNumberInput('report-run-timeout',1)">▲</button><button type="button" onclick="stepNumberInput('report-run-timeout',-1)">▼</button></div></div></div>
+<div class="form-row"><label>{{report_validate_rows}}</label><div class="num-wrap"><input id="report-validate-rows" type="number" min="0" step="1"><div class="num-stepper"><button type="button" onclick="stepNumberInput('report-validate-rows',1)">▲</button><button type="button" onclick="stepNumberInput('report-validate-rows',-1)">▼</button></div></div></div>
+<div class="form-row"><label>{{report_validate_timeout}}</label><div class="num-wrap"><input id="report-validate-timeout" type="number" min="0" step="1"><div class="num-stepper"><button type="button" onclick="stepNumberInput('report-validate-timeout',1)">▲</button><button type="button" onclick="stepNumberInput('report-validate-timeout',-1)">▼</button></div></div></div>
+<div class="ag"><button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="saveReportSettings()">{{save}}</button></div>
 </div>
 </div>
 </div>
 <div class="footer">
-{{title}} {{version}} &mdash;
+{{title}} &mdash;
 <a href="{{github_url}}">{{project}}</a> &mdash;
 <a href="{{github_url}}/blob/main/LICENSE">{{license}}: MIT</a> &mdash;
 <a href="/dashboard/diagnostics?lang={{lang}}" target="_blank">{{diagnostics}}</a>
@@ -434,6 +508,39 @@ if(els[i].getAttribute(attr)===String(value))return els[i];
 }
 return null;
 }
+function escHtml(v){
+return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
+}
+function renderReportsSummary(items){
+var root=document.getElementById('reports-summary-root');
+if(!root)return;
+items=Array.isArray(items)?items:[];
+if(!items.length){root.innerHTML='<span class="st">{{reports_none}}</span>';return;}
+var html=items.map(function(item){
+var name=escHtml(item.database||'');
+if(!item.catalog_ready){
+return '<div style="padding:8px 0;border-bottom:1px solid #334155"><div class="sr"><span class="sn">'+name+'</span></div><div class="st" style="white-space:normal">{{reports_none}}</div></div>';
+}
+var counts=item.status_counts||{};
+return '<div style="padding:8px 0;border-bottom:1px solid #334155">'
+  +'<div class="sr"><span class="sn">'+name+'</span></div>'
+  +'<div class="st">{{reports_analyzed}}: '+escHtml(item.analyzed_at||'{{unknown_short}}')+'</div>'
+  +'<div class="srow" style="margin-top:8px">'
+  +'<div><div class="sv" style="font-size:1rem">'+String(item.reports_count||0)+'</div><div class="sl">{{reports_found}}</div></div>'
+  +'<div><div class="sv" style="font-size:1rem">'+String(item.variants_count||0)+'</div><div class="sl">{{reports_variants}}</div></div>'
+  +'<div><div class="sv" style="font-size:1rem">'+String(item.runs_count||0)+'</div><div class="sl">{{reports_runs}}</div></div>'
+  +'<div><div class="sv" style="font-size:1rem">'+String(item.artifacts_count||0)+'</div><div class="sl">{{reports_artifacts}}</div></div>'
+  +'</div>'
+  +'<div class="srow" style="margin-top:8px">'
+  +'<div><div class="sv" style="font-size:1rem">'+String(counts.done||0)+'</div><div class="sl">{{reports_done}}</div></div>'
+  +'<div><div class="sv" style="font-size:1rem">'+String(counts.needs_input||0)+'</div><div class="sl">{{reports_needs_input}}</div></div>'
+  +'<div><div class="sv" style="font-size:1rem">'+String(counts.unsupported||0)+'</div><div class="sl">{{reports_unsupported}}</div></div>'
+  +'<div><div class="sv" style="font-size:1rem">'+String(counts.error||0)+'</div><div class="sl">{{reports_error}}</div></div>'
+  +'</div>'
+  +'</div>';
+}).join('');
+root.innerHTML=html;
+}
 function refreshDockerStats(){
 var btn=document.getElementById('refresh-stats-btn');
 if(btn&&btn.disabled)return;
@@ -457,6 +564,7 @@ var img=findByDataAttr('data-container-image-size', name);
 if(mem){mem.textContent=String(c.memory_usage_human||'{{unknown_short}}');}
 if(img){img.textContent=String(c.image_size_human||'{{unknown_short}}');}
 });
+renderReportsSummary(payload.reports_summary||[]);
 showToast('{{stats_updated}}',1800);
 }).catch(function(e){
 showToast(String(e));
@@ -581,7 +689,7 @@ apiFetch('/api/action/connect-db',{method:'POST',headers:{'Content-Type':'applic
 function editDb(name,conn,path){
 var ov=document.createElement('div');
 ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:flex;align-items:center;justify-content:center';
-ov.innerHTML='<div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px;width:420px;max-width:90%"><h3 style="color:#f8fafc;font-size:.9rem;margin-bottom:12px">'+name+'</h3><div style="margin-bottom:8px"><label style="color:#94a3b8;font-size:.75rem;display:block;margin-bottom:3px">{{add_db_conn}}</label><input id="ed-conn" value="'+conn+'" style="width:100%;padding:5px 8px;border-radius:4px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:.8rem"></div><div style="margin-bottom:12px"><label style="color:#94a3b8;font-size:.75rem;display:block;margin-bottom:3px">{{add_db_path}}</label><input id="ed-path" value="'+path+'" style="width:100%;padding:5px 8px;border-radius:4px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:.8rem"></div><div style="display:flex;gap:8px;justify-content:flex-end"><button onclick="this.closest(\'div[style*=fixed]\').remove()" style="padding:5px 12px;border-radius:5px;border:1px solid #475569;background:#1e293b;color:#94a3b8;cursor:pointer;font-size:.78rem">{{cancel}}</button><button onclick="saveEditDb(\''+name+'\')" style="padding:5px 12px;border-radius:5px;border:1px solid #0369a1;background:#0369a1;color:#fff;cursor:pointer;font-size:.78rem">{{save_config}}</button></div></div>';
+ov.innerHTML='<div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px;width:420px;max-width:90%"><h3 style="color:#f8fafc;font-size:.9rem;margin-bottom:12px">'+name+'</h3><div style="margin-bottom:8px"><label style="color:#94a3b8;font-size:.75rem;display:block;margin-bottom:3px">{{add_db_conn}}</label><input id="ed-conn" value="'+conn+'" style="width:100%;padding:5px 8px;border-radius:4px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:.8rem"></div><div style="margin-bottom:12px"><label style="color:#94a3b8;font-size:.75rem;display:block;margin-bottom:3px">{{add_db_path}}</label><input id="ed-path" value="'+path+'" style="width:100%;padding:5px 8px;border-radius:4px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:.8rem"></div><div style="display:flex;gap:8px;justify-content:flex-end"><button onclick="this.closest(\'div[style*=fixed]\').remove()" style="padding:5px 12px;border-radius:5px;border:1px solid #475569;background:#1e293b;color:#94a3b8;cursor:pointer;font-size:.78rem">{{cancel}}</button><button onclick="saveEditDb(\''+name+'\')" style="padding:5px 12px;border-radius:5px;border:1px solid #475569;background:#1e293b;color:#94a3b8;cursor:pointer;font-size:.78rem">{{save_config}}</button></div></div>';
 document.body.appendChild(ov);
 ov.addEventListener('click',function(e){if(e.target===ov)ov.remove()});
 }
@@ -618,6 +726,8 @@ apiFetch('/api/action/get-bsl-workspace',{method:'POST'}).then(r=>r.json()).then
 _bslWsData=d;
 var cur=document.getElementById('bsl-ws-current');
 if(cur)cur.textContent=d.value||'(не задан)';
+var inp=document.getElementById('bsl-ws-input');
+if(inp&&d.placeholder)inp.placeholder=d.placeholder;
 }).catch(function(){});
 }
 function editBslWorkspace(){
@@ -630,43 +740,38 @@ function cancelBslWorkspace(){
 document.getElementById('bsl-ws-view').style.display='block';
 document.getElementById('bsl-ws-edit').style.display='none';
 }
-var _fbParent='';
-function openFolderBrowser(){
-var cur=document.getElementById('bsl-ws-input').value.trim();
-var modal=document.getElementById('folder-modal');
-modal.style.display='flex';
-browseTo(cur||'~');
+function stepNumberInput(id,delta){
+var input=document.getElementById(id);
+if(!input)return;
+var step=Number(input.step||1);
+if(!isFinite(step)||step<=0)step=1;
+var current=input.value===''?0:Number(input.value);
+if(!isFinite(current))current=0;
+var next=current+(delta*step);
+if(input.min!==''&&isFinite(Number(input.min)))next=Math.max(Number(input.min),next);
+if(input.max!==''&&isFinite(Number(input.max)))next=Math.min(Number(input.max),next);
+input.value=String(next);
+input.dispatchEvent(new Event('input',{bubbles:true}));
+input.dispatchEvent(new Event('change',{bubbles:true}));
 }
-function closeFolderBrowser(){
-document.getElementById('folder-modal').style.display='none';
+function selectDirectoryWithOsDialog(currentPath){
+return apiFetch('/api/select-directory',{
+method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({currentPath:currentPath||''})
+}).then(function(r){return r.json();});
 }
-function browseTo(path){
-apiFetch('/api/browse?path='+encodeURIComponent(path)).then(r=>r.json()).then(function(d){
-if(d.error&&!d.dirs){showToast(d.error);return;}
-var p=d.path||path;
-_fbParent=d.parent||p;
-document.getElementById('fb-path').textContent=p;
-var up=document.getElementById('fb-up');
-if(up)up.disabled=(p===_fbParent);
-var list=document.getElementById('fb-list');
-list.innerHTML='';
-if(d.error){list.innerHTML='<div style="color:#f87171;font-size:.8rem;padding:4px">'+d.error+'</div>';}
-(d.dirs||[]).forEach(function(name){
-var btn=document.createElement('div');
-btn.style.cssText='padding:5px 8px;cursor:pointer;border-radius:4px;font-size:.82rem;color:#e2e8f0';
-btn.onmouseover=function(){this.style.background='#334155';};
-btn.onmouseout=function(){this.style.background='';};
-btn.textContent='📁 '+name;
-btn.onclick=function(){browseTo(p.replace(/\/$/,'')+'/'+name);};
-list.appendChild(btn);
-});
-if(!d.dirs||!d.dirs.length){list.innerHTML='<div style="color:#64748b;font-size:.8rem;padding:4px">(пусто)</div>';}
+function openSystemDirectoryDialog(targetId){
+var input=document.getElementById(targetId);
+var currentPath=input?input.value.trim():'';
+selectDirectoryWithOsDialog(currentPath).then(function(result){
+if(!result||result.error){
+showToast((result&&result.error)||'Error');
+return;
+}
+if(result.cancelled)return;
+if(input)input.value=result.path||'';
 }).catch(function(e){showToast(String(e));});
-}
-function selectCurrentFolder(){
-var path=document.getElementById('fb-path').textContent;
-document.getElementById('bsl-ws-input').value=path;
-closeFolderBrowser();
 }
 function saveBslWorkspace(){
 var v=document.getElementById('bsl-ws-input').value.trim();
@@ -683,12 +788,49 @@ setTimeout(reload,3000);
 }else{showToast(d.error||'Error');}
 }).catch(function(e){showToast(String(e));});
 }
+var _reportSettingsData={};
+function loadReportSettings(){
+apiFetch('/api/action/get-report-settings',{method:'POST'}).then(r=>r.json()).then(function(d){
+if(!d||!d.ok)return;
+_reportSettingsData=d;
+var auto=document.getElementById('report-auto-analyze');
+var runRows=document.getElementById('report-run-rows');
+var runTimeout=document.getElementById('report-run-timeout');
+var validateRows=document.getElementById('report-validate-rows');
+var validateTimeout=document.getElementById('report-validate-timeout');
+if(auto)auto.checked=!!d.auto_analyze_enabled;
+if(runRows)runRows.value=String(d.run_default_max_rows||0);
+if(runTimeout)runTimeout.value=String(d.run_default_timeout_seconds||0);
+if(validateRows)validateRows.value=String(d.validate_default_max_rows||0);
+if(validateTimeout)validateTimeout.value=String(d.validate_default_timeout_seconds||0);
+}).catch(function(){});
+}
+function saveReportSettings(){
+var payload={
+auto_analyze_enabled:!!document.getElementById('report-auto-analyze').checked,
+run_default_max_rows:Number(document.getElementById('report-run-rows').value||0),
+run_default_timeout_seconds:Number(document.getElementById('report-run-timeout').value||0),
+validate_default_max_rows:Number(document.getElementById('report-validate-rows').value||0),
+validate_default_timeout_seconds:Number(document.getElementById('report-validate-timeout').value||0)
+};
+showToast('{{progress_saving_report_settings}}',1600);
+apiFetch('/api/action/save-report-settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+.then(r=>r.json()).then(function(d){
+if(d&&d.ok){
+_reportSettingsData=d;
+showToast(d.message||'{{report_settings_saved}}');
+loadReportSettings();
+}else{
+showToast((d&&d.error)||'Error');
+}
+}).catch(function(e){showToast(String(e));});
+}
 // Load BSL workspace info when settings tab is opened
 (function(){
 var origStab=window.stab;
-window.stab=function(el,id){origStab(el,id);if(id==='settings')loadBslWorkspace();};
+window.stab=function(el,id){origStab(el,id);if(id==='settings'){loadBslWorkspace();loadReportSettings();}};
 // Also load if settings tab is already active on page load
-if(location.hash==='#settings'||document.getElementById('t-settings').classList.contains('on'))loadBslWorkspace();
+if(location.hash==='#settings'||document.getElementById('t-settings').classList.contains('on')){loadBslWorkspace();loadReportSettings();}
 })();
 function confirmDisconnect(name){
 var ov=document.createElement('div');
@@ -752,6 +894,8 @@ def render_dashboard(
     container_info: list[dict] | None = None,
     docker_system: dict | None = None,
     optional_services: list[dict] | None = None,
+    reports_summary: list[dict] | None = None,
+    report_settings: dict | None = None,
     lang: str = "ru",
 ) -> str:
     t = _T.get(lang, _T["ru"])
@@ -887,9 +1031,40 @@ def render_dashboard(
         f'</div>'
     )
 
+    report_blocks = []
+    for item in reports_summary or []:
+        database = _esc(item.get("database", ""))
+        if not item.get("catalog_ready"):
+            report_blocks.append(
+                f'<div style="padding:8px 0;border-bottom:1px solid #334155">'
+                f'<div class="sr"><span class="sn">{database}</span></div>'
+                f'<div class="st" style="white-space:normal">{t["reports_none"]}</div>'
+                f'</div>'
+            )
+            continue
+        counts = item.get("status_counts") or {}
+        report_blocks.append(
+            f'<div style="padding:8px 0;border-bottom:1px solid #334155">'
+            f'<div class="sr"><span class="sn">{database}</span></div>'
+            f'<div class="st">{t["reports_analyzed"]}: {_esc(item.get("analyzed_at", "") or t["unknown_short"])}</div>'
+            f'<div class="srow" style="margin-top:8px">'
+            f'<div><div class="sv" style="font-size:1rem">{int(item.get("reports_count", 0) or 0)}</div><div class="sl">{t["reports_found"]}</div></div>'
+            f'<div><div class="sv" style="font-size:1rem">{int(item.get("variants_count", 0) or 0)}</div><div class="sl">{t["reports_variants"]}</div></div>'
+            f'<div><div class="sv" style="font-size:1rem">{int(item.get("runs_count", 0) or 0)}</div><div class="sl">{t["reports_runs"]}</div></div>'
+            f'<div><div class="sv" style="font-size:1rem">{int(item.get("artifacts_count", 0) or 0)}</div><div class="sl">{t["reports_artifacts"]}</div></div>'
+            f'</div>'
+            f'<div class="srow" style="margin-top:8px">'
+            f'<div><div class="sv" style="font-size:1rem">{int(counts.get("done", 0) or 0)}</div><div class="sl">{t["reports_done"]}</div></div>'
+            f'<div><div class="sv" style="font-size:1rem">{int(counts.get("needs_input", 0) or 0)}</div><div class="sl">{t["reports_needs_input"]}</div></div>'
+            f'<div><div class="sv" style="font-size:1rem">{int(counts.get("unsupported", 0) or 0)}</div><div class="sl">{t["reports_unsupported"]}</div></div>'
+            f'<div><div class="sv" style="font-size:1rem">{int(counts.get("error", 0) or 0)}</div><div class="sl">{t["reports_error"]}</div></div>'
+            f'</div>'
+            f'</div>'
+        )
+    reports_summary_html = "".join(report_blocks) or f'<span class="st">{t["reports_none"]}</span>'
+
     # Config
     config_html = "\n".join(f"<tr><td>{_esc(k)}</td><td><code>{_esc(v)}</code></td></tr>" for k, v in config_items)
-
     # DB management — buttons under each DB, separated by lines
     if databases:
         db_blocks = []
@@ -990,7 +1165,8 @@ def render_dashboard(
         "cache_status": cache_status, "anon_status_text": anon_status_text,
         "optional_services_html": optional_services_html,
         "system_html": system_html, "config_html": config_html,
-        "db_mgmt_html": db_mgmt_html, "version": VERSION,
+        "db_mgmt_html": db_mgmt_html,
+        "reports_summary_html": reports_summary_html,
         "github_url": GITHUB_URL, "lang": lang,
         "ru_on": "on" if lang == "ru" else "",
         "en_on": "on" if lang == "en" else "",
