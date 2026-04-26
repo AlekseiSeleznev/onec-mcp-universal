@@ -338,7 +338,8 @@ async def test_runner_executes_raw_skd_when_requested(tmp_path):
     assert 'ИмяПараметраСКД = "пользователь"' in backend.calls[0][1]["code"]
     assert 'Найти(ИмяПараметраСКД, "пользовател") > 0' not in backend.calls[0][1]["code"]
     assert "Пользователи.ТекущийПользователь()" in backend.calls[0][1]["code"]
-    assert 'Настройки.УстановитьЗначениеПараметра("X", """quote""")' in backend.calls[0][1]["code"]
+    assert 'Настройки.УстановитьЗначениеПараметра("X", """quote""")' not in backend.calls[0][1]["code"]
+    assert 'ПолеОтбораСКД = Новый ПолеКомпоновкиДанных("X")' in backend.calls[0][1]["code"]
     assert 'Настройки.УстановитьЗначениеПараметра("Организация", "Ромашка")' in backend.calls[0][1]["code"]
     assert 'Настройки.УстановитьЗначениеПараметра("ДатаОстатков", Дата(2025, 12, 31))' in backend.calls[0][1]["code"]
     assert 'Настройки.УстановитьЗначениеПараметра("ВключатьУволенных", Истина)' in backend.calls[0][1]["code"]
@@ -434,7 +435,11 @@ async def test_runner_executes_bsp_variant_report_strategy(tmp_path):
     assert 'ПараметрыФормирования.ПолноеИмя = "Отчет.АнализПравДоступа"' in code
     assert "ПараметрыФормирования.Объект = ОтчетОбъект" in code
     assert "ОтчетОбъект.ИнициализироватьОтчет();" in code
-    assert code.index("ОтчетОбъект.ИнициализироватьОтчет();") < code.index("СхемаКомпоновкиДанных = ОтчетОбъект.СхемаКомпоновкиДанных")
+    assert "ВариантыОтчетов.ПодключитьОтчетИЗагрузитьНастройки(ПараметрыФормирования)" in code
+    assert "ПараметрыФормирования.Подключение = Подключение" in code
+    assert "ОтчетОбъект.КомпоновщикНастроек.ЗагрузитьНастройки(Настройки);" in code
+    assert "ОтчетОбъект.КомпоновщикНастроек.ЗагрузитьПользовательскиеНастройки(ПользовательскиеНастройки);" in code
+    assert "ПараметрыФормирования.НастройкиКД = Настройки;" not in code
     assert "ПараметрыФормирования.СсылкаОтчета" in code
     assert "Справочник.ВариантыОтчетов" in code
     assert 'Настройки.УстановитьЗначениеПараметра("Период", ДатаОкончанияПериода)' in code
@@ -463,6 +468,31 @@ async def test_runner_applies_user_params_to_bsp_skd_settings(tmp_path):
     assert 'ПользовательскийПараметрСКД1.Добавить("План")' in code
     assert 'ПользовательскийПараметрСКД1.Добавить("Факт")' in code
     assert 'Настройки.УстановитьЗначениеПараметра("Сценарии", ПользовательскийПараметрСКД1)' in code
+    assert 'ПользовательскийПараметрСКД = ПользовательскиеНастройки.Элементы.Найти' in code
+
+
+@pytest.mark.asyncio
+async def test_runner_applies_filters_to_skd_filter_layer_instead_of_params(tmp_path):
+    backend = FakeBackend({"success": True, "data": {"rows": [{"A": 1}]}})
+    runner = ReportRunner(_bsp_catalog(tmp_path), ToolkitReportTransport(FakeManager(backend)))
+
+    result = await runner.run_report(
+        database="Z01",
+        title="Анализ прав доступа",
+        period=None,
+        filters={"Организация": "Ромашка"},
+        params={},
+        strategy="auto",
+        max_rows=1,
+    )
+
+    code = backend.calls[0][1]["code"]
+    assert result["ok"] is True
+    assert 'Настройки.УстановитьЗначениеПараметра("Организация", "Ромашка")' not in code
+    assert 'ПолеОтбораСКД = Новый ПолеКомпоновкиДанных("Организация")' in code
+    assert "ВариантыОтчетовСлужебныйКлиентСервер.ФильтрРазделаОтчета(Настройки.Отбор, ПолеОтбораСКД)" in code
+    assert "ФильтрСКД.ВидСравнения = ВидСравненияКомпоновкиДанных.Равно;" in code
+    assert 'ПользовательскийФильтрСКД = ПользовательскиеНастройки.Элементы.Найти' not in code
 
 
 @pytest.mark.asyncio

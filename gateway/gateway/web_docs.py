@@ -22,26 +22,26 @@ DOCS_HTML = {
 
 <h2>Содержание</h2>
 <ol>
-<li><a href="#overview-ru">Обзор</a> - что это, зачем нужно, архитектура</li>
-<li><a href="#status-ru">Вкладка "Статус"</a> - базы данных, профилирование, анонимизация, кеш, бэкенды, отчёты, Docker</li>
-<li><a href="#params-ru">Вкладка "Настройки"</a> - управление базами, конфигурация, действия</li>
-<li><a href="#epf-ru">Обработка MCPToolkit.epf</a> - интерфейс, кнопки, безопасность, журнал, автономный режим</li>
-<li><a href="#remote-ru">Удалённое подключение</a> - развёртывание на сервере 1С, что работает, что нет</li>
-<li><a href="#tools-ru">MCP-инструменты</a> - полный список MCP-инструментов</li>
-<li><a href="#api-ru">API-эндпоинты</a> - полная таблица</li>
-<li><a href="#env-ru">Переменные окружения</a> - все параметры .env</li>
-<li><a href="#diagnostics-ru">Диагностика</a> - содержимое отчёта</li>
-<li><a href="#troubleshooting-ru">Устранение неполадок</a> - типичные проблемы и решения</li>
+<li><a href="#overview-ru">Обзор</a> - что это и как устроено</li>
+<li><a href="#status-ru">Вкладка "Статус"</a> - базы, бэкенды, отчёты, Docker и текущие метрики</li>
+<li><a href="#params-ru">Вкладка "Настройки"</a> - базы, .env и быстрые действия</li>
+<li><a href="#epf-ru">Обработка MCPToolkit.epf</a> - подключение, кнопки, безопасность и журнал</li>
+<li><a href="#remote-ru">Удалённое подключение</a> - запуск на сервере 1С и ограничения режима</li>
+<li><a href="#tools-ru">MCP-инструменты</a> - список инструментов</li>
+<li><a href="#api-ru">API-эндпоинты</a> - HTTP API шлюза</li>
+<li><a href="#env-ru">Переменные окружения</a> - параметры .env</li>
+<li><a href="#diagnostics-ru">Диагностика</a> - что попадает в JSON-отчёт</li>
+<li><a href="#troubleshooting-ru">Устранение неполадок</a> - частые сбои и что проверить</li>
 </ol>
 
 <!-- ================================================================== -->
 <h2 id="overview-ru">1. Обзор</h2>
 
 <h3>Что это такое</h3>
-<p><b>onec-mcp-universal</b> - единый MCP-шлюз, который позволяет AI-ассистентам и любым MCP-клиентам работать с информационными базами 1С:Предприятие. MCP (Model Context Protocol) - открытый протокол, через который AI-модель вызывает внешние инструменты: выполняет запросы к базе данных, читает метаданные конфигурации, навигирует по исходному коду и т.д.</p>
+<p><b>onec-mcp-universal</b> - MCP-шлюз для работы с информационными базами 1С:Предприятие из AI-ассистентов и любых MCP-клиентов. MCP (Model Context Protocol) даёт модели способ вызывать внешние инструменты: выполнять запросы, читать метаданные, переходить по BSL-коду и получать служебную диагностику.</p>
 
 <h3>Зачем нужен шлюз</h3>
-<p>Без шлюза пришлось бы подключать к AI-ассистенту несколько отдельных MCP-серверов (один для данных 1С, другой для навигации по коду, третий для документации платформы). Шлюз объединяет их в единую точку входа: <code>http://localhost:8080/mcp</code>. AI-ассистент подключается один раз и получает доступ к полному набору MCP-инструментов. Точное число зависит от включения <code>its_search</code> через <code>NAPARNIK_API_KEY</code>.</p>
+<p>Без шлюза пришлось бы отдельно подключать данные 1С, навигацию по коду и документацию платформы. Здесь всё собрано за одним адресом: <code>http://localhost:8080/mcp</code>. AI-ассистент подключается один раз и видит доступные MCP-инструменты. Их точное число зависит от настроек, например от включения <code>its_search</code> через <code>NAPARNIK_API_KEY</code>.</p>
 
 <h3>Как работает</h3>
 <p>Цепочка взаимодействия выглядит так:</p>
@@ -62,19 +62,19 @@ MCPToolkit.epf (обработка внутри клиента 1С)
     v
 Информационная база 1С:Предприятие</code></pre>
 
-<p>Когда AI-ассистент вызывает инструмент (например, <code>execute_query</code>), шлюз определяет, какому бэкенду он принадлежит, и перенаправляет запрос. Бэкенд <code>onec-toolkit</code> передаёт команду обработке MCPToolkit.epf, запущенной в клиенте 1С. Обработка выполняет запрос в информационной базе и возвращает результат обратно по цепочке.</p>
+<p>Когда AI-ассистент вызывает инструмент, например <code>execute_query</code>, шлюз выбирает нужный бэкенд и передаёт запрос дальше. <code>onec-toolkit</code> отправляет команду в <code>MCPToolkit.epf</code>, запущенную в клиенте 1С. Обработка выполняет действие в информационной базе и возвращает результат обратно через шлюз.</p>
 
 <h3>Per-session routing</h3>
-<p>Каждый сеанс AI-ассистента работает со своей активной базой данных <b>независимо</b>. Два разных окна Codex могут одновременно работать с разными базами (например, одно с ERP, другое с ЗУП), и их запросы не будут пересекаться. Все зарегистрированные базы остаются подключёнными одновременно. Переключение между базами выполняется командой <code>switch_database</code>. Idle timeout сессий: 8 часов.</p>
+<p>У каждого сеанса AI-ассистента своя активная база. Два окна Codex могут одновременно работать с разными базами, например одно с ERP, другое с ЗУП, и их запросы не смешаются. Все зарегистрированные базы остаются подключёнными. Для переключения используется <code>switch_database</code>. Idle timeout сессии: 8 часов.</p>
 
 <div class="note"><p><b>Одна точка подключения:</b> Вне зависимости от количества подключённых баз и бэкендов, AI-ассистент всегда использует один адрес: <code>http://localhost:8080/mcp</code>.</p></div>
 
 <!-- ================================================================== -->
 <h2 id="status-ru">2. Вкладка «Статус»</h2>
-<p>Вкладка «Статус» - главный экран дашборда. Она отображает текущее состояние всех компонентов системы в виде информационных карточек. Информация на этой вкладке доступна только для чтения - все действия выполняются на вкладке «Настройки» или через MCP/API.</p>
+<p>«Статус» - основной экран дашборда. Здесь собраны текущие состояния баз, бэкендов, отчётов, кеша, анонимизации и Docker-контейнеров. Вкладка только показывает данные; действия выполняются в «Настройках» или через MCP/API.</p>
 
 <h3>Карточка «Базы данных»</h3>
-<p>Таблица со списком всех подключённых информационных баз 1С. Каждая строка содержит три столбца:</p>
+<p>Таблица всех зарегистрированных баз 1С. В каждой строке показаны:</p>
 <table>
 <tr><th>Столбец</th><th>Описание</th></tr>
 <tr><td><b>Имя</b></td><td>Уникальный идентификатор базы (латинские буквы, цифры, дефис, подчёркивание). Используется в именах Docker-контейнеров: <code>onec-toolkit-{имя}</code> и <code>mcp-lsp-{имя}</code>. Примеры: <code>ERP</code>, <code>ZUP_TEST</code>, <code>buh-main</code>.</td></tr>
@@ -87,7 +87,7 @@ MCPToolkit.epf (обработка внутри клиента 1С)
 <div class="note"><p><b>Автоподключение:</b> Если пользователь нажимает «Подключиться» в обработке MCPToolkit.epf, а база ещё не зарегистрирована в шлюзе, она автоматически подключается - создаются Docker-контейнеры, база появляется в этой таблице.</p></div>
 
 <h3>Карточка «Профилирование»</h3>
-<p>Автоматический сбор статистики по производительности всех запросов <code>execute_query</code> к информационным базам. Данные накапливаются с момента запуска шлюза и сбрасываются при перезапуске.</p>
+<p>Статистика по вызовам <code>execute_query</code>. Шлюз собирает её с момента запуска и сбрасывает при перезапуске.</p>
 <table>
 <tr><th>Показатель</th><th>Описание</th></tr>
 <tr><td><b>Запросов</b></td><td>Общее количество выполненных запросов с момента запуска шлюза. Считаются все вызовы <code>execute_query</code> ко всем подключённым базам.</td></tr>
@@ -99,7 +99,7 @@ MCPToolkit.epf (обработка внутри клиента 1С)
 <p>Кроме дашборда, статистику профилирования можно получить через MCP-инструмент <code>query_stats</code>. Каждый ответ <code>execute_query</code> автоматически включает поле <code>_profiling</code> с длительностью выполнения и подсказками по оптимизации (например: «запрос использует SELECT *», «отсутствует WHERE», «много JOIN»).</p>
 
 <h3>Карточка «Анонимизация»</h3>
-<p>Статус системы маскировки персональных данных (ПД) в ответах от 1С. Отображается как цветной индикатор:</p>
+<p>Статус маскировки персональных данных в ответах от 1С:</p>
 <ul>
 <li><span style="color:#22c55e">Включена</span> (зелёный) - все ответы инструментов <code>execute_query</code>, <code>execute_code</code>, <code>get_object_by_link</code>, <code>get_event_log</code> проходят через фильтр анонимизации.</li>
 <li><span style="color:#eab308">Выключена</span> (жёлтый) - данные передаются AI без изменений.</li>
@@ -113,8 +113,8 @@ MCPToolkit.epf (обработка внутри клиента 1С)
 <li><b>Email</b> - адреса электронной почты</li>
 <li><b>Названия компаний</b> - юридические лица (ООО, АО, ИП и т.д.)</li>
 </ul>
-<p><b>Стабильный маппинг:</b> Одно и то же исходное значение <b>всегда</b> заменяется одним и тем же фейком в рамках сессии. Это позволяет AI корректно работать с данными - связи между объектами (например, «у контрагента Альфа есть документы...») сохраняются.</p>
-<p><b>Когда использовать:</b> Включайте анонимизацию при работе с production-базами, содержащими реальные персональные данные. Это важно для соответствия 152-ФЗ (закон о персональных данных) - замаскированные данные не являются персональными. На тестовых базах с синтетическими данными анонимизацию можно не включать.</p>
+<p><b>Стабильный маппинг:</b> одно и то же исходное значение заменяется одним и тем же фейком в рамках сессии. Связи между объектами при этом сохраняются: если у контрагента были документы, после маскировки они останутся привязаны к тому же замещённому контрагенту.</p>
+<p><b>Когда использовать:</b> включайте анонимизацию на production-базах с реальными персональными данными. На тестовых базах с синтетикой её обычно можно оставить выключенной.</p>
 
 <h3>Карточка «Кеш метаданных»</h3>
 <p>Результаты вызова <code>get_metadata</code> (информация о структуре конфигурации: реквизиты, табличные части, типы) кешируются на стороне шлюза, чтобы не запрашивать одни и те же метаданные у 1С повторно.</p>
@@ -187,7 +187,7 @@ MCPToolkit.epf (обработка внутри клиента 1С)
 
 <!-- ================================================================== -->
 <h2 id="params-ru">3. Вкладка «Настройки»</h2>
-<p>Вкладка «Настройки» содержит инструменты управления: подключение и отключение баз данных, редактирование конфигурации шлюза, действия с кешем и анонимизацией.</p>
+<p>На вкладке «Настройки» находятся действия, которые меняют состояние шлюза: подключение и отключение баз, редактирование конфигурации, кеш и анонимизация.</p>
 
 <h3>Управление базами данных</h3>
 <p>Карточка «Управление базами данных» содержит таблицу баз с кнопками управления. Имя отключённой базы отображается <span style="text-decoration:line-through;color:#64748b;font-weight:bold">жирным зачёркнутым</span> как на вкладке Статус, так и в Настройках.</p>
@@ -202,7 +202,7 @@ MCPToolkit.epf (обработка внутри клиента 1С)
 </table>
 
 <h3>Добавление базы</h3>
-<p>Нижняя часть карточки - форма «Добавить базу» с тремя полями:</p>
+<p>Внизу карточки находится форма «Добавить базу»:</p>
 <table>
 <tr><th>Поле</th><th>Описание</th><th>Пример</th></tr>
 <tr><td><b>Имя базы</b></td><td>Уникальный идентификатор. Допустимы латинские буквы, цифры, дефис и подчёркивание. Максимум 63 символа.</td><td><code>ERP_DEMO</code></td></tr>
@@ -212,7 +212,7 @@ MCPToolkit.epf (обработка внутри клиента 1С)
 <p>После нажатия кнопки «Подключить» шлюз создаст два Docker-контейнера для базы и зарегистрирует её. Далее откройте MCPToolkit.epf в клиенте 1С и нажмите «Подключиться».</p>
 
 <h3>Три способа подключения базы</h3>
-<p>Базу 1С можно подключить к шлюзу тремя равноправными способами:</p>
+<p>Базу 1С можно подключить тремя способами:</p>
 <ol>
 <li><b>Из обработки MCPToolkit.epf</b> (рекомендуемый) - откройте обработку в клиенте 1С:Предприятие, нажмите «Подключиться». Обработка автоматически определит имя базы и сервер, зарегистрирует базу в шлюзе и создаст Docker-контейнеры. Никакой ручной настройки не требуется.</li>
 <li><b>Из дашборда</b> - перейдите на вкладку «Настройки», заполните форму «Добавить базу» и нажмите «Подключить». После этого откройте MCPToolkit.epf в 1С и нажмите «Подключиться» для установки long-polling соединения.</li>
@@ -233,7 +233,7 @@ AI вызовет инструмент <code>connect_database</code> с указ
 <div class="note"><p><b>Монтирование:</b> gateway читает <code>.env</code> как <code>./.env:/data/.env:ro</code>, а sidecar <code>docker-control</code> получает <code>./.env:/data/.env:rw</code> только для записи изменений из дашборда обратно на хост. Работает на Linux и Windows (через <code>docker-compose.windows.yml</code>).</p></div>
 
 <h3>Папка выгрузки BSL</h3>
-<p>Отдельная карточка позволяет задать корневую папку на хосте, куда шлюз и хостовый сервис выгрузки будут складывать BSL-исходники. Для каждой базы внутри этого каталога создаётся свой подкаталог.</p>
+<p>Эта карточка задаёт корневую папку на хосте для выгруженных BSL-исходников. Для каждой базы внутри неё создаётся отдельный подкаталог.</p>
 <p>Кнопка <b>«Обзор...»</b> открывает стандартный системный диалог выбора папки на самом хосте. Этот диалог запускает <code>export-host-service.py</code>, поэтому для его работы должен быть доступен <code>EXPORT_HOST_URL</code> и сам сервис выгрузки.</p>
 <div class="note"><p><b>Важно:</b> после сохранения новая папка применяется без перезапуска шлюза. Работающие базы автоматически переводятся на новый корень выгрузки, а контейнер графа пересоздаётся, чтобы подхватить новое монтирование.</p></div>
 
@@ -446,8 +446,8 @@ codex mcp add onec --url http://server-erp:8080/mcp
 <div class="warn"><p><b>Безопасность:</b> Порт 8080 открывает доступ ко всем инструментам шлюза, включая выполнение кода и запросы к БД. Ограничьте доступ по IP-адресам через файрвол. Не открывайте порт в интернет без дополнительной защиты (VPN, SSH-туннель). Пример ограничения: <code>sudo ufw allow from 192.168.1.0/24 to any port 8080</code></p></div>
 
 <!-- ================================================================== -->
-<h2 id="tools-ru">6. MCP-инструменты (полный список)</h2>
-<p>Шлюз предоставляет AI-ассистенту полный набор инструментов, объединённых из всех бэкендов. Точное число зависит от включения <code>its_search</code> (требуется <code>NAPARNIK_API_KEY</code>). Инструменты разделены на категории.</p>
+<h2 id="tools-ru">6. MCP-инструменты</h2>
+<p>Шлюз предоставляет AI-ассистенту полный набор инструментов, объединённых из всех бэкендов. Ниже приведён полный список MCP-инструментов по категориям. Точное число зависит от включения <code>its_search</code> (требуется <code>NAPARNIK_API_KEY</code>).</p>
 
 <h3>Данные 1С (через onec-toolkit, 8 инструментов)</h3>
 <table>
@@ -546,7 +546,7 @@ codex mcp add onec --url http://server-erp:8080/mcp
 
 <!-- ================================================================== -->
 <h2 id="api-ru">7. API-эндпоинты</h2>
-<p>Полный список HTTP-эндпоинтов шлюза. Основной вход для AI-ассистентов - <code>/mcp</code>. Остальные эндпоинты используются дашбордом, обработкой EPF или внешними системами.</p>
+<p>HTTP-эндпоинты шлюза. Основной вход для AI-ассистентов - <code>/mcp</code>. Остальные эндпоинты используются дашбордом, обработкой EPF или внешними системами.</p>
 <table>
 <tr><th>Путь</th><th>Метод</th><th>Описание</th></tr>
 <tr><td><code>/mcp</code></td><td>POST/GET</td><td>MCP Streamable HTTP - основная точка входа для AI-ассистентов. Поддерживает stateful сессии с idle timeout 8 часов.</td></tr>
@@ -711,31 +711,31 @@ codex mcp add onec --url http://server-erp:8080/mcp
     "en": r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Documentation - onec-mcp-universal</title>
 <style>""" + _DOC_STYLE + """</style></head><body>
 <a class="back" href="/dashboard?lang=en">&larr; Back to dashboard</a>
-<h1>onec-mcp-universal Documentation</h1>
+<h1>onec-mcp-universal documentation</h1>
 <p>Version: """ + VERSION + """ | <a href="https://github.com/AlekseiSeleznev/onec-mcp-universal">GitHub</a> | License: MIT</p>
 
 <h2>Contents</h2>
 <ol>
-<li><a href="#overview-en">Overview</a> - what it is, why it exists, architecture</li>
-<li><a href="#status-en">Status Tab</a> - databases, profiling, anonymization, cache, backends, reports, Docker</li>
-<li><a href="#params-en">Settings Tab</a> - database management, configuration, actions</li>
-<li><a href="#epf-en">MCPToolkit.epf Data Processor</a> - interface, buttons, security, event log, fallback mode</li>
-<li><a href="#remote-en">Remote Deployment</a> - deploying on 1C server, what works, what does not</li>
-<li><a href="#tools-en">MCP Tools</a> - complete list of MCP tools</li>
-<li><a href="#api-en">API Endpoints</a> - full table</li>
-<li><a href="#env-en">Environment Variables</a> - all .env parameters</li>
-<li><a href="#diagnostics-en">Diagnostics</a> - report contents</li>
-<li><a href="#troubleshooting-en">Troubleshooting</a> - common problems and solutions</li>
+<li><a href="#overview-en">Overview</a> - what it is and how it is wired</li>
+<li><a href="#status-en">Status tab</a> - databases, backends, reports, Docker, and current metrics</li>
+<li><a href="#params-en">Settings tab</a> - databases, .env, and quick actions</li>
+<li><a href="#epf-en">MCPToolkit.epf data processor</a> - connection, buttons, security, and event log</li>
+<li><a href="#remote-en">Remote deployment</a> - running on a 1C server and the limits of that mode</li>
+<li><a href="#tools-en">MCP tools</a> - tool list</li>
+<li><a href="#api-en">API endpoints</a> - gateway HTTP API</li>
+<li><a href="#env-en">Environment variables</a> - .env settings</li>
+<li><a href="#diagnostics-en">Diagnostics</a> - what goes into the JSON report</li>
+<li><a href="#troubleshooting-en">Troubleshooting</a> - common failures and what to check</li>
 </ol>
 
 <!-- ================================================================== -->
 <h2 id="overview-en">1. Overview</h2>
 
 <h3>What it is</h3>
-<p><b>onec-mcp-universal</b> is a unified MCP gateway that enables AI assistants and any MCP clients to work with 1C:Enterprise databases. MCP (Model Context Protocol) is an open protocol through which an AI model calls external tools: executes database queries, reads configuration metadata, navigates source code, and more.</p>
+<p><b>onec-mcp-universal</b> is an MCP gateway for working with 1C:Enterprise databases from AI assistants and other MCP clients. MCP (Model Context Protocol) gives the model a way to call external tools: run queries, read metadata, navigate BSL code, and collect diagnostics.</p>
 
 <h3>Why a gateway is needed</h3>
-<p>Without the gateway, you would need to connect several separate MCP servers to the AI assistant (one for 1C data, another for code navigation, a third for platform documentation). The gateway combines them into a single entry point: <code>http://localhost:8080/mcp</code>. The AI assistant connects once and gets access to the full MCP toolset. The exact count depends on whether <code>its_search</code> is enabled through <code>NAPARNIK_API_KEY</code>.</p>
+<p>Without the gateway, 1C data, code navigation, and platform documentation would be separate MCP connections. Here they share one entry point: <code>http://localhost:8080/mcp</code>. The AI assistant connects once and sees the tools enabled for the current installation. The exact count depends on settings, for example whether <code>its_search</code> is enabled through <code>NAPARNIK_API_KEY</code>.</p>
 
 <h3>How it works</h3>
 <p>The interaction chain looks like this:</p>
@@ -756,19 +756,19 @@ MCPToolkit.epf (data processor inside 1C client)
     v
 1C:Enterprise database</code></pre>
 
-<p>When the AI assistant calls a tool (e.g. <code>execute_query</code>), the gateway determines which backend owns it and forwards the request. The <code>onec-toolkit</code> backend passes the command to the MCPToolkit.epf data processor running in the 1C client. The data processor executes the query in the database and returns the result back through the chain.</p>
+<p>When the AI assistant calls a tool, for example <code>execute_query</code>, the gateway chooses the backend and forwards the request. <code>onec-toolkit</code> sends the command to <code>MCPToolkit.epf</code>, which is running in the 1C client. The data processor performs the action in the database and returns the result through the gateway.</p>
 
 <h3>Per-session routing</h3>
-<p>Each AI assistant session works with its own active database <b>independently</b>. Two different Codex windows can simultaneously work with different databases (e.g. one with ERP, another with HRM), and their requests will not interfere. All registered databases remain connected simultaneously. Switching between databases is done via the <code>switch_database</code> command. Session idle timeout: 8 hours.</p>
+<p>Each AI assistant session has its own active database. Two Codex windows can work with different databases at the same time, for example ERP in one window and HRM in another, without mixing requests. All registered databases can stay connected. Use <code>switch_database</code> to switch a session. Session idle timeout: 8 hours.</p>
 
 <div class="note"><p><b>Single connection point:</b> Regardless of how many databases and backends are connected, the AI assistant always uses a single address: <code>http://localhost:8080/mcp</code>.</p></div>
 
 <!-- ================================================================== -->
-<h2 id="status-en">2. Status Tab</h2>
-<p>The Status tab is the main dashboard screen. It displays the current state of all system components as read-only cards. Information on this tab is read-only. All actions are performed on the Settings tab or through MCP/API.</p>
+<h2 id="status-en">2. Status tab</h2>
+<p>The Status tab is the main dashboard screen. It shows the current state of databases, backends, reports, cache, anonymization, and Docker containers. This tab is read-only; actions live on the Settings tab or in MCP/API calls.</p>
 
-<h3>Databases Card</h3>
-<p>A table listing all connected 1C databases. Each row contains three columns:</p>
+<h3>Databases card</h3>
+<p>A table of registered 1C databases. Each row shows:</p>
 <table>
 <tr><th>Column</th><th>Description</th></tr>
 <tr><td><b>Name</b></td><td>Unique database identifier (Latin letters, digits, hyphens, underscores). Used in Docker container names: <code>onec-toolkit-{name}</code> and <code>mcp-lsp-{name}</code>. Examples: <code>ERP</code>, <code>ZUP_TEST</code>, <code>buh-main</code>.</td></tr>
@@ -780,8 +780,8 @@ MCPToolkit.epf (data processor inside 1C client)
 <p>The default database has a badge <span style="background:#164e63;color:#22d3ee;padding:1px 6px;border-radius:3px;font-size:.75rem">default</span> next to its name. This database is used for new AI sessions unless the session switches to another database via <code>switch_database</code>.</p>
 <div class="note"><p><b>Auto-connect:</b> If the user clicks "Connect" in the MCPToolkit.epf data processor and the database is not yet registered in the gateway, it is automatically connected. Docker containers are created and the database appears in this table.</p></div>
 
-<h3>Profiling Card</h3>
-<p>Automatic performance statistics collection for all <code>execute_query</code> calls to 1C databases. Data accumulates from gateway startup and resets on restart.</p>
+<h3>Profiling card</h3>
+<p>Statistics for <code>execute_query</code> calls. The gateway collects them from startup and resets them on restart.</p>
 <table>
 <tr><th>Metric</th><th>Description</th></tr>
 <tr><td><b>Queries</b></td><td>Total number of queries executed since gateway startup. All <code>execute_query</code> calls to all connected databases are counted.</td></tr>
@@ -792,8 +792,8 @@ MCPToolkit.epf (data processor inside 1C client)
 <p>If no queries have been executed yet, the card shows "No queries yet".</p>
 <p>Besides the dashboard, profiling statistics can be obtained via the <code>query_stats</code> MCP tool. Each <code>execute_query</code> response automatically includes a <code>_profiling</code> field with execution duration and optimization hints (e.g. "query uses SELECT *", "missing WHERE", "many JOINs").</p>
 
-<h3>Anonymization Card</h3>
-<p>Status of the personal data (PII) masking system in responses from 1C. Displayed as a colored indicator:</p>
+<h3>Anonymization card</h3>
+<p>Status of personal data masking in responses from 1C:</p>
 <ul>
 <li><span style="color:#22c55e">Enabled</span> (green) - all responses from <code>execute_query</code>, <code>execute_code</code>, <code>get_object_by_link</code>, <code>get_event_log</code> tools pass through the anonymization filter.</li>
 <li><span style="color:#eab308">Disabled</span> (yellow) - data is passed to AI without modification.</li>
@@ -807,10 +807,10 @@ MCPToolkit.epf (data processor inside 1C client)
 <li><b>Email addresses</b></li>
 <li><b>Company names</b> - legal entities (LLC, JSC, etc.)</li>
 </ul>
-<p><b>Stable mapping:</b> The same original value is <b>always</b> replaced with the same fake within a session. This allows AI to work correctly with the data. Relationships between objects (e.g. "client Alpha has documents...") are preserved.</p>
-<p><b>When to use:</b> Enable anonymization when working with production databases containing real personal data. This is important for compliance with data protection regulations (e.g. Russian Federal Law 152-FZ). Masked data is no longer considered personal. On test databases with synthetic data, anonymization can be left disabled.</p>
+<p><b>Stable mapping:</b> the same original value is replaced with the same fake value within a session. Object relationships stay intact: if a client had documents before masking, the masked client still has those documents.</p>
+<p><b>When to use:</b> enable anonymization for production databases with real personal data. On test databases with synthetic data, it can usually stay off.</p>
 
-<h3>Metadata Cache Card</h3>
+<h3>Metadata cache card</h3>
 <p>Results of <code>get_metadata</code> calls (configuration structure information: attributes, tabular sections, types) are cached on the gateway side to avoid requesting the same metadata from 1C repeatedly.</p>
 <table>
 <tr><th>Metric</th><th>Description</th></tr>
@@ -820,7 +820,7 @@ MCPToolkit.epf (data processor inside 1C client)
 </table>
 <p><b>When to clear the cache:</b> After changing the 1C configuration structure (adding/removing attributes, tabular sections, metadata objects). You can clear it using the button on the Parameters tab, via the <code>invalidate_metadata_cache</code> MCP tool, or wait for automatic invalidation by TTL.</p>
 
-<h3>Backends Card</h3>
+<h3>Backends card</h3>
 <p>A backend is a separate MCP server that provides a set of tools in a specific category. The gateway aggregates tools from all backends and presents them to the AI assistant as a single set.</p>
 <p>Each row shows:</p>
 <ul>
@@ -846,7 +846,7 @@ MCPToolkit.epf (data processor inside 1C client)
 <li><code>test-runner</code> - YaXUnit test execution. Add <code>test-runner</code> to <code>ENABLED_BACKENDS</code> and start: <code>docker compose --profile test-runner up -d</code>.</li>
 </ul>
 
-<h3>1C Reports Card</h3>
+<h3>1C reports card</h3>
 <p>This card shows a local summary of the report runtime. It does not execute reports and does not call the 1C runtime while rendering. Data comes from the SQLite catalog <code>/data/report-catalog.sqlite</code> and stored result artifacts in <code>/data/report-results</code>.</p>
 <table>
 <tr><th>Metric</th><th>Description</th></tr>
@@ -857,7 +857,7 @@ MCPToolkit.epf (data processor inside 1C client)
 </table>
 <div class="note"><p><b>Important:</b> report discovery and execution are not performed from the dashboard. They remain available through MCP/API tools such as <code>find_reports</code>, <code>describe_report</code>, <code>run_report</code>, and related methods. The <b>"Refresh stats"</b> button refreshes this card too, but only from local gateway state.</p></div>
 
-<h3>Docker Containers Card</h3>
+<h3>Docker containers card</h3>
 <p>The upper part of the card shows Docker daemon information: Docker version, CPU count, RAM, total image and volume sizes.</p>
 <p>When the dashboard first opens, this card is rendered in a <b>lightweight mode</b>: expensive Docker statistics are not queried automatically, so the page stays responsive. RAM and image-size values are initially shown as <code>n/a</code>. To fetch them explicitly, use the <b>"Refresh stats"</b> button next to the regular page refresh button.</p>
 <p>Below is a table of project containers with five columns:</p>
@@ -880,11 +880,11 @@ MCPToolkit.epf (data processor inside 1C client)
 </ul>
 
 <!-- ================================================================== -->
-<h2 id="params-en">3. Settings Tab</h2>
-<p>The Settings tab contains management tools: connecting and disconnecting databases, editing gateway configuration, cache and anonymization actions.</p>
+<h2 id="params-en">3. Settings tab</h2>
+<p>The Settings tab contains actions that change gateway state: database connections, configuration editing, cache reset, and anonymization.</p>
 
-<h3>Database Management</h3>
-<p>The Database Management card shows a table of databases with control buttons. A disconnected database name is shown <span style="text-decoration:line-through;color:#64748b;font-weight:bold">bold and struck through</span> in both the Status tab and Settings.</p>
+<h3>Database management</h3>
+<p>The database management card shows registered databases and control buttons. A disconnected database name is shown <span style="text-decoration:line-through;color:#64748b;font-weight:bold">bold and struck through</span> in both Status and Settings.</p>
 <table>
 <tr><th>Button</th><th>Description</th></tr>
 <tr><td><b>Default</b></td><td>Sets the database as the default for new AI sessions. Shown only for databases that are not already the default.</td></tr>
@@ -895,8 +895,8 @@ MCPToolkit.epf (data processor inside 1C client)
 <tr><td><b style="color:#ef4444">Delete</b></td><td>Full deletion: stops containers, clears runtime/state/graph for that database, and removes the registry entry. Irreversible — you will need to re-fill the "Add Database" form to reconnect. 1C data and physical BSL files on disk are not affected.</td></tr>
 </table>
 
-<h3>Adding a Database</h3>
-<p>The lower part of the card is the "Add Database" form with three fields:</p>
+<h3>Adding a database</h3>
+<p>The lower part of the card contains the "Add Database" form:</p>
 <table>
 <tr><th>Field</th><th>Description</th><th>Example</th></tr>
 <tr><td><b>DB name</b></td><td>Unique identifier. Latin letters, digits, hyphens, and underscores are allowed. Maximum 63 characters.</td><td><code>ERP_DEMO</code></td></tr>
@@ -905,8 +905,8 @@ MCPToolkit.epf (data processor inside 1C client)
 </table>
 <p>After clicking the "Connect" button, the gateway will create two Docker containers for the database and register it. Then open MCPToolkit.epf in the 1C client and click "Connect".</p>
 
-<h3>Three Ways to Connect a Database</h3>
-<p>A 1C database can be connected to the gateway in three equivalent ways:</p>
+<h3>Three ways to connect a database</h3>
+<p>A 1C database can be connected in three ways:</p>
 <ol>
 <li><b>From the MCPToolkit.epf data processor</b> (recommended) - open the data processor in the 1C:Enterprise client, click "Connect". The data processor will automatically determine the database name and server, register the database in the gateway, and create Docker containers. No manual configuration is required.</li>
 <li><b>From the dashboard</b> - go to the Settings tab, fill in the "Add Database" form, and click "Connect". Then open MCPToolkit.epf in 1C and click "Connect" to establish the long-polling connection.</li>
@@ -915,8 +915,8 @@ MCPToolkit.epf (data processor inside 1C client)
 The AI will call the <code>connect_database</code> tool with the specified parameters. Then open MCPToolkit.epf in 1C and click "Connect".</li>
 </ol>
 
-<h3>Gateway Configuration</h3>
-<p>The second card on the Settings tab shows a table of current values for all gateway environment variables (<code>.env</code> file). At the top are action buttons (clear cache, anonymization) and an "Edit" button.</p>
+<h3>Gateway configuration</h3>
+<p>The second card on the Settings tab shows current gateway environment variables from <code>.env</code>. The top row has action buttons for cache, anonymization, and editing.</p>
 <p><b>Editing process:</b></p>
 <ol>
 <li>Click the <b>"Edit"</b> button. The table is replaced with a text editor showing the full contents of the <code>.env</code> file.</li>
@@ -926,13 +926,13 @@ The AI will call the <code>connect_database</code> tool with the specified param
 </ol>
 <div class="note"><p><b>Mounting:</b> the gateway reads <code>.env</code> as <code>./.env:/data/.env:ro</code>, while the <code>docker-control</code> sidecar gets <code>./.env:/data/.env:rw</code> only to write dashboard changes back to the host file. Works on Linux and Windows (via <code>docker-compose.windows.yml</code>).</p></div>
 
-<h3>BSL Export Folder</h3>
-<p>A dedicated card sets the host-side root folder where the gateway and the host export service store exported BSL sources. Each connected database gets its own subdirectory inside that root.</p>
+<h3>BSL export folder</h3>
+<p>This card sets the host-side root folder for exported BSL sources. Each connected database gets its own subdirectory inside that root.</p>
 <p>The <b>"Browse..."</b> button opens the standard operating-system directory chooser on the host itself. The chooser is provided by <code>export-host-service.py</code>, so <code>EXPORT_HOST_URL</code> must be configured and the export service must be reachable.</p>
 <div class="note"><p><b>Important:</b> saving a new folder applies it without restarting the gateway. Running databases are switched to the new export root immediately, and the graph container is recreated so Docker picks up the new bind mount.</p></div>
 
-<h3>1C Report Engine</h3>
-<p>This card exposes the default parameters used by the report MCP/API tools.</p>
+<h3>1C report engine</h3>
+<p>This card sets defaults used by report MCP/API tools.</p>
 <table>
 <tr><th>Parameter</th><th>Description</th></tr>
 <tr><td><b>Auto-analyze after connect, export, and BSL reindex</b></td><td>If enabled, the gateway refreshes the report catalog automatically after database connection, successful source export, and explicit BSL reindex.</td></tr>
@@ -1140,8 +1140,8 @@ For full functionality: docker compose on the 1C server.</code></pre>
 <div class="warn"><p><b>Security:</b> Port 8080 opens access to all gateway tools, including code execution and DB queries. Restrict access by IP address using the firewall. Do not open the port to the internet without additional protection (VPN, SSH tunnel). Example restriction: <code>sudo ufw allow from 192.168.1.0/24 to any port 8080</code></p></div>
 
 <!-- ================================================================== -->
-<h2 id="tools-en">6. MCP Tools (complete list)</h2>
-<p>The gateway provides the AI assistant with the full toolset aggregated from all backends. The exact number depends on whether <code>its_search</code> is enabled (<code>NAPARNIK_API_KEY</code>). Tools are divided into categories.</p>
+<h2 id="tools-en">6. MCP tools</h2>
+<p>The gateway provides the AI assistant with the full toolset aggregated from all backends. The sections below contain the complete list of MCP tools by category. The exact number depends on whether <code>its_search</code> is enabled (<code>NAPARNIK_API_KEY</code>).</p>
 
 <h3>1C Data (via onec-toolkit, 8 tools)</h3>
 <table>

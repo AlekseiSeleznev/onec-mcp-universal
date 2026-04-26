@@ -9,7 +9,7 @@ from typing import Protocol
 
 from mcp.types import CallToolResult
 
-from .report_catalog import ReportCatalog
+from .report_catalog import ReportCatalog, normalize_report_query
 from .report_failure import classify_report_failure, status_from_error_code
 
 
@@ -394,14 +394,11 @@ def _bsl_parameter_value_expr(name: str, value: object) -> str:
     return f'"{_bsl_string(raw)}"'
 
 
-def _user_skd_parameter_code(filters: dict, params: dict) -> str:
-    if not isinstance(filters, dict):
-        filters = {}
+def _user_skd_parameter_code(params: dict) -> str:
     if not isinstance(params, dict):
         params = {}
-    combined = {**filters, **params}
     blocks = []
-    for index, (raw_name, value) in enumerate(combined.items()):
+    for index, (raw_name, value) in enumerate(params.items()):
         name = str(raw_name or "").strip()
         if not name or value is None:
             continue
@@ -415,6 +412,83 @@ def _user_skd_parameter_code(filters: dict, params: dict) -> str:
             blocks.append(_set_skd_parameter_block(name, variable))
             continue
         blocks.append(_set_skd_parameter_block(name, _bsl_parameter_value_expr(name, value)))
+    return "\n".join(blocks)
+
+
+def _resolve_filter_value_expr(name: str, value: object, index: int) -> tuple[list[str], str]:
+    expr = _bsl_parameter_value_expr(name, value)
+    normalized = normalize_report_query(name)
+    if normalized not in {"организация", "organization"}:
+        return [], expr
+    if isinstance(value, (list, tuple, dict)) or value is None:
+        return [], expr
+    variable = f"ЗначениеОтбораСКД{index}"
+    search_var = f"СтрокаЗначенияОтбораСКД{index}"
+    query_var = f"ЗапросЗначенияОтбораСКД{index}"
+    scan_var = f"ВыборкаЗначенияОтбораСКД{index}"
+    blocks = [
+        f"{search_var} = {expr};",
+        f"{variable} = {search_var};",
+        "Попытка",
+        f"    Если Не ПустаяСтрока({search_var}) Тогда",
+        f"        {query_var} = Новый Запрос;",
+        f'        {query_var}.Текст = "ВЫБРАТЬ РАЗРЕШЕННЫЕ ПЕРВЫЕ 1',
+        '|   Организации.Ссылка КАК Ссылка',
+        '|ИЗ',
+        '|   Справочник.Организации КАК Организации',
+        '|ГДЕ',
+        '|   Организации.Наименование = &ТочноеИмя',
+        '|    ИЛИ Организации.Наименование ПОДОБНО &Поиск";',
+        f'        {query_var}.УстановитьПараметр("ТочноеИмя", {search_var});',
+        f'        {query_var}.УстановитьПараметр("Поиск", "%" + {search_var} + "%");',
+        f"        {scan_var} = {query_var}.Выполнить().Выбрать();",
+        f"        Если {scan_var}.Следующий() Тогда",
+        f"            {variable} = {scan_var}.Ссылка;",
+        "        КонецЕсли;",
+        "    КонецЕсли;",
+        "Исключение",
+        f'    Предупреждения.Добавить("Filter reference { _bsl_string(name) } not resolved: " + ОписаниеОшибки());',
+        "КонецПопытки;",
+    ]
+    return blocks, variable
+
+
+def _set_skd_filter_block(name: str, value_expr: str) -> str:
+    safe_name = _bsl_string(name)
+    return f"""
+Попытка
+    ПолеОтбораСКД = Новый ПолеКомпоновкиДанных("{safe_name}");
+    ФильтрСКД = ВариантыОтчетовСлужебныйКлиентСервер.ФильтрРазделаОтчета(Настройки.Отбор, ПолеОтбораСКД);
+    Если ФильтрСКД = Неопределено Тогда
+        ФильтрСКД = Настройки.Отбор.Элементы.Добавить(Тип("ЭлементОтбораКомпоновкиДанных"));
+        ФильтрСКД.ЛевоеЗначение = ПолеОтбораСКД;
+    КонецЕсли;
+    ФильтрСКД.ВидСравнения = ВидСравненияКомпоновкиДанных.Равно;
+    ФильтрСКД.ПравоеЗначение = {value_expr};
+    ФильтрСКД.Использование = Истина;
+    Если Не ЗначениеЗаполнено(ФильтрСКД.ИдентификаторПользовательскойНастройки) Тогда
+        ФильтрСКД.ИдентификаторПользовательскойНастройки = Строка(Новый УникальныйИдентификатор);
+    КонецЕсли;
+    ФильтрСКД.РежимОтображения = РежимОтображенияЭлементаНастройкиКомпоновкиДанных.БыстрыйДоступ;
+Исключение
+    Предупреждения.Добавить("SKD filter {safe_name} not set: " + ОписаниеОшибки());
+КонецПопытки;
+""".strip()
+
+
+def _user_skd_filter_code(filters: dict) -> str:
+    if not isinstance(filters, dict):
+        filters = {}
+    blocks: list[str] = []
+    for index, (raw_name, value) in enumerate(filters.items()):
+        name = str(raw_name or "").strip()
+        if not name or value is None:
+            continue
+        if isinstance(value, (list, tuple)):
+            continue
+        preamble, value_expr = _resolve_filter_value_expr(name, value, index)
+        blocks.extend(preamble)
+        blocks.append(_set_skd_filter_block(name, value_expr))
     return "\n".join(blocks)
 
 
@@ -581,7 +655,8 @@ def _bsp_variant_report_code(
     variant_key = _bsl_string(variant)
     template_ref = _bsl_string(template_name or "ОсновнаяСхемаКомпоновкиДанных")
     payload = _bsl_string(json.dumps({"period": period, "filters": filters, "params": params, "max_rows": max_rows}, ensure_ascii=False))
-    parameter_code = _raw_skd_parameter_code(period or {}, filters or {}, params or {}, period_style=period_style)
+    parameter_code = _raw_skd_parameter_code(period or {}, params or {}, period_style=period_style)
+    filter_code = _user_skd_filter_code(filters or {})
     return f"""
 // Generated by onec-mcp-universal BSP report runner.
 ПараметрыЗапускаJSON = "{payload}";
@@ -595,23 +670,11 @@ def _bsp_variant_report_code(
 Попытка
     ОтчетОбъект.ИнициализироватьОтчет();
 Исключение
-    Предупреждения.Добавить("Report initialization skipped: " + ОписаниеОшибки());
-КонецПопытки;
-Настройки = Неопределено;
-Попытка
-    СхемаКомпоновкиДанных = ОтчетОбъект.СхемаКомпоновкиДанных;
-    Настройки = СхемаКомпоновкиДанных.НастройкиПоУмолчанию;
-    Если Не ПустаяСтрока(КлючВарианта) Тогда
-        ВариантНастроекСКД = ОтчетОбъект.СхемаКомпоновкиДанных.ВариантыНастроек.Найти(КлючВарианта);
-        Если ВариантНастроекСКД <> Неопределено Тогда
-            Настройки = ВариантНастроекСКД.Настройки;
-        КонецЕсли;
+    ТекстОшибкиИнициализации = ОписаниеОшибки();
+    Если Найти(ТекстОшибкиИнициализации, "Метод объекта не обнаружен (ИнициализироватьОтчет)") = 0 Тогда
+        Предупреждения.Добавить("Report initialization skipped: " + ТекстОшибкиИнициализации);
     КонецЕсли;
-Исключение
-    Предупреждения.Добавить("BSP settings not initialized: " + ОписаниеОшибки());
 КонецПопытки;
-{parameter_code}
-
 ПараметрыФормирования = ВариантыОтчетов.ПараметрыФормированияОтчета();
 ПараметрыФормирования.Объект = ОтчетОбъект;
 ПараметрыФормирования.ПолноеИмя = "Отчет.{report_ref}";
@@ -651,8 +714,42 @@ def _bsp_variant_report_code(
 Исключение
     Предупреждения.Добавить("BSP report variant reference not resolved: " + ОписаниеОшибки());
 КонецПопытки;
-Если Настройки <> Неопределено Тогда
-    ПараметрыФормирования.НастройкиКД = Настройки;
+
+Подключение = ВариантыОтчетов.ПодключитьОтчетИЗагрузитьНастройки(ПараметрыФормирования);
+Если Не Подключение.Успех Тогда
+    ВызватьИсключение Подключение.ТекстОшибки;
+КонецЕсли;
+ПараметрыФормирования.Подключение = Подключение;
+
+Настройки = Подключение.НастройкиКД;
+ПользовательскиеНастройки = Подключение.ПользовательскиеНастройкиКД;
+Попытка
+    Настройки = ОтчетОбъект.КомпоновщикНастроек.ПолучитьНастройки();
+Исключение
+КонецПопытки;
+Попытка
+    Если ОтчетОбъект.КомпоновщикНастроек.ПользовательскиеНастройки <> Неопределено Тогда
+        ПользовательскиеНастройки = ОтчетОбъект.КомпоновщикНастроек.ПользовательскиеНастройки;
+    КонецЕсли;
+Исключение
+КонецПопытки;
+{parameter_code}
+{filter_code}
+Попытка
+    ОтчетОбъект.КомпоновщикНастроек.ЗагрузитьНастройки(Настройки);
+Исключение
+    Предупреждения.Добавить("BSP settings reload skipped: " + ОписаниеОшибки());
+КонецПопытки;
+Попытка
+    Если ПользовательскиеНастройки <> Неопределено Тогда
+        ОтчетОбъект.КомпоновщикНастроек.ЗагрузитьПользовательскиеНастройки(ПользовательскиеНастройки);
+    КонецЕсли;
+Исключение
+    Предупреждения.Добавить("BSP user settings reload skipped: " + ОписаниеОшибки());
+КонецПопытки;
+Подключение.НастройкиКД = Настройки;
+Если ПользовательскиеНастройки <> Неопределено Тогда
+    Подключение.ПользовательскиеНастройкиКД = ПользовательскиеНастройки;
 КонецЕсли;
 
 Формирование = ВариантыОтчетов.СформироватьОтчет(ПараметрыФормирования, Ложь, Истина);
@@ -841,7 +938,8 @@ def _raw_skd_code(
     variant_key = _bsl_string(variant)
     template_ref = _bsl_string(template_name or "ОсновнаяСхемаКомпоновкиДанных")
     payload = _bsl_string(json.dumps({"period": period, "filters": filters, "params": params, "max_rows": max_rows}, ensure_ascii=False))
-    parameter_code = _raw_skd_parameter_code(period or {}, filters or {}, params or {}, period_style=period_style)
+    parameter_code = _raw_skd_parameter_code(period or {}, params or {}, period_style=period_style)
+    filter_code = _user_skd_filter_code(filters or {})
     return f"""
 // Generated by onec-mcp-universal raw SKD runner.
 ПараметрыЗапускаJSON = "{payload}";
@@ -857,6 +955,7 @@ def _raw_skd_code(
 
 СхемаКомпоновкиДанных = Отчеты[ИмяОтчета].ПолучитьМакет(ИмяМакетаСКД);
 Настройки = СхемаКомпоновкиДанных.НастройкиПоУмолчанию;
+ПользовательскиеНастройки = Неопределено;
 Если Не ПустаяСтрока(КлючВарианта) Тогда
     Попытка
         ВариантНастроекСКД = СхемаКомпоновкиДанных.ВариантыНастроек.Найти(КлючВарианта);
@@ -868,6 +967,7 @@ def _raw_skd_code(
     КонецПопытки;
 КонецЕсли;
 {parameter_code}
+{filter_code}
 
 КомпоновщикМакета = Новый КомпоновщикМакетаКомпоновкиДанных;
 МакетКомпоновки = КомпоновщикМакета.Выполнить(СхемаКомпоновкиДанных, Настройки);
@@ -928,7 +1028,6 @@ def _raw_skd_code(
 
 def _raw_skd_parameter_code(
     period: dict,
-    filters: dict | None = None,
     params: dict | None = None,
     *,
     period_style: str = "date",
@@ -1021,7 +1120,7 @@ def _raw_skd_parameter_code(
 КонецПопытки;
 """.strip()
     )
-    user_parameter_code = _user_skd_parameter_code(filters or {}, params or {})
+    user_parameter_code = _user_skd_parameter_code(params or {})
     if user_parameter_code:
         blocks.append(user_parameter_code)
     return "\n".join(blocks)
@@ -1043,7 +1142,22 @@ def _set_skd_parameter_block(name: str, value_expr: str) -> str:
         ПараметрСКД.Значение = {value_expr};
         ПараметрСКД.Использование = Истина;
     КонецЕсли;
+    Исключение
+        Предупреждения.Добавить("SKD parameter {safe_name} not set: " + ОписаниеОшибки());
+КонецПопытки;
+Попытка
+    Если ПользовательскиеНастройки <> Неопределено Тогда
+        ЗначениеПараметраСКД = Настройки.ПараметрыДанных.НайтиЗначениеПараметра(Новый ПараметрКомпоновкиДанных("{safe_name}"));
+        Если ЗначениеПараметраСКД <> Неопределено
+            И ЗначениеЗаполнено(ЗначениеПараметраСКД.ИдентификаторПользовательскойНастройки) Тогда
+            ПользовательскийПараметрСКД = ПользовательскиеНастройки.Элементы.Найти(ЗначениеПараметраСКД.ИдентификаторПользовательскойНастройки);
+            Если ПользовательскийПараметрСКД <> Неопределено Тогда
+                ПользовательскийПараметрСКД.Значение = {value_expr};
+                ПользовательскийПараметрСКД.Использование = Истина;
+            КонецЕсли;
+        КонецЕсли;
+    КонецЕсли;
 Исключение
-    Предупреждения.Добавить("SKD parameter {safe_name} not set: " + ОписаниеОшибки());
+    Предупреждения.Добавить("SKD user parameter {safe_name} not set: " + ОписаниеОшибки());
 КонецПопытки;
 """.strip()
