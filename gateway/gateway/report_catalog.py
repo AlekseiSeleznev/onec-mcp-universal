@@ -207,6 +207,46 @@ class ReportCatalog:
                 );
                 CREATE INDEX IF NOT EXISTS idx_report_validation_items_lookup
                     ON report_validation_items(db_slug, report_name, variant_key, updated_at);
+                CREATE TABLE IF NOT EXISTS report_runner_policies (
+                    db_slug TEXT NOT NULL,
+                    report_name TEXT NOT NULL,
+                    variant_key TEXT NOT NULL DEFAULT '',
+                    preferred_runner TEXT NOT NULL DEFAULT '',
+                    api_enabled INTEGER NOT NULL DEFAULT 1,
+                    ui_enabled INTEGER NOT NULL DEFAULT 0,
+                    reason TEXT NOT NULL DEFAULT '',
+                    updated_by TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (db_slug, report_name, variant_key)
+                );
+                CREATE TABLE IF NOT EXISTS report_runner_observations (
+                    observation_id TEXT PRIMARY KEY,
+                    db_slug TEXT NOT NULL,
+                    report_name TEXT NOT NULL,
+                    variant_key TEXT NOT NULL DEFAULT '',
+                    runner_used TEXT NOT NULL DEFAULT '',
+                    extractor_used TEXT NOT NULL DEFAULT '',
+                    run_id TEXT NOT NULL DEFAULT '',
+                    artifact_hash TEXT NOT NULL DEFAULT '',
+                    observed_json TEXT NOT NULL DEFAULT '{}',
+                    recommendation TEXT NOT NULL DEFAULT '',
+                    diagnostics_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS idx_report_runner_observations_lookup
+                    ON report_runner_observations(db_slug, report_name, variant_key, created_at);
+                CREATE TABLE IF NOT EXISTS report_ui_strategies (
+                    db_slug TEXT NOT NULL,
+                    report_name TEXT NOT NULL,
+                    variant_key TEXT NOT NULL DEFAULT '',
+                    source TEXT NOT NULL DEFAULT 'declared',
+                    strategy_hash TEXT NOT NULL DEFAULT '',
+                    strategy_json TEXT NOT NULL DEFAULT '{}',
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (db_slug, report_name, variant_key, source)
+                );
+                CREATE INDEX IF NOT EXISTS idx_report_ui_strategies_lookup
+                    ON report_ui_strategies(db_slug, report_name, variant_key, source);
                 """
             )
 
@@ -744,6 +784,195 @@ class ReportCatalog:
     ) -> None:
         with self._connect() as conn:
             self._upsert_output_contract_conn(conn, database, report_name, variant_key, contract_source, contract)
+
+    def upsert_report_runner_policy(
+        self,
+        database: str,
+        report_name: str,
+        variant_key: str = "",
+        *,
+        preferred_runner: str = "",
+        api_enabled: bool = True,
+        ui_enabled: bool = False,
+        reason: str = "",
+        updated_by: str = "",
+    ) -> None:
+        preferred = str(preferred_runner or "").strip().lower()
+        if preferred not in {"", "api", "ui", "auto"}:
+            raise ValueError("preferred_runner must be api, ui, auto, or empty")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO report_runner_policies
+                    (db_slug, report_name, variant_key, preferred_runner, api_enabled,
+                     ui_enabled, reason, updated_by, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    database,
+                    report_name,
+                    variant_key or "",
+                    preferred,
+                    1 if api_enabled else 0,
+                    1 if ui_enabled else 0,
+                    reason,
+                    updated_by,
+                ),
+            )
+
+    def get_report_runner_policy(self, database: str, report_name: str, variant_key: str = "") -> dict:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM report_runner_policies
+                WHERE db_slug = ? AND report_name = ? AND variant_key = ?
+                """,
+                (database, report_name, variant_key or ""),
+            ).fetchone()
+            if row is None and variant_key:
+                row = conn.execute(
+                    """
+                    SELECT * FROM report_runner_policies
+                    WHERE db_slug = ? AND report_name = ? AND variant_key = ''
+                    """,
+                    (database, report_name),
+                ).fetchone()
+        if row is None:
+            return {}
+        return {
+            "database": row["db_slug"],
+            "report": row["report_name"],
+            "variant": row["variant_key"],
+            "preferred_runner": row["preferred_runner"],
+            "api_enabled": bool(row["api_enabled"]),
+            "ui_enabled": bool(row["ui_enabled"]),
+            "reason": row["reason"],
+            "updated_by": row["updated_by"],
+            "updated_at": row["updated_at"],
+        }
+
+    def add_report_runner_observation(
+        self,
+        *,
+        database: str,
+        report_name: str,
+        variant_key: str = "",
+        runner_used: str,
+        extractor_used: str = "",
+        run_id: str = "",
+        artifact_hash: str = "",
+        observed_signature: dict | None = None,
+        recommendation: str = "",
+        diagnostics: dict | None = None,
+    ) -> str:
+        observation_id = uuid.uuid4().hex
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO report_runner_observations
+                    (observation_id, db_slug, report_name, variant_key, runner_used,
+                     extractor_used, run_id, artifact_hash, observed_json,
+                     recommendation, diagnostics_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    observation_id,
+                    database,
+                    report_name,
+                    variant_key or "",
+                    runner_used,
+                    extractor_used,
+                    run_id,
+                    artifact_hash,
+                    _json_dumps(observed_signature or {}),
+                    recommendation,
+                    _json_dumps(diagnostics or {}),
+                ),
+            )
+        return observation_id
+
+    def get_report_runner_observations(self, database: str, report_name: str, variant_key: str = "", limit: int = 20) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM report_runner_observations
+                WHERE db_slug = ? AND report_name = ? AND variant_key = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (database, report_name, variant_key or "", max(0, int(limit or 0))),
+            ).fetchall()
+        return [
+            {
+                "observation_id": row["observation_id"],
+                "database": row["db_slug"],
+                "report": row["report_name"],
+                "variant": row["variant_key"],
+                "runner_used": row["runner_used"],
+                "extractor_used": row["extractor_used"],
+                "run_id": row["run_id"],
+                "artifact_hash": row["artifact_hash"],
+                "observed_signature": _json_loads(row["observed_json"], {}),
+                "recommendation": row["recommendation"],
+                "diagnostics": _json_loads(row["diagnostics_json"], {}),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    def upsert_report_ui_strategy(
+        self,
+        database: str,
+        report_name: str,
+        variant_key: str,
+        strategy: dict,
+        *,
+        source: str = "declared",
+    ) -> None:
+        normalized_source = str(source or "declared").strip() or "declared"
+        payload = dict(strategy or {})
+        strategy_hash = hashlib.sha256(_json_dumps(payload).encode("utf-8")).hexdigest()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO report_ui_strategies
+                    (db_slug, report_name, variant_key, source, strategy_hash, strategy_json, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (database, report_name, variant_key or "", normalized_source, strategy_hash, _json_dumps(payload)),
+            )
+
+    def get_report_ui_strategy(self, database: str, report_name: str, variant_key: str = "") -> dict:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM report_ui_strategies
+                WHERE db_slug = ? AND report_name = ? AND variant_key = ?
+                ORDER BY CASE source WHEN 'verified' THEN 0 ELSE 1 END, updated_at DESC
+                """,
+                (database, report_name, variant_key or ""),
+            ).fetchall()
+            if not rows and variant_key:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM report_ui_strategies
+                    WHERE db_slug = ? AND report_name = ? AND variant_key = ''
+                    ORDER BY CASE source WHEN 'verified' THEN 0 ELSE 1 END, updated_at DESC
+                    """,
+                    (database, report_name),
+                ).fetchall()
+        if not rows:
+            return {}
+        row = rows[0]
+        return {
+            "database": row["db_slug"],
+            "report": row["report_name"],
+            "variant": row["variant_key"],
+            "source": row["source"],
+            "hash": row["strategy_hash"],
+            "strategy": _json_loads(row["strategy_json"], {}),
+            "updated_at": row["updated_at"],
+        }
 
     def create_validation_campaign(
         self,

@@ -81,6 +81,64 @@ def test_catalog_stores_and_searches_user_facing_aliases(tmp_path):
     assert described["strategies"][0]["strategy"] == "adapter_entrypoint"
 
 
+def test_catalog_stores_report_runner_policy_and_observations(tmp_path):
+    catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
+
+    catalog.upsert_report_runner_policy(
+        "ERP_DEMO",
+        "АнализСебестоимости",
+        "Основной",
+        preferred_runner="ui",
+        api_enabled=True,
+        ui_enabled=True,
+        reason="API returns header-only",
+        updated_by="test",
+    )
+    catalog.add_report_runner_observation(
+        database="ERP_DEMO",
+        report_name="АнализСебестоимости",
+        variant_key="Основной",
+        runner_used="ui",
+        extractor_used="xlsx_export",
+        run_id="run-1",
+        artifact_hash="abc",
+        observed_signature={"detail_rows_count": 1},
+        recommendation="prefer_ui",
+    )
+
+    policy = catalog.get_report_runner_policy("ERP_DEMO", "АнализСебестоимости", "Основной")
+    observations = catalog.get_report_runner_observations("ERP_DEMO", "АнализСебестоимости", "Основной")
+
+    assert policy["preferred_runner"] == "ui"
+    assert policy["api_enabled"] is True
+    assert policy["ui_enabled"] is True
+    assert observations[0]["runner_used"] == "ui"
+    assert observations[0]["observed_signature"]["detail_rows_count"] == 1
+
+
+def test_catalog_stores_report_ui_strategy(tmp_path):
+    catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
+
+    catalog.upsert_report_ui_strategy(
+        "ERP_DEMO",
+        "АнализСебестоимости",
+        "Основной",
+        {
+            "open": {"mode": "metadata_link", "metadata_path": "Отчет.АнализСебестоимости"},
+            "parameter_map": {"Организация": "Организация", "start": "Начало периода", "end": "Конец периода"},
+            "generate_action": {"type": "click_text", "text": "Сформировать"},
+            "export": {"format": "xlsx", "action": "save_as"},
+        },
+        source="verified",
+    )
+
+    strategy = catalog.get_report_ui_strategy("ERP_DEMO", "АнализСебестоимости", "Основной")
+
+    assert strategy["source"] == "verified"
+    assert strategy["strategy"]["open"]["metadata_path"] == "Отчет.АнализСебестоимости"
+    assert strategy["strategy"]["parameter_map"]["Организация"] == "Организация"
+
+
 def test_catalog_reports_variant_status_from_variant_strategy(tmp_path):
     catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
     catalog.replace_analysis(

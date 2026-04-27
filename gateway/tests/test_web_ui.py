@@ -68,6 +68,13 @@ class TestRenderDashboard:
         html = self._render()
         assert "onec-mcp-universal" in html
 
+    def test_report_engine_settings_include_api_ui_runner_controls(self):
+        html = self._render(lang="ru")
+        assert "Использовать API-движок" in html
+        assert "Использовать UI-движок" in html
+        assert "Переходить на UI при техническом ограничении API" in html
+        assert "Формат экспорта UI" in html
+
     def test_russian_locale(self):
         html = self._render(lang="ru")
         assert "Статус" in html or "Информация" in html

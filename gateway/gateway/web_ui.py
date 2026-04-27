@@ -144,6 +144,11 @@ _T = {
         "browse_btn": "Обзор...",
         "report_settings_hint": "Эти значения используются по умолчанию для запуска одного отчёта и массовой проверки каталога.",
         "report_auto_analyze": "Автоанализ после подключения, выгрузки и переиндексации BSL",
+        "report_api_runner": "Использовать API-движок",
+        "report_ui_runner": "Использовать UI-движок",
+        "report_ui_fallback": "Переходить на UI при техническом ограничении API",
+        "report_ui_export_format": "Формат экспорта UI",
+        "report_ui_keep_errors": "Хранить файлы ошибок UI",
         "report_run_rows": "Строк при запуске",
         "report_run_timeout": "Таймаут запуска, сек",
         "report_validate_rows": "Строк при проверке",
@@ -289,6 +294,11 @@ _T = {
         "browse_btn": "Browse...",
         "report_settings_hint": "These values are used as defaults for running a single report and for validating the catalog in bulk.",
         "report_auto_analyze": "Auto-analyze after connect, export, and BSL reindex",
+        "report_api_runner": "Use API runner",
+        "report_ui_runner": "Use UI runner",
+        "report_ui_fallback": "Fallback to UI when API hits a technical limit",
+        "report_ui_export_format": "UI export format",
+        "report_ui_keep_errors": "Keep UI error files",
         "report_run_rows": "Rows per run",
         "report_run_timeout": "Run timeout, sec",
         "report_validate_rows": "Rows per validation",
@@ -465,6 +475,11 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <h2>{{h_report_engine}}</h2>
 <p style="color:#64748b;font-size:.72rem;margin-bottom:8px">{{report_settings_hint}}</p>
 <div class="form-row"><label>{{report_auto_analyze}}</label><input id="report-auto-analyze" type="checkbox" style="width:auto;justify-self:start"></div>
+<div class="form-row"><label>{{report_api_runner}}</label><input id="report-api-runner" type="checkbox" style="width:auto;justify-self:start"></div>
+<div class="form-row"><label>{{report_ui_runner}}</label><input id="report-ui-runner" type="checkbox" style="width:auto;justify-self:start"></div>
+<div class="form-row"><label>{{report_ui_fallback}}</label><input id="report-ui-fallback" type="checkbox" style="width:auto;justify-self:start"></div>
+<div class="form-row"><label>{{report_ui_export_format}}</label><select id="report-ui-export-format"><option value="xlsx">XLSX</option><option value="html">HTML</option></select></div>
+<div class="form-row"><label>{{report_ui_keep_errors}}</label><input id="report-ui-keep-errors" type="checkbox" style="width:auto;justify-self:start"></div>
 <div class="form-row"><label>{{report_run_rows}}</label><div class="num-wrap"><input id="report-run-rows" type="number" min="0" step="1"><div class="num-stepper"><button type="button" onclick="stepNumberInput('report-run-rows',1)">▲</button><button type="button" onclick="stepNumberInput('report-run-rows',-1)">▼</button></div></div></div>
 <div class="form-row"><label>{{report_run_timeout}}</label><div class="num-wrap"><input id="report-run-timeout" type="number" min="0" step="1"><div class="num-stepper"><button type="button" onclick="stepNumberInput('report-run-timeout',1)">▲</button><button type="button" onclick="stepNumberInput('report-run-timeout',-1)">▼</button></div></div></div>
 <div class="form-row"><label>{{report_validate_rows}}</label><div class="num-wrap"><input id="report-validate-rows" type="number" min="0" step="1"><div class="num-stepper"><button type="button" onclick="stepNumberInput('report-validate-rows',1)">▲</button><button type="button" onclick="stepNumberInput('report-validate-rows',-1)">▼</button></div></div></div>
@@ -794,11 +809,21 @@ apiFetch('/api/action/get-report-settings',{method:'POST'}).then(r=>r.json()).th
 if(!d||!d.ok)return;
 _reportSettingsData=d;
 var auto=document.getElementById('report-auto-analyze');
+var apiRunner=document.getElementById('report-api-runner');
+var uiRunner=document.getElementById('report-ui-runner');
+var uiFallback=document.getElementById('report-ui-fallback');
+var uiExportFormat=document.getElementById('report-ui-export-format');
+var uiKeepErrors=document.getElementById('report-ui-keep-errors');
 var runRows=document.getElementById('report-run-rows');
 var runTimeout=document.getElementById('report-run-timeout');
 var validateRows=document.getElementById('report-validate-rows');
 var validateTimeout=document.getElementById('report-validate-timeout');
 if(auto)auto.checked=!!d.auto_analyze_enabled;
+if(apiRunner)apiRunner.checked=!!d.api_runner_enabled;
+if(uiRunner)uiRunner.checked=!!d.ui_runner_enabled;
+if(uiFallback)uiFallback.checked=!!d.ui_fallback_enabled;
+if(uiExportFormat)uiExportFormat.value=String(d.ui_export_format||'xlsx');
+if(uiKeepErrors)uiKeepErrors.checked=!!d.ui_keep_error_artifacts;
 if(runRows)runRows.value=String(d.run_default_max_rows||0);
 if(runTimeout)runTimeout.value=String(d.run_default_timeout_seconds||0);
 if(validateRows)validateRows.value=String(d.validate_default_max_rows||0);
@@ -808,6 +833,11 @@ if(validateTimeout)validateTimeout.value=String(d.validate_default_timeout_secon
 function saveReportSettings(){
 var payload={
 auto_analyze_enabled:!!document.getElementById('report-auto-analyze').checked,
+api_runner_enabled:!!document.getElementById('report-api-runner').checked,
+ui_runner_enabled:!!document.getElementById('report-ui-runner').checked,
+ui_fallback_enabled:!!document.getElementById('report-ui-fallback').checked,
+ui_export_format:document.getElementById('report-ui-export-format').value||'xlsx',
+ui_keep_error_artifacts:!!document.getElementById('report-ui-keep-errors').checked,
 run_default_max_rows:Number(document.getElementById('report-run-rows').value||0),
 run_default_timeout_seconds:Number(document.getElementById('report-run-timeout').value||0),
 validate_default_max_rows:Number(document.getElementById('report-validate-rows').value||0),

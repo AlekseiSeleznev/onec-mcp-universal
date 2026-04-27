@@ -16,7 +16,10 @@ from ..report_catalog import ReportCatalog, normalize_report_query
 from ..report_contracts import build_observed_signature, build_verified_output_contract, compare_output_contract
 from ..report_docs import build_report_doc_query, parse_report_doc_response
 from ..report_fixtures import ReportFixtureProvider
+from ..report_orchestrator import ReportEngineSettings, ReportOrchestrator
+from ..report_result_extractor import ReportResultExtractor
 from ..report_runner import ReportRunner, ToolkitReportTransport
+from ..report_ui_runner import ReportUiRunner, WebTestReportClient
 
 
 REPORT_TOOL_NAMES = {
@@ -177,6 +180,7 @@ def report_tools() -> list[Tool]:
                     "params": {"type": "object", "default": {}},
                     "context": {"type": "object", "default": {}},
                     "output": {"type": "string", "default": "rows"},
+                    "runner": {"type": "string", "enum": ["auto", "api", "ui"], "default": "auto"},
                     "strategy": {"type": "string", "default": "auto"},
                     "wait": {"type": "boolean", "default": True},
                     "max_rows": {"type": "integer", "default": settings.report_run_default_max_rows},
@@ -358,10 +362,26 @@ async def try_handle_report_tool(
         report=arguments.get("report"),
         variant=arguments.get("variant"),
     )
-    if not getattr(db, "connected", False):
+    requested_runner = str(arguments.get("runner") or "auto").lower()
+    api_enabled = bool(settings.report_api_runner_enabled)
+    ui_enabled = bool(settings.report_ui_runner_enabled)
+    if requested_runner != "ui" and api_enabled and not getattr(db, "connected", False):
         return _dump({"ok": False, "error_code": "toolkit_not_connected", "error": f"EPF for database '{database}' is not connected"})
-    runner = ReportRunner(catalog, ToolkitReportTransport(manager))
-    result = await runner.run_report(
+    api_runner = ReportRunner(catalog, ToolkitReportTransport(manager)) if api_enabled and getattr(db, "connected", False) else None
+    ui_runner = _build_ui_report_runner(catalog) if ui_enabled else None
+    orchestrator = ReportOrchestrator(
+        catalog=catalog,
+        api_runner=api_runner,
+        ui_runner=ui_runner,
+        settings=ReportEngineSettings(
+            api_enabled=api_enabled,
+            ui_enabled=ui_enabled,
+            ui_fallback_enabled=bool(settings.report_ui_fallback_enabled),
+            ui_export_format=str(settings.report_ui_export_format or "xlsx"),
+            keep_ui_error_artifacts=bool(settings.report_ui_keep_error_artifacts),
+        ),
+    )
+    result = await orchestrator.run_report(
         database=database,
         title=str(arguments.get("title") or ""),
         report=arguments.get("report"),
@@ -372,11 +392,24 @@ async def try_handle_report_tool(
         context=arguments.get("context") or {},
         output=str(arguments.get("output") or "rows"),
         strategy=str(arguments.get("strategy") or "auto"),
+        runner=requested_runner,
         wait=bool(arguments.get("wait", True)),
         max_rows=_int_arg(arguments, "max_rows", settings.report_run_default_max_rows),
         timeout_seconds=_float_arg(arguments, "timeout_seconds", float(settings.report_run_default_timeout_seconds)),
     )
     return _dump(result)
+
+
+def _build_ui_report_runner(catalog: ReportCatalog) -> ReportUiRunner:
+    return ReportUiRunner(
+        catalog=catalog,
+        client=WebTestReportClient(
+            run_mjs=settings.report_ui_runner_script,
+            web_url_template=settings.report_ui_web_url_template,
+        ),
+        extractor=ReportResultExtractor(keep_error_artifacts=bool(settings.report_ui_keep_error_artifacts)),
+        artifacts_dir=settings.report_ui_artifacts_dir,
+    )
 
 
 async def _describe_report_with_lazy_analysis(

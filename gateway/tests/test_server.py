@@ -1386,7 +1386,12 @@ class TestActionApi:
              patch("gateway.server.settings.report_run_default_max_rows", 1200), \
              patch("gateway.server.settings.report_run_default_timeout_seconds", 15), \
              patch("gateway.server.settings.report_validate_default_max_rows", 7), \
-             patch("gateway.server.settings.report_validate_default_timeout_seconds", 90):
+             patch("gateway.server.settings.report_validate_default_timeout_seconds", 90), \
+             patch("gateway.server.settings.report_api_runner_enabled", True), \
+             patch("gateway.server.settings.report_ui_runner_enabled", False), \
+             patch("gateway.server.settings.report_ui_fallback_enabled", False), \
+             patch("gateway.server.settings.report_ui_export_format", "xlsx"), \
+             patch("gateway.server.settings.report_ui_keep_error_artifacts", False):
             resp = test_client.post("/api/action/get-report-settings")
 
         assert resp.status_code == 200
@@ -1397,6 +1402,11 @@ class TestActionApi:
         assert data["run_default_timeout_seconds"] == 15
         assert data["validate_default_max_rows"] == 7
         assert data["validate_default_timeout_seconds"] == 90
+        assert data["api_runner_enabled"] is True
+        assert data["ui_runner_enabled"] is False
+        assert data["ui_fallback_enabled"] is False
+        assert data["ui_export_format"] == "xlsx"
+        assert data["ui_keep_error_artifacts"] is False
 
     def test_reindex_bsl_uses_public_manager_accessor(self, test_client):
         from gateway.db_registry import DatabaseInfo
@@ -1555,6 +1565,11 @@ class TestActionApi:
     def test_save_report_settings_applies_runtime_without_restart(self, test_client):
         payload = {
             "auto_analyze_enabled": False,
+            "api_runner_enabled": True,
+            "ui_runner_enabled": True,
+            "ui_fallback_enabled": True,
+            "ui_export_format": "xlsx",
+            "ui_keep_error_artifacts": False,
             "run_default_max_rows": 250,
             "run_default_timeout_seconds": 30,
             "validate_default_max_rows": 3,
@@ -1570,6 +1585,9 @@ class TestActionApi:
         data = resp.json()
         assert data["ok"] is True
         assert data["auto_analyze_enabled"] is False
+        assert data["ui_runner_enabled"] is True
+        assert data["ui_fallback_enabled"] is True
+        assert data["ui_export_format"] == "xlsx"
         assert data["run_default_max_rows"] == 250
         assert data["run_default_timeout_seconds"] == 30
         assert data["validate_default_max_rows"] == 3

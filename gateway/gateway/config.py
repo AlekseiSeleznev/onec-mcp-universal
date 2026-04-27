@@ -108,6 +108,14 @@ class Settings(BaseSettings):
     report_run_default_timeout_seconds: int = 0
     report_validate_default_max_rows: int = 5
     report_validate_default_timeout_seconds: int = 60
+    report_api_runner_enabled: bool = True
+    report_ui_runner_enabled: bool = False
+    report_ui_fallback_enabled: bool = False
+    report_ui_export_format: str = "xlsx"
+    report_ui_keep_error_artifacts: bool = False
+    report_ui_runner_script: str = "skills/web-test/scripts/run.mjs"
+    report_ui_web_url_template: str = "http://localhost:9090/{database}/ru/"
+    report_ui_artifacts_dir: str = "/data/report-ui-artifacts/tmp"
 
     # EPF liveness heartbeat TTL in seconds for dashboard status.
     # Must exceed the toolkit command timeout so long-running commands do not

@@ -1347,6 +1347,11 @@ async def action_api(request: Request) -> JSONResponse:
             "REPORT_RUN_DEFAULT_TIMEOUT_SECONDS": str(new_settings["run_default_timeout_seconds"]),
             "REPORT_VALIDATE_DEFAULT_MAX_ROWS": str(new_settings["validate_default_max_rows"]),
             "REPORT_VALIDATE_DEFAULT_TIMEOUT_SECONDS": str(new_settings["validate_default_timeout_seconds"]),
+            "REPORT_API_RUNNER_ENABLED": "true" if new_settings["api_runner_enabled"] else "false",
+            "REPORT_UI_RUNNER_ENABLED": "true" if new_settings["ui_runner_enabled"] else "false",
+            "REPORT_UI_FALLBACK_ENABLED": "true" if new_settings["ui_fallback_enabled"] else "false",
+            "REPORT_UI_EXPORT_FORMAT": new_settings["ui_export_format"],
+            "REPORT_UI_KEEP_ERROR_ARTIFACTS": "true" if new_settings["ui_keep_error_artifacts"] else "false",
         })
         if not result.get("ok"):
             return JSONResponse(result)
@@ -1740,6 +1745,11 @@ def _current_report_settings_payload() -> dict:
         "run_default_timeout_seconds": int(settings.report_run_default_timeout_seconds),
         "validate_default_max_rows": int(settings.report_validate_default_max_rows),
         "validate_default_timeout_seconds": int(settings.report_validate_default_timeout_seconds),
+        "api_runner_enabled": bool(settings.report_api_runner_enabled),
+        "ui_runner_enabled": bool(settings.report_ui_runner_enabled),
+        "ui_fallback_enabled": bool(settings.report_ui_fallback_enabled),
+        "ui_export_format": str(settings.report_ui_export_format or "xlsx"),
+        "ui_keep_error_artifacts": bool(settings.report_ui_keep_error_artifacts),
     }
 
 
@@ -1772,6 +1782,11 @@ def _parse_report_settings_payload(body: dict) -> dict:
         "run_default_timeout_seconds": _parse_non_negative_int(body.get("run_default_timeout_seconds", settings.report_run_default_timeout_seconds), "run_default_timeout_seconds"),
         "validate_default_max_rows": _parse_non_negative_int(body.get("validate_default_max_rows", settings.report_validate_default_max_rows), "validate_default_max_rows"),
         "validate_default_timeout_seconds": _parse_non_negative_int(body.get("validate_default_timeout_seconds", settings.report_validate_default_timeout_seconds), "validate_default_timeout_seconds"),
+        "api_runner_enabled": _parse_bool_value(body.get("api_runner_enabled", settings.report_api_runner_enabled), "api_runner_enabled"),
+        "ui_runner_enabled": _parse_bool_value(body.get("ui_runner_enabled", settings.report_ui_runner_enabled), "ui_runner_enabled"),
+        "ui_fallback_enabled": _parse_bool_value(body.get("ui_fallback_enabled", settings.report_ui_fallback_enabled), "ui_fallback_enabled"),
+        "ui_export_format": _parse_report_export_format(body.get("ui_export_format", settings.report_ui_export_format)),
+        "ui_keep_error_artifacts": _parse_bool_value(body.get("ui_keep_error_artifacts", settings.report_ui_keep_error_artifacts), "ui_keep_error_artifacts"),
     }
 
 
@@ -1781,11 +1796,28 @@ def _apply_report_settings_runtime(new_settings: dict) -> None:
     os.environ["REPORT_RUN_DEFAULT_TIMEOUT_SECONDS"] = str(new_settings["run_default_timeout_seconds"])
     os.environ["REPORT_VALIDATE_DEFAULT_MAX_ROWS"] = str(new_settings["validate_default_max_rows"])
     os.environ["REPORT_VALIDATE_DEFAULT_TIMEOUT_SECONDS"] = str(new_settings["validate_default_timeout_seconds"])
+    os.environ["REPORT_API_RUNNER_ENABLED"] = "true" if new_settings["api_runner_enabled"] else "false"
+    os.environ["REPORT_UI_RUNNER_ENABLED"] = "true" if new_settings["ui_runner_enabled"] else "false"
+    os.environ["REPORT_UI_FALLBACK_ENABLED"] = "true" if new_settings["ui_fallback_enabled"] else "false"
+    os.environ["REPORT_UI_EXPORT_FORMAT"] = new_settings["ui_export_format"]
+    os.environ["REPORT_UI_KEEP_ERROR_ARTIFACTS"] = "true" if new_settings["ui_keep_error_artifacts"] else "false"
     settings.report_auto_analyze_enabled = new_settings["auto_analyze_enabled"]
     settings.report_run_default_max_rows = new_settings["run_default_max_rows"]
     settings.report_run_default_timeout_seconds = new_settings["run_default_timeout_seconds"]
     settings.report_validate_default_max_rows = new_settings["validate_default_max_rows"]
     settings.report_validate_default_timeout_seconds = new_settings["validate_default_timeout_seconds"]
+    settings.report_api_runner_enabled = new_settings["api_runner_enabled"]
+    settings.report_ui_runner_enabled = new_settings["ui_runner_enabled"]
+    settings.report_ui_fallback_enabled = new_settings["ui_fallback_enabled"]
+    settings.report_ui_export_format = new_settings["ui_export_format"]
+    settings.report_ui_keep_error_artifacts = new_settings["ui_keep_error_artifacts"]
+
+
+def _parse_report_export_format(value) -> str:
+    normalized = str(value or "xlsx").strip().lower()
+    if normalized not in {"xlsx", "html"}:
+        raise ValueError("ui_export_format must be xlsx or html")
+    return normalized
 
 
 def _is_managed_project_path(path: str) -> bool:
@@ -1929,6 +1961,11 @@ def _collect_diagnostics() -> dict:
             "REPORT_RUN_DEFAULT_TIMEOUT_SECONDS": settings.report_run_default_timeout_seconds,
             "REPORT_VALIDATE_DEFAULT_MAX_ROWS": settings.report_validate_default_max_rows,
             "REPORT_VALIDATE_DEFAULT_TIMEOUT_SECONDS": settings.report_validate_default_timeout_seconds,
+            "REPORT_API_RUNNER_ENABLED": settings.report_api_runner_enabled,
+            "REPORT_UI_RUNNER_ENABLED": settings.report_ui_runner_enabled,
+            "REPORT_UI_FALLBACK_ENABLED": settings.report_ui_fallback_enabled,
+            "REPORT_UI_EXPORT_FORMAT": settings.report_ui_export_format,
+            "REPORT_UI_KEEP_ERROR_ARTIFACTS": settings.report_ui_keep_error_artifacts,
             "TEST_RUNNER_URL": settings.test_runner_url,
             "BSL_GRAPH_URL": settings.bsl_graph_url,
         },

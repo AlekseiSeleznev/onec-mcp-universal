@@ -198,6 +198,16 @@ const report = await readSpreadsheet();
 
 Falls back to `{ rows: string[][], total }` when headers can't be detected.
 
+#### `exportSpreadsheet(format, outputPath)` → `{ artifact_path, artifact_format, extractor_used, standard_export }`
+Save the currently generated report result to a temporary artifact. Primary path uses the standard 1C web-client save dialog (`xlsx` or `html`). If the standard export cannot be completed, falls back to `readSpreadsheet()` and writes a JSON artifact for machine parsing.
+
+```js
+await clickElement('Сформировать');
+await wait(5);
+const exported = await exportSpreadsheet('xlsx', '/tmp/report.xlsx');
+console.log(exported.artifact_path);
+```
+
 #### `getSections()` → `{ activeSection, sections, commands }`
 Read section panel and commands without navigating.
 

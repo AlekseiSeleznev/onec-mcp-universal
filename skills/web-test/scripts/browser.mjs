@@ -109,6 +109,7 @@ export async function connect(url, { extensionPath } = {}) {
       mkdirSync(persistentUserDataDir, { recursive: true });
       const context = await chromium.launchPersistentContext(persistentUserDataDir, {
         headless: false,
+        acceptDownloads: true,
         args: [
           '--start-maximized',
           '--disable-extensions-except=' + extPath,
@@ -124,6 +125,7 @@ export async function connect(url, { extensionPath } = {}) {
       browser = await chromium.launch({ headless: false, args: ['--start-maximized'] });
       const context = await browser.newContext({
         viewport: null,
+        acceptDownloads: true,
         permissions: ['clipboard-read', 'clipboard-write'],
       });
       page = await context.newPage();
@@ -1144,6 +1146,52 @@ export async function readSpreadsheet() {
     data,
     totals: totals || undefined,
     total: data.length,
+  };
+}
+
+/**
+ * Export currently generated SpreadsheetDocument to a file.
+ * Primary path uses the standard 1C web-client save dialog. If the UI export
+ * cannot be completed, falls back to reading the rendered spreadsheet DOM and
+ * writing a JSON artifact so callers still avoid screenshot/OCR extraction.
+ */
+export async function exportSpreadsheet(format = 'xlsx', outputPath = '') {
+  ensureConnected();
+  const normalized = String(format || 'xlsx').toLowerCase();
+  const ext = normalized === 'html' ? 'html' : 'xlsx';
+  const target = outputPath || pathJoin(tmpdir(), `onec-report-${Date.now()}.${ext}`);
+  const label = normalized === 'html'
+    ? 'Веб-страница (.html)'
+    : 'Лист Microsoft Excel 2007 (.xlsx)';
+  let standardError = '';
+  try {
+    const downloadPromise = page.waitForEvent('download', { timeout: 60000 });
+    await page.keyboard.press('Control+S');
+    await page.waitForTimeout(1000);
+    await clickElement(label, { timeout: 8000 });
+    await clickElement('OK', { timeout: 8000 });
+    const download = await downloadPromise;
+    await download.saveAs(target);
+    return {
+      artifact_path: target,
+      artifact_format: ext,
+      extractor_used: ext === 'html' ? 'html_export' : 'xlsx_export',
+      standard_export: true,
+    };
+  } catch (e) {
+    standardError = e.message || String(e);
+    try { await page.keyboard.press('Escape'); } catch {}
+  }
+
+  const report = await readSpreadsheet();
+  const fallbackPath = target.replace(/\.[^.]+$/, '') + '.json';
+  writeFileSync(fallbackPath, JSON.stringify(report, null, 2), 'utf8');
+  return {
+    artifact_path: fallbackPath,
+    artifact_format: 'json',
+    extractor_used: 'dom_spreadsheet',
+    standard_export: false,
+    standard_export_error: standardError,
   };
 }
 

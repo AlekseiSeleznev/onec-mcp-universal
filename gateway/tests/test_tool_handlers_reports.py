@@ -70,6 +70,7 @@ def test_report_tools_require_explicit_database():
     assert "database" in schemas["validate_all_reports"]["required"]
     assert "database" in schemas["validate_report_contracts"]["required"]
     assert "context" in schemas["run_report"]["properties"]
+    assert "runner" in schemas["run_report"]["properties"]
 
 
 @pytest.mark.asyncio
@@ -226,6 +227,26 @@ async def test_try_handle_report_tool_run_requires_connected_epf(tmp_path, regis
     payload = json.loads(result)
     assert payload["ok"] is False
     assert payload["error_code"] == "toolkit_not_connected"
+
+
+@pytest.mark.asyncio
+async def test_try_handle_report_tool_ui_runner_does_not_require_connected_epf(tmp_path, registry, monkeypatch):
+    registry.mark_epf_disconnected("Z01", force=True)
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis("Z01", "/projects/Z01", {"reports": [{"name": "Отчет", "aliases": [{"alias": "Отчет"}]}]})
+    monkeypatch.setattr(reports_mod.settings, "report_ui_runner_enabled", False)
+
+    result = await try_handle_report_tool(
+        "run_report",
+        {"database": "Z01", "title": "Отчет", "runner": "ui"},
+        registry=registry,
+        manager=FakeManager(),
+        catalog=catalog,
+    )
+
+    payload = json.loads(result)
+    assert payload["ok"] is False
+    assert payload["error_code"] == "ui_runner_disabled"
 
 
 @pytest.mark.asyncio
