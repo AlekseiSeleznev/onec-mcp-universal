@@ -146,9 +146,12 @@ export async function connect(url, { extensionPath } = {}) {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: LOAD_TIMEOUT });
   }
 
-  // Wait for 1C to initialize — detect by section panel appearance
+  // Wait for 1C to initialize, or return quickly on the plain web-client login page.
   try {
-    await page.waitForSelector('#themesCell_theme_0', { timeout: INIT_TIMEOUT });
+    await Promise.race([
+      page.waitForSelector('#themesCell_theme_0', { timeout: INIT_TIMEOUT }),
+      page.waitForSelector('input[type="password"], input[type="text"]', { timeout: 5000 }),
+    ]);
   } catch {
     // Fallback: wait fixed time if selector doesn't appear (e.g. login page)
     await page.waitForTimeout(5000);
@@ -952,6 +955,43 @@ export async function getFormState() {
   return state;
 }
 
+/** Log in through the plain 1C web-client login page, which is not a 1C form. */
+export async function loginWebClient({ user = 'Администратор', password = '', forceTerminateSession = false } = {}) {
+  ensureConnected();
+  const hasSections = await page.locator('#themesCell_theme_0').count().catch(() => 0);
+  if (hasSections) return await getPageState();
+
+  const visibleInputs = page.locator('input:visible');
+  const inputCount = await visibleInputs.count();
+  if (inputCount >= 1) {
+    await visibleInputs.nth(0).fill(String(user));
+  }
+  if (inputCount >= 2) {
+    await visibleInputs.nth(1).fill(String(password));
+  }
+  const loginButton = page.getByText('Войти', { exact: true }).first();
+  if (await loginButton.count()) {
+    await loginButton.click();
+  } else {
+    await page.keyboard.press('Enter');
+  }
+  await page.waitForTimeout(1500);
+
+  const restartButton = page.getByText(/Выполнить запуск/i).first();
+  if (forceTerminateSession && await restartButton.count()) {
+    await restartButton.click();
+    await page.waitForTimeout(3000);
+  }
+
+  try {
+    await page.waitForSelector('#themesCell_theme_0', { timeout: INIT_TIMEOUT });
+  } catch {
+    await page.waitForTimeout(3000);
+  }
+  await closeModals();
+  return await getPageState();
+}
+
 /** Read structured table data with pagination. Returns columns, rows, total count. */
 export async function readTable({ maxRows = 20, offset = 0, table } = {}) {
   ensureConnected();
@@ -1164,12 +1204,118 @@ export async function exportSpreadsheet(format = 'xlsx', outputPath = '') {
     ? 'Веб-страница (.html)'
     : 'Лист Microsoft Excel 2007 (.xlsx)';
   let standardError = '';
-  try {
-    const downloadPromise = page.waitForEvent('download', { timeout: 60000 });
-    await page.keyboard.press('Control+S');
+  async function hasFormatChoice() {
+    try {
+      return await page.getByText(label, { exact: true }).first().isVisible({ timeout: 500 });
+    } catch {
+      return false;
+    }
+  }
+  async function waitForFormatChoice(timeout = 10000) {
+    const started = Date.now();
+    while (Date.now() - started < timeout) {
+      if (await hasFormatChoice()) return true;
+      await page.waitForTimeout(300);
+    }
+    return false;
+  }
+  async function handleBrowserExtensionPromptIfPresent() {
+    const bodyText = await page.locator('body').innerText({ timeout: 800 }).catch(() => '');
+    if (!/расширени|extension/i.test(bodyText)) return '';
+    const installButton = page.getByText(/^(Установить|Установить расширение|Install)$/i).last();
+    try {
+      if (await installButton.isVisible({ timeout: 1000 })) {
+        await installButton.click({ force: true });
+        await page.waitForTimeout(2500);
+        return 'install';
+      }
+    } catch { /* install button is absent or browser blocked the action */ }
+    try {
+      await clickElement('Продолжить без установки', { timeout: 2500 });
+      await page.waitForTimeout(800);
+      return 'continue_without_install';
+    } catch {
+      return '';
+    }
+  }
+  async function continueWithoutExtensionIfPrompted() {
+    const handled = await handleBrowserExtensionPromptIfPresent();
+    if (handled) return true;
+    try {
+      await clickElement('Продолжить без установки', { timeout: 2500 });
+      await page.waitForTimeout(800);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async function clickPlatformSaveButton() {
+    const coords = await page.evaluate(`(() => {
+      const visible = el => {
+        if (!el || el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 4 && r.height > 4 && r.y >= 0 && r.y < window.innerHeight;
+      };
+      const norm = s => (s || '').replace(/\\u00a0/g, ' ').trim().toLowerCase();
+      const candidates = [...document.querySelectorAll('a, button, div, span')]
+        .filter(visible)
+        .map(el => {
+          const r = el.getBoundingClientRect();
+          const text = norm(el.innerText || el.textContent || '');
+          const title = norm(el.title || el.getAttribute('aria-label') || el.parentElement?.title || '');
+          const id = norm(el.id || '');
+          const cls = norm(String(el.className || ''));
+          return { text, title, id, cls, x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), width: r.width, height: r.height };
+        })
+        .filter(i => i.y < 130)
+        .filter(i => {
+          const hay = [i.text, i.title, i.id, i.cls].join(' ');
+          if (hay.includes('снимок')) return false;
+          return hay.includes('сохран') || hay.includes('save');
+        })
+        .sort((a, b) => {
+          const aTitle = a.title.includes('сохран') || a.title.includes('save') ? 1 : 0;
+          const bTitle = b.title.includes('сохран') || b.title.includes('save') ? 1 : 0;
+          if (aTitle !== bTitle) return bTitle - aTitle;
+          return b.x - a.x;
+        });
+      return candidates[0] || null;
+    })()`);
+    if (!coords) return false;
+    await page.mouse.click(coords.x, coords.y);
     await page.waitForTimeout(1000);
-    await clickElement(label, { timeout: 8000 });
-    await clickElement('OK', { timeout: 8000 });
+    return true;
+  }
+  async function openSendToComputerDialog() {
+    try {
+      if (await hasFormatChoice()) return true;
+      await clickElement('Отправить', { timeout: 5000 });
+      await page.waitForTimeout(300);
+      await clickElement('На компьютер', { timeout: 5000 });
+      return await waitForFormatChoice(10000);
+    } catch {
+      try { await page.keyboard.press('Escape'); } catch {}
+      return false;
+    }
+  }
+  try {
+    if (!(await openSendToComputerDialog())) {
+      await page.keyboard.press('Control+S');
+      await waitForFormatChoice(3000);
+      if (await continueWithoutExtensionIfPrompted()) {
+        await page.keyboard.press('Control+S');
+        await waitForFormatChoice(3000);
+      }
+      if (!(await hasFormatChoice())) {
+        await clickPlatformSaveButton();
+        if (await continueWithoutExtensionIfPrompted()) {
+          await clickPlatformSaveButton();
+        }
+      }
+    }
+    await page.getByText(label, { exact: true }).last().click({ force: true, timeout: 8000 });
+    const downloadPromise = page.waitForEvent('download', { timeout: 60000 });
+    await page.getByText(/^(ОК|OK)$/).last().click({ force: true, timeout: 8000 });
     const download = await downloadPromise;
     await download.saveAs(target);
     return {
@@ -1252,8 +1398,13 @@ async function dblclickAndVerify(coords, selFormNum, fieldName) {
     // does not close the dialog, so confirm the current selection with OK.
     const okButton = await page.evaluate(`(() => {
       const p = 'form${selFormNum}_';
-      const buttons = [...document.querySelectorAll('a.press[id^="' + p + '"]')].filter(el => el.offsetWidth > 0);
-      const ok = buttons.find(el => el.id === p + 'OK' || (el.innerText || '').trim().toLowerCase() === 'ok' || (el.innerText || '').trim().toLowerCase() === 'ок');
+      const buttons = [...document.querySelectorAll('a.press, button, [role="button"]')]
+        .filter(el => el.offsetWidth > 0 && el.offsetHeight > 0);
+      const ok = buttons.find(el => {
+        const id = el.id || '';
+        const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+        return id === p + 'OK' || (id.startsWith(p) && /(^|_)ok$/i.test(id)) || text === 'ok' || text === 'ок';
+      });
       if (!ok) return null;
       const r = ok.getBoundingClientRect();
       return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
@@ -1267,6 +1418,15 @@ async function dblclickAndVerify(coords, selFormNum, fieldName) {
       })()`);
       if (closedAfterOk) return { field: fieldName, ok: true, method: 'form_checkbox' };
     }
+    try {
+      await page.getByText(/^(ОК|OK)$/).last().click({ force: true, timeout: 2000 });
+      await waitForStable(selFormNum);
+      const closedAfterLocatorOk = await page.evaluate(`(() => {
+        const p = 'form${selFormNum}_';
+        return ![...document.querySelectorAll('[id^="' + p + '"]')].some(el => el.offsetWidth > 0);
+      })()`);
+      if (closedAfterLocatorOk) return { field: fieldName, ok: true, method: 'form_checkbox' };
+    } catch { /* OK button fallback failed */ }
     // Enter didn't select — item is likely a non-selectable group.
     // Don't Escape here — let the caller decide (may want to try another row).
     return { field: fieldName, ok: false, reason: 'still_open' };
@@ -1588,6 +1748,26 @@ async function pickFromTypeDialog(formNum, typeName) {
   await page.waitForTimeout(ACTION_WAIT);
 }
 
+async function clickFieldInput(selector) {
+  try {
+    await page.click(selector, { timeout: 5000 });
+    return;
+  } catch (e) {
+    if (!String(e.message || '').includes('intercepts pointer events')) throw e;
+  }
+  await dismissPendingErrors();
+  try {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+  } catch { /* ignore */ }
+  try {
+    await page.click(selector, { timeout: 3000 });
+  } catch (e) {
+    if (!String(e.message || '').includes('intercepts pointer events')) throw e;
+    await page.click(selector, { force: true, timeout: 3000 });
+  }
+}
+
 /**
  * Fill a reference field via clipboard paste + 1C autocomplete.
  *
@@ -1703,23 +1883,7 @@ async function fillReferenceField(selector, fieldName, value, formNum) {
   } catch { /* DLB approach failed — fall through to paste */ }
 
   // 1. Focus (handle surface/modal overlay from previous interaction)
-  try {
-    await page.click(selector);
-  } catch (e) {
-    if (e.message.includes('intercepts pointer events')) {
-      // Try force click first (no side effects), then Escape as fallback
-      try {
-        await page.click(selector, { force: true });
-      } catch (e2) {
-        if (e2.message.includes('intercepts pointer events')) {
-          await dismissPendingErrors();
-          await page.keyboard.press('Escape');
-          await page.waitForTimeout(500);
-          await page.click(selector);
-        } else throw e2;
-      }
-    } else throw e;
-  }
+  await clickFieldInput(selector);
 
   // 2. If field already has a value, clear using Shift+F4 (native 1C mechanism).
   //    This is needed for reference fields — Shift+F4 properly clears the ref link.
@@ -1730,7 +1894,7 @@ async function fillReferenceField(selector, fieldName, value, formNum) {
     await page.keyboard.press('Tab');
     await page.waitForTimeout(500);
     // Refocus
-    await page.click(selector);
+    await clickFieldInput(selector);
   }
 
   // 3. Paste text via clipboard (trusted event → triggers real 1C autocomplete)
@@ -1818,11 +1982,13 @@ async function fillReferenceField(selector, fieldName, value, formNum) {
   // 5a. New form opened? (creation form = value not found)
   const newForm = await detectNewForm();
   if (newForm !== null) {
+    const pickResult = await pickFromSelectionForm(newForm, fieldName, text, formNum);
+    if (pickResult.ok) return pickResult;
     await page.keyboard.press('Escape');
     await waitForStable();
     await clearField();
     return { field: fieldName, error: 'not_found',
-      message: 'Value "' + text + '" not found' };
+      message: pickResult.message || 'Value "' + text + '" not found' };
   }
 
   // 5b. Dropdown after Tab?
@@ -1846,7 +2012,7 @@ async function fillReferenceField(selector, fieldName, value, formNum) {
   if (!finalVal) {
     // 6. Last resort: try F4 to open selection form and pick from there
     try {
-      await page.click(selector);
+      await clickFieldInput(selector);
       await page.waitForTimeout(300);
     } catch { /* OK — field may be unfocused */ }
     await page.keyboard.press('F4');
@@ -1909,7 +2075,7 @@ export async function fillFields(fields) {
       const rawValue = fields[r.field];
       const isEmpty = rawValue === '' || rawValue === null || rawValue === undefined;
       if (isEmpty && !r.isCheckbox && !r.isRadio) {
-        await page.click(selector);
+        await clickFieldInput(selector);
         await page.waitForTimeout(200);
         await page.keyboard.press('Shift+F4');
         await page.waitForTimeout(300);
@@ -1947,7 +2113,7 @@ export async function fillFields(fields) {
         results.push(refResult);
       } else if (r.hasPick && r.isDate) {
         // Date/time field with calendar CB — use paste (calendar is not a selection form)
-        await page.click(selector);
+        await clickFieldInput(selector);
         await page.waitForTimeout(200);
         await page.keyboard.press('Control+A');
         await page.evaluate(`navigator.clipboard.writeText(${JSON.stringify(String(fields[r.field]))})`);
@@ -1968,7 +2134,7 @@ export async function fillFields(fields) {
         // Plain field: clipboard paste + Tab to commit
         // page.fill() sets DOM value but doesn't trigger 1C input events;
         // clipboard paste (Ctrl+V) is a trusted event that 1C processes correctly.
-        await page.click(selector);
+        await clickFieldInput(selector);
         await page.waitForTimeout(200);
         await page.keyboard.press('Control+A');
         await page.evaluate(`navigator.clipboard.writeText(${JSON.stringify(String(fields[r.field]))})`);

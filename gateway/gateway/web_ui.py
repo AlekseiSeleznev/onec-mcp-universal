@@ -369,8 +369,18 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 @media(max-width:900px){.grid{grid-template-columns:1fr!important}.card{font-size:.8rem}table{font-size:.75rem}.btn{font-size:.7rem;padding:3px 6px}}
 .form-row{display:grid;grid-template-columns:140px 1fr;gap:8px;margin-bottom:8px;align-items:center}
 .form-row label{font-size:.78rem;color:#94a3b8;text-align:right}
-.form-row input{padding:5px 8px;border-radius:4px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:.8rem;width:100%}
-.form-row input:focus{outline:none;border-color:#38bdf8}
+.form-row input,.form-row select{padding:5px 8px;border-radius:4px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:.8rem;width:100%}
+.form-row input:focus,.form-row select:focus{outline:none;border-color:#38bdf8}
+.form-row select{appearance:none;background:#0f172a;color:#e2e8f0}
+.form-row select option{background:#0f172a;color:#e2e8f0}
+.report-settings{display:grid;gap:8px}
+.report-check-row{display:flex;align-items:center;gap:8px;color:#94a3b8;font-size:.78rem;white-space:nowrap;min-width:0}
+.report-check-row span{overflow:hidden;text-overflow:ellipsis}
+.report-check-row input[type=checkbox]{appearance:none;width:14px;height:14px;flex:0 0 14px;border:1px solid #475569;border-radius:3px;background:#0f172a;cursor:pointer;display:grid;place-content:center}
+.report-check-row input[type=checkbox]:hover{border-color:#64748b;background:#111827}
+.report-check-row input[type=checkbox]:focus{outline:none;border-color:#38bdf8}
+.report-check-row input[type=checkbox]:checked{background:#1e293b;border-color:#64748b}
+.report-check-row input[type=checkbox]:checked:after{content:"";width:4px;height:8px;border:solid #e2e8f0;border-width:0 2px 2px 0;transform:rotate(45deg);margin-bottom:2px}
 .num-wrap{display:flex;align-items:stretch;width:100%;border:1px solid #475569;border-radius:4px;overflow:hidden;background:#0f172a}
 .num-wrap:focus-within{border-color:#38bdf8}
 .num-wrap input{border:none!important;border-radius:0!important;background:transparent!important}
@@ -474,17 +484,19 @@ td{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;overflow:hidden
 <div class="card">
 <h2>{{h_report_engine}}</h2>
 <p style="color:#64748b;font-size:.72rem;margin-bottom:8px">{{report_settings_hint}}</p>
-<div class="form-row"><label>{{report_auto_analyze}}</label><input id="report-auto-analyze" type="checkbox" style="width:auto;justify-self:start"></div>
-<div class="form-row"><label>{{report_api_runner}}</label><input id="report-api-runner" type="checkbox" style="width:auto;justify-self:start"></div>
-<div class="form-row"><label>{{report_ui_runner}}</label><input id="report-ui-runner" type="checkbox" style="width:auto;justify-self:start"></div>
-<div class="form-row"><label>{{report_ui_fallback}}</label><input id="report-ui-fallback" type="checkbox" style="width:auto;justify-self:start"></div>
-<div class="form-row"><label>{{report_ui_export_format}}</label><select id="report-ui-export-format"><option value="xlsx">XLSX</option><option value="html">HTML</option></select></div>
-<div class="form-row"><label>{{report_ui_keep_errors}}</label><input id="report-ui-keep-errors" type="checkbox" style="width:auto;justify-self:start"></div>
+<div class="report-settings">
+<label class="report-check-row"><input id="report-auto-analyze" type="checkbox"><span>{{report_auto_analyze}}</span></label>
+<label class="report-check-row"><input id="report-api-runner" type="checkbox"><span>{{report_api_runner}}</span></label>
+<label class="report-check-row"><input id="report-ui-runner" type="checkbox"><span>{{report_ui_runner}}</span></label>
+<label class="report-check-row"><input id="report-ui-fallback" type="checkbox"><span>{{report_ui_fallback}}</span></label>
+<div class="form-row"><label>{{report_ui_export_format}}</label><select id="report-ui-export-format" class="report-select"><option value="xlsx">XLSX</option><option value="html">HTML</option></select></div>
+<label class="report-check-row"><input id="report-ui-keep-errors" type="checkbox"><span>{{report_ui_keep_errors}}</span></label>
 <div class="form-row"><label>{{report_run_rows}}</label><div class="num-wrap"><input id="report-run-rows" type="number" min="0" step="1"><div class="num-stepper"><button type="button" onclick="stepNumberInput('report-run-rows',1)">▲</button><button type="button" onclick="stepNumberInput('report-run-rows',-1)">▼</button></div></div></div>
 <div class="form-row"><label>{{report_run_timeout}}</label><div class="num-wrap"><input id="report-run-timeout" type="number" min="0" step="1"><div class="num-stepper"><button type="button" onclick="stepNumberInput('report-run-timeout',1)">▲</button><button type="button" onclick="stepNumberInput('report-run-timeout',-1)">▼</button></div></div></div>
 <div class="form-row"><label>{{report_validate_rows}}</label><div class="num-wrap"><input id="report-validate-rows" type="number" min="0" step="1"><div class="num-stepper"><button type="button" onclick="stepNumberInput('report-validate-rows',1)">▲</button><button type="button" onclick="stepNumberInput('report-validate-rows',-1)">▼</button></div></div></div>
 <div class="form-row"><label>{{report_validate_timeout}}</label><div class="num-wrap"><input id="report-validate-timeout" type="number" min="0" step="1"><div class="num-stepper"><button type="button" onclick="stepNumberInput('report-validate-timeout',1)">▲</button><button type="button" onclick="stepNumberInput('report-validate-timeout',-1)">▼</button></div></div></div>
 <div class="ag"><button class="btn" style="font-size:.7rem;padding:3px 8px" onclick="saveReportSettings()">{{save}}</button></div>
+</div>
 </div>
 </div>
 </div>

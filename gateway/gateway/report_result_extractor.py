@@ -119,21 +119,6 @@ def _read_xlsx_matrix(path: Path) -> list[list[str]]:
                 cells[(row_idx, col_idx)] = value
                 max_col = max(max_col, col_idx)
 
-    for merge_el in root.findall(".//x:mergeCells/x:mergeCell", _XML_NS):
-        ref = merge_el.attrib.get("ref", "")
-        parsed = _parse_range(ref)
-        if not parsed:
-            continue
-        start_row, start_col, end_row, end_col = parsed
-        if start_row != end_row:
-            continue
-        value = cells.get((start_row, start_col), "")
-        if not value:
-            continue
-        for col_idx in range(start_col + 1, end_col + 1):
-            cells.setdefault((start_row, col_idx), value)
-            max_col = max(max_col, col_idx)
-
     row_numbers = sorted({row for row, _ in cells})
     return [[cells.get((row_idx, col_idx), "") for col_idx in range(1, max_col + 1)] for row_idx in row_numbers]
 
@@ -192,8 +177,9 @@ def _matrix_to_result(matrix: list[list[str]]) -> dict:
             continue
         if obj:
             data_rows.append(obj)
+    visible_columns = _prune_unused_columns(columns, data_rows, totals)
     return {
-        "columns": [name for name in columns if name],
+        "columns": visible_columns,
         "rows": data_rows,
         "totals": totals,
         "metadata": {
@@ -237,6 +223,17 @@ def _row_to_object(row: list[str], columns: list[str]) -> dict[str, str]:
         if value:
             result[column] = value
     return result
+
+
+def _prune_unused_columns(columns: list[str], rows: list[dict[str, str]], totals: dict[str, str]) -> list[str]:
+    visible = [name for name in columns if name]
+    if not visible or (not rows and not totals):
+        return visible
+    used = set()
+    for row in rows:
+        used.update(key for key, value in row.items() if str(value).strip())
+    used.update(key for key, value in totals.items() if str(value).strip())
+    return [name for name in visible if name in used]
 
 
 def _first_data_row_index(rows: list[list[str]]) -> int:

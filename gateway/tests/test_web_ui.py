@@ -74,6 +74,9 @@ class TestRenderDashboard:
         assert "Использовать UI-движок" in html
         assert "Переходить на UI при техническом ограничении API" in html
         assert "Формат экспорта UI" in html
+        assert 'class="report-settings"' in html
+        assert 'class="report-check-row"><input id="report-api-runner" type="checkbox"><span>Использовать API-движок</span>' in html
+        assert 'id="report-ui-export-format" class="report-select"' in html
 
     def test_russian_locale(self):
         html = self._render(lang="ru")
@@ -401,6 +404,8 @@ class TestRenderDashboard:
         assert "Строк при запуске" in html
         assert "Таймаут проверки, сек" in html
         assert 'class="num-wrap"' in html
+        assert ".report-check-row input[type=checkbox]" in html
+        assert ".form-row select{appearance:none" in html
         assert "stepNumberInput('report-run-rows',1)" in html
         assert "stepNumberInput('report-run-rows',-1)" in html
 

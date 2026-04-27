@@ -94,6 +94,39 @@ def test_extract_xlsx_preserves_merged_group_headers(tmp_path):
     assert xlsx.exists()
 
 
+def test_extract_xlsx_does_not_duplicate_merged_data_cells(tmp_path):
+    xlsx = tmp_path / "cost.xlsx"
+    _write_xlsx(
+        xlsx,
+        [
+            ["Себестоимость выпущенной продукции"],
+            ["Параметры:", "", "Период: 01.04.2024 - 30.04.2024"],
+            ["Статья калькуляции", "", "", "", "", "", "", "", "", "Количество затрат", "Стоимость затрат"],
+            ["Затрата", "", "", "", "Характеристика", "Серия", "Ед. изм."],
+            ["Итого", "", "", "", "", "", "", "", "", "", "20000"],
+            ["Материалы основные", "", "", "", "", "", "", "", "", "", "5000"],
+            ["Лист 0,6 63C2A", "", "", "", "", "", "кг", "", "", "100", "5000"],
+        ],
+        merges=[
+            "A3:I3",
+            "A4:D4",
+            "G4:I4",
+            "A5:I5",
+            "A6:I6",
+            "A7:D7",
+            "G7:I7",
+        ],
+    )
+
+    result = ReportResultExtractor().extract(xlsx, artifact_format="xlsx", cleanup=False)
+
+    assert "Статья калькуляции / Затрата 2" not in result["columns"]
+    material = next(row for row in result["rows"] if row.get("Статья калькуляции / Затрата") == "Лист 0,6 63C2A")
+    assert material["Статья калькуляции / Ед. изм."] == "кг"
+    assert material["Стоимость затрат"] == "5000"
+    assert "затрата" in result["observed_signature"]["observed_tokens_norm"]
+
+
 def test_extract_invalid_file_keeps_artifact_for_diagnostics(tmp_path):
     broken = tmp_path / "broken.xlsx"
     broken.write_text("not a zip", encoding="utf-8")

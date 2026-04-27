@@ -109,7 +109,14 @@ def build_observed_signature(result: dict[str, Any]) -> dict[str, Any]:
     artifacts = list(result.get("artifacts") or [])
     header_rows: list[str] = []
     detail_rows: list[dict[str, Any]] = []
-    observed_tokens: list[str] = [str(value).strip() for value in columns if str(value).strip()]
+    observed_tokens: list[str] = []
+    for value in columns:
+        cleaned = str(value).strip()
+        if not cleaned:
+            continue
+        observed_tokens.append(cleaned)
+        if " / " in cleaned:
+            observed_tokens.append(cleaned.rsplit(" / ", 1)[-1].strip())
     max_nonempty = 0
     has_totals = False
     has_hierarchy = False

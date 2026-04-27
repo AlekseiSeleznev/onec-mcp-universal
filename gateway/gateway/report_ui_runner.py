@@ -181,7 +181,19 @@ if (openStrategy.mode === 'section_command' && openStrategy.section && openStrat
 await wait(2);
 const fields = {json.dumps(fields, ensure_ascii=False)};
 if (Object.keys(fields).length) {{
-  await fillFields(fields);
+  const periodNames = new Set(['Период1ДатаНачала', 'Период1ДатаОкончания', 'Начало периода', 'Конец периода', 'Период']);
+  const periodFields = Object.fromEntries(Object.entries(fields).filter(([key]) => periodNames.has(key)));
+  const otherFields = Object.fromEntries(Object.entries(fields).filter(([key]) => !periodNames.has(key)));
+  if (Object.keys(periodFields).length) {{
+    const filled = await fillFields(periodFields);
+    console.log('REPORT_UI_FILL_JSON=' + JSON.stringify(filled.filled || []));
+    await wait(1);
+  }}
+  for (const [key, value] of Object.entries(otherFields)) {{
+    const filled = await fillFields({{ [key]: value }});
+    console.log('REPORT_UI_FILL_JSON=' + JSON.stringify(filled.filled || []));
+    await wait(1);
+  }}
 }}
 const generateAction = uiStrategy.generate_action || {{}};
 await clickElement(generateAction.text || 'Сформировать');
@@ -391,8 +403,8 @@ def _resolved_ui_strategy(catalog: ReportCatalog, database: str, report_name: st
     payload = {
         "open": {"mode": "metadata_link", "metadata_path": f"Отчет.{report_name}"},
         "parameter_map": {
-            "start": "Начало периода",
-            "end": "Конец периода",
+            "start": "Период1ДатаНачала",
+            "end": "Период1ДатаОкончания",
             "Организация": "Организация",
         },
         "generate_action": {"type": "click_text", "text": "Сформировать"},

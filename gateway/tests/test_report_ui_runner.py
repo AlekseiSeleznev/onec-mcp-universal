@@ -163,6 +163,44 @@ def test_ui_fields_use_explicit_combined_period_mapping_only():
     assert fields["Период"] == "01.04.2024 - 30.04.2024"
 
 
+def test_ui_runner_default_strategy_uses_common_1c_period_fields(tmp_path):
+    artifact = tmp_path / "ui" / "report.xlsx"
+    artifact.parent.mkdir()
+    _write_xlsx(artifact, [["Материал", "Стоимость затрат"], ["Лист", 5000]])
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP_DEMO",
+        "/projects/ERP_DEMO",
+        {
+            "reports": [
+                {
+                    "name": "АнализСебестоимости",
+                    "synonym": "Анализ себестоимости",
+                    "aliases": [{"alias": "Анализ себестоимости", "confidence": 1.0}],
+                    "strategies": [{"strategy": "raw_skd_runner", "output_type": "rows"}],
+                }
+            ]
+        },
+    )
+    client = FakeUiClient(artifact)
+
+    import asyncio
+
+    asyncio.run(
+        ReportUiRunner(catalog=catalog, client=client, artifacts_dir=tmp_path / "artifacts").run_report(
+            database="ERP_DEMO",
+            title="Анализ себестоимости",
+            period={"start": "2024-04-01", "end": "2024-04-30"},
+            filters={"Организация": "Металл-Сервис"},
+            params={},
+        )
+    )
+
+    assert client.calls[0]["ui_strategy"]["parameter_map"]["start"] == "Период1ДатаНачала"
+    assert client.calls[0]["ui_strategy"]["parameter_map"]["end"] == "Период1ДатаОкончания"
+    assert client.calls[0]["filters"] == {"Организация": "Металл-Сервис"}
+
+
 @pytest.mark.asyncio
 async def test_ui_runner_persists_successful_strategy_as_verified(tmp_path):
     catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
