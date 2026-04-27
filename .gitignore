@@ -24,3 +24,9 @@ docker-compose.override.yml
 *.epf
 !1c/MCPToolkit/build/MCPToolkit.epf
 .mcp.json
+
+# Local runtime state
+.codex
+.codex/
+data/
+tmp-contract-catalog.sqlite
