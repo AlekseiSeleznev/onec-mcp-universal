@@ -22,7 +22,7 @@ _DOCKER_ENV_VARS = [
     "MCP_LSP_BSL_JAVA_XMX", "MCP_LSP_BSL_JAVA_XMS",
     "REPORT_API_RUNNER_ENABLED", "REPORT_UI_RUNNER_ENABLED",
     "REPORT_UI_FALLBACK_ENABLED", "REPORT_UI_EXPORT_FORMAT",
-    "REPORT_UI_KEEP_ERROR_ARTIFACTS",
+    "REPORT_UI_KEEP_ERROR_ARTIFACTS", "REPORT_UI_RUNNER_URL",
 ]
 
 
@@ -158,6 +158,7 @@ def test_default_report_runner_toggles(clean_env):
     assert s.report_ui_fallback_enabled is False
     assert s.report_ui_export_format == "xlsx"
     assert s.report_ui_keep_error_artifacts is False
+    assert s.report_ui_runner_url == ""
 
 
 # ---------------------------------------------------------------------------
@@ -249,12 +250,14 @@ def test_env_override_report_runner_toggles(monkeypatch):
     monkeypatch.setenv("REPORT_UI_FALLBACK_ENABLED", "true")
     monkeypatch.setenv("REPORT_UI_EXPORT_FORMAT", "html")
     monkeypatch.setenv("REPORT_UI_KEEP_ERROR_ARTIFACTS", "true")
+    monkeypatch.setenv("REPORT_UI_RUNNER_URL", "http://localhost:40785")
     s = Settings(_env_file=None)
     assert s.report_api_runner_enabled is False
     assert s.report_ui_runner_enabled is True
     assert s.report_ui_fallback_enabled is True
     assert s.report_ui_export_format == "html"
     assert s.report_ui_keep_error_artifacts is True
+    assert s.report_ui_runner_url == "http://localhost:40785"
 
 
 def test_env_override_bsl_host_workspace(monkeypatch):

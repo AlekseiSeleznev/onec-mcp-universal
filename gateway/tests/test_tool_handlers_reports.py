@@ -71,6 +71,12 @@ def test_report_tools_require_explicit_database():
     assert "database" in schemas["validate_report_contracts"]["required"]
     assert "context" in schemas["run_report"]["properties"]
     assert "runner" in schemas["run_report"]["properties"]
+    assert "database" in schemas["get_report_runner_policy"]["required"]
+    assert "report" in schemas["get_report_runner_policy"]["required"]
+    assert "preferred_runner" in schemas["set_report_runner_policy"]["properties"]
+    assert "database" in schemas["get_report_ui_strategy"]["required"]
+    assert "report" in schemas["get_report_ui_strategy"]["required"]
+    assert "strategy" in schemas["set_report_ui_strategy"]["required"]
 
 
 @pytest.mark.asyncio
@@ -175,6 +181,67 @@ async def test_try_handle_report_tool_enrich_requires_naparnik_key(tmp_path, reg
 
     assert result["ok"] is False
     assert result["error_code"] == "naparnik_not_configured"
+
+
+@pytest.mark.asyncio
+async def test_try_handle_report_tool_sets_and_gets_runner_policy_and_ui_strategy(tmp_path, registry):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis("Z01", "/projects/Z01", {"reports": [{"name": "Отчет", "aliases": [{"alias": "Отчет"}]}]})
+
+    policy_saved = json.loads(await try_handle_report_tool(
+        "set_report_runner_policy",
+        {
+            "database": "Z01",
+            "report": "Отчет",
+            "variant": "",
+            "preferred_runner": "ui",
+            "api_enabled": True,
+            "ui_enabled": True,
+            "reason": "UI gives full table",
+            "updated_by": "test",
+        },
+        registry=registry,
+        manager=FakeManager(),
+        catalog=catalog,
+    ))
+    strategy_saved = json.loads(await try_handle_report_tool(
+        "set_report_ui_strategy",
+        {
+            "database": "Z01",
+            "report": "Отчет",
+            "strategy": {
+                "open": {"mode": "section_command", "section": "Продажи", "command": "Отчет"},
+                "parameter_map": {"start": "Начало периода"},
+                "generate_action": {"text": "Сформировать"},
+                "export": {"format": "xlsx", "action": "save_as"},
+            },
+            "source": "manual",
+        },
+        registry=registry,
+        manager=FakeManager(),
+        catalog=catalog,
+    ))
+    policy = json.loads(await try_handle_report_tool(
+        "get_report_runner_policy",
+        {"database": "Z01", "report": "Отчет"},
+        registry=registry,
+        manager=FakeManager(),
+        catalog=catalog,
+    ))
+    strategy = json.loads(await try_handle_report_tool(
+        "get_report_ui_strategy",
+        {"database": "Z01", "report": "Отчет"},
+        registry=registry,
+        manager=FakeManager(),
+        catalog=catalog,
+    ))
+
+    assert policy_saved["ok"] is True
+    assert strategy_saved["ok"] is True
+    assert policy["policy"]["preferred_runner"] == "ui"
+    assert policy["policy"]["reason"] == "UI gives full table"
+    assert strategy["ui_strategy"]["source"] == "manual"
+    assert strategy["ui_strategy"]["strategy"]["open"]["mode"] == "section_command"
 
 
 @pytest.mark.asyncio

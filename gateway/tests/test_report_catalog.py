@@ -139,6 +139,55 @@ def test_catalog_stores_report_ui_strategy(tmp_path):
     assert strategy["strategy"]["parameter_map"]["Организация"] == "Организация"
 
 
+def test_describe_report_returns_runner_policy_and_highest_priority_ui_strategy(tmp_path):
+    catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP_DEMO",
+        "/projects/ERP_DEMO",
+        {
+            "reports": [
+                {
+                    "name": "АнализСебестоимости",
+                    "aliases": [{"alias": "Анализ себестоимости"}],
+                    "variants": [{"key": "Основной", "presentation": "Основной"}],
+                }
+            ]
+        },
+    )
+    catalog.upsert_report_runner_policy(
+        "ERP_DEMO",
+        "АнализСебестоимости",
+        "Основной",
+        preferred_runner="ui",
+        api_enabled=True,
+        ui_enabled=True,
+        reason="Пользователь выбрал UI для точного табличного результата",
+        updated_by="operator",
+    )
+    catalog.upsert_report_ui_strategy(
+        "ERP_DEMO",
+        "АнализСебестоимости",
+        "Основной",
+        {"open": {"mode": "metadata_link", "metadata_path": "Отчет.АнализСебестоимости"}},
+        source="verified",
+    )
+    catalog.upsert_report_ui_strategy(
+        "ERP_DEMO",
+        "АнализСебестоимости",
+        "Основной",
+        {"open": {"mode": "section_command", "section": "Производство", "command": "Анализ себестоимости"}},
+        source="manual",
+    )
+
+    described = catalog.describe_report("ERP_DEMO", title="Анализ себестоимости", variant="Основной")
+
+    assert described["ok"] is True
+    assert described["runner_policy"]["preferred_runner"] == "ui"
+    assert described["runner_policy"]["updated_by"] == "operator"
+    assert described["ui_strategy"]["source"] == "manual"
+    assert described["ui_strategy"]["strategy"]["open"]["mode"] == "section_command"
+
+
 def test_catalog_reports_variant_status_from_variant_strategy(tmp_path):
     catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
     catalog.replace_analysis(

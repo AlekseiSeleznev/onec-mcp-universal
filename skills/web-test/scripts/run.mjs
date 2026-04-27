@@ -119,6 +119,7 @@ async function executeScript(code, { noRecord } = {}) {
     }
     exports.writeFileSync = writeFileSync;
     exports.readFileSync = readFileSync;
+    exports.unlinkSync = unlinkSync;
 
     // --no-record: stub recording/narration functions to return safe defaults
     if (noRecord) {

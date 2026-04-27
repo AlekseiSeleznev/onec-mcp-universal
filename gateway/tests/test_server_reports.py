@@ -52,6 +52,31 @@ def test_dashboard_reports_api_delegates_validate_contracts(test_client):
     assert resp.json()["counts"]["matched"] == 1
 
 
+def test_dashboard_reports_api_delegates_runner_policy_and_ui_strategy(test_client):
+    calls = []
+
+    async def fake_handler(name, arguments, **kwargs):
+        calls.append((name, arguments))
+        return json.dumps({"ok": True, "name": name}, ensure_ascii=False)
+
+    with _patch_report_handler(fake_handler):
+        policy_resp = test_client.post("/api/reports/runner-policy", json={"database": "Z01", "report": "Отчет"})
+        save_policy_resp = test_client.post("/api/reports/set-runner-policy", json={"database": "Z01", "report": "Отчет", "preferred_runner": "ui"})
+        strategy_resp = test_client.post("/api/reports/ui-strategy", json={"database": "Z01", "report": "Отчет"})
+        save_strategy_resp = test_client.post("/api/reports/set-ui-strategy", json={"database": "Z01", "report": "Отчет", "strategy": {}})
+
+    assert policy_resp.status_code == 200
+    assert save_policy_resp.status_code == 200
+    assert strategy_resp.status_code == 200
+    assert save_strategy_resp.status_code == 200
+    assert [name for name, _ in calls] == [
+        "get_report_runner_policy",
+        "set_report_runner_policy",
+        "get_report_ui_strategy",
+        "set_report_ui_strategy",
+    ]
+
+
 def test_dashboard_reports_api_wraps_non_json_handler_response(test_client):
     async def fake_handler(name, arguments, **kwargs):
         return "plain error"

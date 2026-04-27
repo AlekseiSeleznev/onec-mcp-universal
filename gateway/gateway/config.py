@@ -114,6 +114,7 @@ class Settings(BaseSettings):
     report_ui_export_format: str = "xlsx"
     report_ui_keep_error_artifacts: bool = False
     report_ui_runner_script: str = "skills/web-test/scripts/run.mjs"
+    report_ui_runner_url: str = ""
     report_ui_web_url_template: str = "http://localhost:9090/{database}/ru/"
     report_ui_artifacts_dir: str = "/data/report-ui-artifacts/tmp"
 

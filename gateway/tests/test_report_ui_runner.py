@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from gateway.report_catalog import ReportCatalog
-from gateway.report_ui_runner import ReportUiRunner
+from gateway.report_ui_runner import WebTestHttpReportClient, ReportUiRunner, _ui_fields
 from gateway.tests.test_report_result_extractor import _write_xlsx
 
 
@@ -128,3 +128,128 @@ async def test_ui_runner_passes_saved_ui_strategy_to_client(tmp_path):
 
     assert client.calls[0]["ui_strategy"]["open"]["metadata_path"] == "Отчет.АнализСебестоимости"
     assert client.calls[0]["ui_strategy"]["parameter_map"]["Организация"] == "Организация"
+
+
+def test_ui_fields_format_dates_and_skip_implicit_combined_period():
+    fields = _ui_fields(
+        {"start": "2024-04-01", "end": "2024-04-30"},
+        {"Организация": "Металл-Сервис"},
+        {},
+        {
+            "parameter_map": {
+                "start": "Период1ДатаНачала",
+                "end": "Период1ДатаОкончания",
+                "Организация": "КомпоновщикНастроекПользовательскиеНастройкиЭлемент7Значение",
+            }
+        },
+    )
+
+    assert fields == {
+        "Период1ДатаНачала": "01.04.2024",
+        "Период1ДатаОкончания": "30.04.2024",
+        "КомпоновщикНастроекПользовательскиеНастройкиЭлемент7Значение": "Металл-Сервис",
+    }
+    assert "Период" not in fields
+
+
+def test_ui_fields_use_explicit_combined_period_mapping_only():
+    fields = _ui_fields(
+        {"start": "2024-04-01", "end": "2024-04-30"},
+        {},
+        {},
+        {"parameter_map": {"period": "Период"}},
+    )
+
+    assert fields["Период"] == "01.04.2024 - 30.04.2024"
+
+
+@pytest.mark.asyncio
+async def test_ui_runner_persists_successful_strategy_as_verified(tmp_path):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP_DEMO",
+        "/projects/ERP_DEMO",
+        {
+            "reports": [
+                {
+                    "name": "АнализСебестоимости",
+                    "aliases": [{"alias": "Анализ себестоимости"}],
+                }
+            ]
+        },
+    )
+    source_xlsx = tmp_path / "source.xlsx"
+    _write_xlsx(source_xlsx, [["Материал", "Стоимость затрат"], ["Лист", 5000]])
+
+    class FakeClient:
+        async def export_report(self, **kwargs):
+            Path(kwargs["artifact_path"]).write_bytes(source_xlsx.read_bytes())
+            return {"ok": True, "artifact_path": kwargs["artifact_path"], "artifact_format": "xlsx"}
+
+    result = await ReportUiRunner(catalog=catalog, client=FakeClient(), artifacts_dir=tmp_path / "tmp").run_report(
+        database="ERP_DEMO",
+        title="Анализ себестоимости",
+        period={"start": "2024-04-01", "end": "2024-04-30"},
+        filters={"Организация": "Металл-Сервис"},
+        export_format="xlsx",
+    )
+    strategy = catalog.get_report_ui_strategy("ERP_DEMO", "АнализСебестоимости", "")
+
+    assert result["ok"] is True
+    assert strategy["source"] == "verified"
+    assert strategy["strategy"]["open"]["metadata_path"] == "Отчет.АнализСебестоимости"
+    assert strategy["strategy"]["parameter_map"]["Организация"] == "Организация"
+
+
+@pytest.mark.asyncio
+async def test_http_ui_client_writes_returned_artifact_base64(tmp_path, monkeypatch):
+    import base64
+    import json
+
+    payload = b"artifact-bytes"
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "ok": True,
+                "output": "REPORT_UI_EXPORT_JSON=" + json.dumps(
+                    {
+                        "artifact_format": "xlsx",
+                        "artifact_base64": base64.b64encode(payload).decode("ascii"),
+                    }
+                )
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            self.kwargs = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, content, headers):
+            assert url == "http://127.0.0.1:40785/exec"
+            assert "returnArtifactBase64" in content
+            return FakeResponse()
+
+    monkeypatch.setattr("gateway.report_ui_runner.httpx.AsyncClient", FakeAsyncClient)
+    target = tmp_path / "report.xlsx"
+
+    result = await WebTestHttpReportClient("http://127.0.0.1:40785").export_report(
+        database="ERP_DEMO",
+        report="Отчет",
+        artifact_path=str(target),
+        export_format="xlsx",
+        ui_strategy={},
+    )
+
+    assert result["ok"] is True
+    assert result["artifact_path"] == str(target)
+    assert target.read_bytes() == payload
+    assert "artifact_base64" not in result

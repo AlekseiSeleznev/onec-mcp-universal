@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import subprocess
 from pathlib import Path
 from typing import Protocol
+
+import httpx
 
 from .report_catalog import ReportCatalog
 from .report_contracts import build_verified_output_contract, compare_output_contract
@@ -62,12 +65,7 @@ class WebTestReportClient:
             return {"ok": False, "error_code": "ui_runner_failed", "error": proc.stdout.strip()}
         if not payload.get("ok"):
             return {"ok": False, "error_code": "ui_runner_failed", "error": payload.get("error") or payload.get("output") or "web-test failed", "diagnostics": payload}
-        marker = "REPORT_UI_EXPORT_JSON="
-        for line in str(payload.get("output") or "").splitlines():
-            if line.startswith(marker):
-                exported = json.loads(line[len(marker):])
-                return {"ok": True, **exported, "diagnostics": {"web_test": payload}}
-        return {"ok": False, "error_code": "ui_export_failed", "error": "web-test did not report exported artifact", "diagnostics": payload}
+        return _parse_web_test_export_payload(payload)
 
     async def _ensure_session(self, database: str) -> None:
         status = await asyncio.to_thread(
@@ -82,7 +80,7 @@ class WebTestReportClient:
             payload = json.loads(status.stdout)
         except json.JSONDecodeError:
             payload = {}
-        if payload.get("ok") and payload.get("connected"):
+        if payload.get("ok") and (payload.get("connected") or payload.get("port")):
             return
         url = self.web_url_template.format(database=database)
         subprocess.Popen(
@@ -107,7 +105,7 @@ class WebTestReportClient:
                 payload = json.loads(status.stdout)
             except json.JSONDecodeError:
                 payload = {}
-            if payload.get("ok") and payload.get("connected"):
+            if payload.get("ok") and (payload.get("connected") or payload.get("port")):
                 return
         raise TimeoutError(f"UI web-test session did not start for {database}")
 
@@ -118,9 +116,61 @@ class WebTestReportClient:
         export_settings = ui_strategy.get("export") if isinstance(ui_strategy.get("export"), dict) else {}
         export_format = str(export_settings.get("format") or kwargs.get("export_format") or "xlsx")
         fields = _ui_fields(kwargs.get("period") or {}, kwargs.get("filters") or {}, kwargs.get("params") or {}, ui_strategy)
-        return f"""
+        return _build_web_test_export_script(report, artifact_path, export_format, fields, ui_strategy, return_artifact_base64=False)
+
+
+class WebTestHttpReportClient(WebTestReportClient):
+    """Use an already-running web-test HTTP session from the gateway container."""
+
+    def __init__(self, base_url: str):
+        super().__init__()
+        self.base_url = base_url.rstrip("/")
+
+    async def export_report(self, **kwargs) -> dict:
+        artifact_path = str(kwargs.get("artifact_path") or "")
+        script = self._build_http_script(kwargs)
+        async with httpx.AsyncClient(timeout=max(60, float(kwargs.get("timeout_seconds") or 60))) as client:
+            response = await client.post(
+                self.base_url + "/exec",
+                content=script,
+                headers={"Content-Type": "text/plain; charset=utf-8", "X-No-Record": "1"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        parsed = _parse_web_test_export_payload(payload)
+        if not parsed.get("ok"):
+            return parsed
+        artifact_base64 = str(parsed.pop("artifact_base64", "") or "")
+        if artifact_base64:
+            target = Path(artifact_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(base64.b64decode(artifact_base64))
+            parsed["artifact_path"] = str(target)
+        return parsed
+
+    def _build_http_script(self, kwargs: dict) -> str:
+        report = str(kwargs.get("report") or "")
+        artifact_path = "/tmp/onec-report-ui-export"
+        ui_strategy = kwargs.get("ui_strategy") if isinstance(kwargs.get("ui_strategy"), dict) else {}
+        export_settings = ui_strategy.get("export") if isinstance(ui_strategy.get("export"), dict) else {}
+        export_format = str(export_settings.get("format") or kwargs.get("export_format") or "xlsx")
+        fields = _ui_fields(kwargs.get("period") or {}, kwargs.get("filters") or {}, kwargs.get("params") or {}, ui_strategy)
+        return _build_web_test_export_script(report, artifact_path + "." + export_format, export_format, fields, ui_strategy, return_artifact_base64=True)
+
+
+def _build_web_test_export_script(
+    report: str,
+    artifact_path: str,
+    export_format: str,
+    fields: dict,
+    ui_strategy: dict,
+    *,
+    return_artifact_base64: bool,
+) -> str:
+    return f"""
 const artifactPath = {json.dumps(artifact_path, ensure_ascii=False)};
 const uiStrategy = {json.dumps(ui_strategy, ensure_ascii=False)};
+const returnArtifactBase64 = {json.dumps(bool(return_artifact_base64))};
 const openStrategy = uiStrategy.open || {{}};
 if (openStrategy.mode === 'section_command' && openStrategy.section && openStrategy.command) {{
   await navigateSection(openStrategy.section);
@@ -140,8 +190,23 @@ if (typeof exportSpreadsheet !== 'function') {{
   throw new Error('exportSpreadsheet is not available in web-test browser layer');
 }}
 const exported = await exportSpreadsheet({json.dumps(export_format)}, artifactPath);
+if (returnArtifactBase64 && exported.artifact_path) {{
+  exported.artifact_base64 = readFileSync(exported.artifact_path).toString('base64');
+  try {{ unlinkSync(exported.artifact_path); }} catch (e) {{}}
+}}
 console.log('REPORT_UI_EXPORT_JSON=' + JSON.stringify(exported));
 """
+
+
+def _parse_web_test_export_payload(payload: dict) -> dict:
+    if not payload.get("ok"):
+        return {"ok": False, "error_code": "ui_runner_failed", "error": payload.get("error") or payload.get("output") or "web-test failed", "diagnostics": payload}
+    marker = "REPORT_UI_EXPORT_JSON="
+    for line in str(payload.get("output") or "").splitlines():
+        if line.startswith(marker):
+            exported = json.loads(line[len(marker):])
+            return {"ok": True, **exported, "diagnostics": {"web_test": payload}}
+    return {"ok": False, "error_code": "ui_export_failed", "error": "web-test did not report exported artifact", "diagnostics": payload}
 
 
 class ReportUiRunner:
@@ -258,6 +323,14 @@ class ReportUiRunner:
         if comparison.get("matched") or comparison.get("acceptable_with_verified"):
             verified_contract = build_verified_output_contract(observed_signature, strategy_name=f"ui_{export_format}_runner")
             self.catalog.upsert_output_contract(database, report_name, variant_key, "verified", verified_contract)
+            if hasattr(self.catalog, "upsert_report_ui_strategy"):
+                self.catalog.upsert_report_ui_strategy(
+                    database,
+                    report_name,
+                    variant_key,
+                    ui_strategy.get("strategy") or {},
+                    source="verified",
+                )
         self.catalog.finish_run(database, run_id, status="done", result=extracted, diagnostics=diagnostics)
         result = {
             "ok": True,
@@ -287,15 +360,28 @@ def _ui_fields(period: dict, filters: dict, params: dict, ui_strategy: dict | No
     if isinstance(ui_strategy, dict) and isinstance(ui_strategy.get("parameter_map"), dict):
         parameter_map = dict(ui_strategy.get("parameter_map") or {})
     fields: dict[str, object] = {}
-    if period.get("start"):
-        fields[str(parameter_map.get("start") or "Начало периода")] = period["start"]
-    if period.get("end"):
-        fields[str(parameter_map.get("end") or "Конец периода")] = period["end"]
-    if period.get("start") and period.get("end"):
-        fields[str(parameter_map.get("period") or "Период")] = f"{period['start']} - {period['end']}"
+    start_value = _format_ui_date(period.get("start") or period.get("from"))
+    end_value = _format_ui_date(period.get("end") or period.get("to"))
+    if start_value:
+        fields[str(parameter_map.get("start") or "Начало периода")] = start_value
+    if end_value:
+        fields[str(parameter_map.get("end") or "Конец периода")] = end_value
+    if start_value and end_value and parameter_map.get("period"):
+        fields[str(parameter_map["period"])] = f"{start_value} - {end_value}"
     fields.update({str(parameter_map.get(str(k)) or k): v for k, v in params.items() if v not in (None, "")})
     fields.update({str(parameter_map.get(str(k)) or k): v for k, v in filters.items() if v not in (None, "")})
     return fields
+
+
+def _format_ui_date(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if len(text) == 10 and text[4] == "-" and text[7] == "-":
+        year, month, day = text.split("-")
+        if year.isdigit() and month.isdigit() and day.isdigit():
+            return f"{day}.{month}.{year}"
+    return text
 
 
 def _resolved_ui_strategy(catalog: ReportCatalog, database: str, report_name: str, variant_key: str, export_format: str) -> dict:

@@ -1248,6 +1248,25 @@ async function dblclickAndVerify(coords, selFormNum, fieldName) {
     return [...document.querySelectorAll('[id^="' + p + '"]')].some(el => el.offsetWidth > 0);
   })()`);
   if (stillOpen) {
+    // Some 1C selection dialogs are checkbox lists. Enter toggles the row but
+    // does not close the dialog, so confirm the current selection with OK.
+    const okButton = await page.evaluate(`(() => {
+      const p = 'form${selFormNum}_';
+      const buttons = [...document.querySelectorAll('a.press[id^="' + p + '"]')].filter(el => el.offsetWidth > 0);
+      const ok = buttons.find(el => el.id === p + 'OK' || (el.innerText || '').trim().toLowerCase() === 'ok' || (el.innerText || '').trim().toLowerCase() === 'ок');
+      if (!ok) return null;
+      const r = ok.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`);
+    if (okButton?.x) {
+      await page.mouse.click(okButton.x, okButton.y);
+      await waitForStable(selFormNum);
+      const closedAfterOk = await page.evaluate(`(() => {
+        const p = 'form${selFormNum}_';
+        return ![...document.querySelectorAll('[id^="' + p + '"]')].some(el => el.offsetWidth > 0);
+      })()`);
+      if (closedAfterOk) return { field: fieldName, ok: true, method: 'form_checkbox' };
+    }
     // Enter didn't select — item is likely a non-selectable group.
     // Don't Escape here — let the caller decide (may want to try another row).
     return { field: fieldName, ok: false, reason: 'still_open' };

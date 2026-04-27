@@ -44,6 +44,7 @@ services:
       REPORT_UI_FALLBACK_ENABLED: ${REPORT_UI_FALLBACK_ENABLED:-false}
       REPORT_UI_EXPORT_FORMAT: ${REPORT_UI_EXPORT_FORMAT:-xlsx}
       REPORT_UI_KEEP_ERROR_ARTIFACTS: ${REPORT_UI_KEEP_ERROR_ARTIFACTS:-false}
+      REPORT_UI_RUNNER_URL: ${REPORT_UI_RUNNER_URL:-}
     volumes:
       - gw-data:/data
       - ./.env:/data/.env:ro

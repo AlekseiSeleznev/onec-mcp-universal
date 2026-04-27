@@ -348,7 +348,9 @@ class ReportCatalog:
         if not resolved["ok"]:
             return resolved
         report_name = resolved["report"]["report"]
-        variant_key = resolved["report"].get("variant", "")
+        variant_key = str(variant or resolved["report"].get("variant", "") or "")
+        if variant_key and not resolved["report"].get("variant"):
+            resolved = {**resolved, "report": {**resolved["report"], "variant": variant_key}}
         output_contracts = self._fetch_output_contracts(database, report_name, variant_key)
         return {
             **resolved,
@@ -361,6 +363,8 @@ class ReportCatalog:
                 if output_contracts else {}
             ),
             "last_contract_validation": self.get_latest_contract_validation(database, report_name, variant_key),
+            "runner_policy": self.get_report_runner_policy(database, report_name, variant_key),
+            "ui_strategy": self.get_report_ui_strategy(database, report_name, variant_key),
             "docs": self.get_report_docs(database, report_name, variant_key),
         }
 
@@ -948,7 +952,13 @@ class ReportCatalog:
                 """
                 SELECT * FROM report_ui_strategies
                 WHERE db_slug = ? AND report_name = ? AND variant_key = ?
-                ORDER BY CASE source WHEN 'verified' THEN 0 ELSE 1 END, updated_at DESC
+                ORDER BY CASE source
+                    WHEN 'manual' THEN 0
+                    WHEN 'verified' THEN 1
+                    WHEN 'learned' THEN 2
+                    WHEN 'declared' THEN 3
+                    ELSE 9
+                END, updated_at DESC
                 """,
                 (database, report_name, variant_key or ""),
             ).fetchall()
@@ -957,7 +967,13 @@ class ReportCatalog:
                     """
                     SELECT * FROM report_ui_strategies
                     WHERE db_slug = ? AND report_name = ? AND variant_key = ''
-                    ORDER BY CASE source WHEN 'verified' THEN 0 ELSE 1 END, updated_at DESC
+                    ORDER BY CASE source
+                        WHEN 'manual' THEN 0
+                        WHEN 'verified' THEN 1
+                        WHEN 'learned' THEN 2
+                        WHEN 'declared' THEN 3
+                        ELSE 9
+                    END, updated_at DESC
                     """,
                     (database, report_name),
                 ).fetchall()

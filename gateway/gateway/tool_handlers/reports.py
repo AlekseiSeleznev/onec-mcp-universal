@@ -19,7 +19,7 @@ from ..report_fixtures import ReportFixtureProvider
 from ..report_orchestrator import ReportEngineSettings, ReportOrchestrator
 from ..report_result_extractor import ReportResultExtractor
 from ..report_runner import ReportRunner, ToolkitReportTransport
-from ..report_ui_runner import ReportUiRunner, WebTestReportClient
+from ..report_ui_runner import ReportUiRunner, WebTestHttpReportClient, WebTestReportClient
 
 
 REPORT_TOOL_NAMES = {
@@ -28,6 +28,10 @@ REPORT_TOOL_NAMES = {
     "find_reports",
     "list_reports",
     "describe_report",
+    "get_report_runner_policy",
+    "set_report_runner_policy",
+    "get_report_ui_strategy",
+    "set_report_ui_strategy",
     "run_report",
     "validate_all_reports",
     "validate_report_contracts",
@@ -166,6 +170,65 @@ def report_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="get_report_runner_policy",
+            description="Return stored API/UI runner policy for one report or variant.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "database": {"type": "string"},
+                    "report": {"type": "string"},
+                    "variant": {"type": "string", "default": ""},
+                },
+                "required": ["database", "report"],
+            },
+        ),
+        Tool(
+            name="set_report_runner_policy",
+            description="Persist API/UI runner preference for one report or variant.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "database": {"type": "string"},
+                    "report": {"type": "string"},
+                    "variant": {"type": "string", "default": ""},
+                    "preferred_runner": {"type": "string", "enum": ["", "api", "ui", "auto"], "default": ""},
+                    "api_enabled": {"type": "boolean", "default": True},
+                    "ui_enabled": {"type": "boolean", "default": False},
+                    "reason": {"type": "string", "default": ""},
+                    "updated_by": {"type": "string", "default": ""},
+                },
+                "required": ["database", "report"],
+            },
+        ),
+        Tool(
+            name="get_report_ui_strategy",
+            description="Return stored web-client launch/export recipe for one report or variant.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "database": {"type": "string"},
+                    "report": {"type": "string"},
+                    "variant": {"type": "string", "default": ""},
+                },
+                "required": ["database", "report"],
+            },
+        ),
+        Tool(
+            name="set_report_ui_strategy",
+            description="Persist exact web-client launch/export recipe for one report or variant.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "database": {"type": "string"},
+                    "report": {"type": "string"},
+                    "variant": {"type": "string", "default": ""},
+                    "source": {"type": "string", "default": "manual"},
+                    "strategy": {"type": "object"},
+                },
+                "required": ["database", "report", "strategy"],
+            },
+        ),
+        Tool(
             name="run_report",
             description="Run a 1C report by accountant-facing title or exact technical report name against an explicit database.",
             inputSchema={
@@ -298,6 +361,70 @@ async def try_handle_report_tool(
             report=arguments.get("report"),
             variant=arguments.get("variant"),
         ))
+    if name == "get_report_runner_policy":
+        report_name = str(arguments.get("report") or "").strip()
+        return _dump({
+            "ok": True,
+            "database": database,
+            "report": report_name,
+            "variant": str(arguments.get("variant") or ""),
+            "policy": catalog.get_report_runner_policy(database, report_name, str(arguments.get("variant") or "")),
+        })
+    if name == "set_report_runner_policy":
+        report_name = str(arguments.get("report") or "").strip()
+        variant_key = str(arguments.get("variant") or "")
+        try:
+            catalog.upsert_report_runner_policy(
+                database,
+                report_name,
+                variant_key,
+                preferred_runner=str(arguments.get("preferred_runner") or ""),
+                api_enabled=bool(arguments.get("api_enabled", True)),
+                ui_enabled=bool(arguments.get("ui_enabled", False)),
+                reason=str(arguments.get("reason") or ""),
+                updated_by=str(arguments.get("updated_by") or ""),
+            )
+        except ValueError as exc:
+            return _dump({"ok": False, "error_code": "invalid_runner_policy", "error": str(exc)})
+        return _dump({
+            "ok": True,
+            "database": database,
+            "report": report_name,
+            "variant": variant_key,
+            "policy": catalog.get_report_runner_policy(database, report_name, variant_key),
+        })
+    if name == "get_report_ui_strategy":
+        report_name = str(arguments.get("report") or "").strip()
+        variant_key = str(arguments.get("variant") or "")
+        ui_strategy = catalog.get_report_ui_strategy(database, report_name, variant_key)
+        return _dump({
+            "ok": True,
+            "database": database,
+            "report": report_name,
+            "variant": variant_key,
+            "has_strategy": bool(ui_strategy),
+            "ui_strategy": ui_strategy,
+        })
+    if name == "set_report_ui_strategy":
+        report_name = str(arguments.get("report") or "").strip()
+        variant_key = str(arguments.get("variant") or "")
+        strategy_payload = arguments.get("strategy")
+        if not isinstance(strategy_payload, dict):
+            return _dump({"ok": False, "error_code": "invalid_ui_strategy", "error": "strategy must be an object"})
+        catalog.upsert_report_ui_strategy(
+            database,
+            report_name,
+            variant_key,
+            strategy_payload,
+            source=str(arguments.get("source") or "manual"),
+        )
+        return _dump({
+            "ok": True,
+            "database": database,
+            "report": report_name,
+            "variant": variant_key,
+            "ui_strategy": catalog.get_report_ui_strategy(database, report_name, variant_key),
+        })
     if name == "get_report_result":
         return _dump(catalog.get_report_result(
             database,
@@ -403,9 +530,13 @@ async def try_handle_report_tool(
 def _build_ui_report_runner(catalog: ReportCatalog) -> ReportUiRunner:
     return ReportUiRunner(
         catalog=catalog,
-        client=WebTestReportClient(
-            run_mjs=settings.report_ui_runner_script,
-            web_url_template=settings.report_ui_web_url_template,
+        client=(
+            WebTestHttpReportClient(settings.report_ui_runner_url)
+            if str(settings.report_ui_runner_url or "").strip()
+            else WebTestReportClient(
+                run_mjs=settings.report_ui_runner_script,
+                web_url_template=settings.report_ui_web_url_template,
+            )
         ),
         extractor=ReportResultExtractor(keep_error_artifacts=bool(settings.report_ui_keep_error_artifacts)),
         artifacts_dir=settings.report_ui_artifacts_dir,
