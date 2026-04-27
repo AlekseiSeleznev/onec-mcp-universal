@@ -189,6 +189,8 @@ def build_verified_output_contract(observed: dict[str, Any], *, strategy_name: s
         expected_columns = parts
         break
     if not expected_columns:
+        expected_columns = _meaningful_observed_columns(observed.get("columns") or [])
+    if not expected_columns:
         detail_sample = list(observed.get("detail_sample") or [])
         if detail_sample:
             first = detail_sample[0]
@@ -213,6 +215,21 @@ def build_verified_output_contract(observed: dict[str, Any], *, strategy_name: s
             "artifacts_count": int(observed.get("artifacts_count") or 0),
         },
     }
+
+
+def _meaningful_observed_columns(columns: list[Any]) -> list[str]:
+    result: list[str] = []
+    for value in columns:
+        text = str(value or "").strip()
+        normalized = normalize_report_query(text)
+        if not text or not normalized:
+            continue
+        if re.fullmatch(r"c\d+", normalized):
+            continue
+        if _NUMERIC_RE.match(text.replace(" ", "").replace("\xa0", "")):
+            continue
+        result.append(text)
+    return result if len(result) >= 2 else []
 
 
 def compare_output_contract(expected: dict[str, Any], observed: dict[str, Any]) -> dict[str, Any]:

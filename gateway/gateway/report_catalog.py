@@ -40,6 +40,38 @@ def _json_loads(value: str | None, default: Any) -> Any:
         return default
 
 
+def _select_output_contract_item(items: list[dict]) -> dict:
+    if not items:
+        return {}
+    return next((item for item in items if not _looks_like_value_locked_verified_contract(item, items)), items[0])
+
+
+def _looks_like_value_locked_verified_contract(item: dict, all_items: list[dict]) -> bool:
+    if str(item.get("source") or "") != "verified":
+        return False
+    contract = item.get("contract") if isinstance(item.get("contract"), dict) else {}
+    expected_columns = [str(value or "") for value in contract.get("expected_columns") or []]
+    if not expected_columns:
+        return False
+    declared_columns: set[str] = set()
+    for other in all_items:
+        if str(other.get("source") or "") != "declared":
+            continue
+        other_contract = other.get("contract") if isinstance(other.get("contract"), dict) else {}
+        declared_columns.update(normalize_report_query(value) for value in other_contract.get("expected_columns") or [] if value)
+    numeric_like = 0
+    repeated = len(expected_columns) - len(set(expected_columns))
+    for value in expected_columns:
+        normalized = normalize_report_query(value)
+        if any(char.isdigit() for char in normalized) or "\xa0" in value:
+            numeric_like += 1
+    no_declared_overlap = bool(declared_columns) and not any(normalize_report_query(value) in declared_columns for value in expected_columns)
+    short_verified_shape = len(expected_columns) <= 3
+    if numeric_like <= 0 and repeated <= 1 and not (short_verified_shape and no_declared_overlap):
+        return False
+    return any(str(other.get("source") or "") == "declared" for other in all_items)
+
+
 class ReportCatalog:
     """Persistent multi-database report catalog."""
 
@@ -352,6 +384,7 @@ class ReportCatalog:
         if variant_key and not resolved["report"].get("variant"):
             resolved = {**resolved, "report": {**resolved["report"], "variant": variant_key}}
         output_contracts = self._fetch_output_contracts(database, report_name, variant_key)
+        selected_contract = _select_output_contract_item(output_contracts)
         return {
             **resolved,
             "variants": self._fetch_variants(database, report_name),
@@ -359,8 +392,8 @@ class ReportCatalog:
             "strategies": self._fetch_strategies(database, report_name, variant_key),
             "output_contracts": output_contracts,
             "output_contract": (
-                {**output_contracts[0]["contract"], "source": output_contracts[0]["source"], "hash": output_contracts[0]["hash"]}
-                if output_contracts else {}
+                {**selected_contract["contract"], "source": selected_contract["source"], "hash": selected_contract["hash"]}
+                if selected_contract else {}
             ),
             "last_contract_validation": self.get_latest_contract_validation(database, report_name, variant_key),
             "runner_policy": self.get_report_runner_policy(database, report_name, variant_key),
@@ -1108,6 +1141,7 @@ class ReportCatalog:
             "deferred_context": 0,
             "deferred_unsupported": 0,
             "deferred_engine_gap": 0,
+            "deferred_ui_gap": 0,
             "deferred_analyzer_gap": 0,
             "error": 0,
         }
@@ -1150,7 +1184,7 @@ class ReportCatalog:
                 "error": row["error"],
             }
             items.append(item)
-            if stopper_item is None and terminal_state in {"deferred_engine_gap", "deferred_analyzer_gap", "error"}:
+            if stopper_item is None and terminal_state in {"deferred_engine_gap", "deferred_ui_gap", "deferred_analyzer_gap", "error"}:
                 stopper_item = item
         return {
             "counts": counts,
@@ -1472,30 +1506,38 @@ class ReportCatalog:
         ]
 
     def _preferred_strategy_conn(self, conn: sqlite3.Connection, database: str, report_name: str, variant: str) -> str:
-        row = conn.execute(
+        rows = conn.execute(
             """
-            SELECT contract_json
+            SELECT *
             FROM report_output_contracts
             WHERE db_slug = ? AND report_name = ? AND variant_key = ?
             ORDER BY CASE contract_source WHEN 'verified' THEN 0 ELSE 1 END, updated_at DESC
-            LIMIT 1
             """,
             (database, report_name, variant),
-        ).fetchone()
-        if row is None and not variant:
-            row = conn.execute(
+        ).fetchall()
+        if not rows and not variant:
+            rows = conn.execute(
                 """
-                SELECT contract_json
+                SELECT *
                 FROM report_output_contracts
                 WHERE db_slug = ? AND report_name = ?
                 ORDER BY CASE contract_source WHEN 'verified' THEN 0 ELSE 1 END, updated_at DESC
-                LIMIT 1
                 """,
                 (database, report_name),
-            ).fetchone()
-        if row is None:
+            ).fetchall()
+        items = [
+            {
+                "source": row["contract_source"],
+                "hash": row["contract_hash"],
+                "confidence": row["confidence"],
+                "contract": _json_loads(row["contract_json"], {}),
+            }
+            for row in rows
+        ]
+        selected = _select_output_contract_item(items)
+        if not selected:
             return ""
-        return str(_json_loads(row["contract_json"], {}).get("preferred_strategy") or "")
+        return str((selected.get("contract") or {}).get("preferred_strategy") or "")
 
     def _upsert_output_contract_conn(
         self,

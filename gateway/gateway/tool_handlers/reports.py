@@ -15,7 +15,7 @@ from ..report_analyzer import ReportAnalyzer
 from ..report_catalog import ReportCatalog, normalize_report_query
 from ..report_contracts import build_observed_signature, build_verified_output_contract, compare_output_contract
 from ..report_docs import build_report_doc_query, parse_report_doc_response
-from ..report_fixtures import ReportFixtureProvider
+from ..report_fixtures import ReportFixtureProvider, VALIDATION_WIDE_PERIOD
 from ..report_orchestrator import ReportEngineSettings, ReportOrchestrator
 from ..report_result_extractor import ReportResultExtractor
 from ..report_runner import ReportRunner, ToolkitReportTransport
@@ -41,7 +41,7 @@ REPORT_TOOL_NAMES = {
 }
 
 _DEFAULT_CATALOG: ReportCatalog | None = None
-_VALIDATION_STOP_STATES = {"deferred_engine_gap", "deferred_analyzer_gap", "error"}
+_VALIDATION_STOP_STATES = {"deferred_engine_gap", "deferred_ui_gap", "deferred_analyzer_gap", "error"}
 
 
 def get_default_catalog() -> ReportCatalog:
@@ -282,6 +282,7 @@ def report_tools() -> list[Tool]:
                     "resume_campaign_id": {"type": "string"},
                     "limit": {"type": "integer", "default": 0},
                     "max_targets_per_call": {"type": "integer", "default": 0},
+                    "ui_audit": {"type": "boolean", "default": False},
                     "period": {"type": "object"},
                     "max_rows": {"type": "integer", "default": settings.report_validate_default_max_rows},
                     "timeout_seconds": {"type": "number", "default": settings.report_validate_default_timeout_seconds},
@@ -465,7 +466,21 @@ async def try_handle_report_tool(
         if not getattr(db, "connected", False):
             return _dump({"ok": False, "error_code": "toolkit_not_connected", "error": f"EPF for database '{database}' is not connected"})
         transport = ToolkitReportTransport(manager)
-        runner = ReportRunner(catalog, transport)
+        api_enabled = bool(settings.report_api_runner_enabled)
+        ui_enabled = bool(settings.report_ui_runner_enabled)
+        api_runner = ReportRunner(catalog, transport) if api_enabled else None
+        runner = ReportOrchestrator(
+            catalog=catalog,
+            api_runner=api_runner,
+            ui_runner=_build_ui_report_runner(catalog) if ui_enabled else None,
+            settings=ReportEngineSettings(
+                api_enabled=api_enabled,
+                ui_enabled=ui_enabled,
+                ui_fallback_enabled=bool(settings.report_ui_fallback_enabled),
+                ui_export_format=str(settings.report_ui_export_format or "xlsx"),
+                keep_ui_error_artifacts=bool(settings.report_ui_keep_error_artifacts),
+            ),
+        )
         fixture_provider = ReportFixtureProvider(transport)
         return _dump(await validate_report_contracts(
             database,
@@ -476,6 +491,8 @@ async def try_handle_report_tool(
             resume_campaign_id=str(arguments.get("resume_campaign_id") or ""),
             limit=int(arguments.get("limit") or 0),
             max_targets_per_call=int(arguments.get("max_targets_per_call") or 0),
+            ui_audit=bool(arguments.get("ui_audit", False)),
+            ui_audit_runner=runner if ui_enabled else None,
             period=arguments.get("period"),
             max_rows=_int_arg(arguments, "max_rows", settings.report_validate_default_max_rows),
             timeout_seconds=_float_arg(arguments, "timeout_seconds", float(settings.report_validate_default_timeout_seconds)),
@@ -654,13 +671,15 @@ async def validate_all_reports(
 async def validate_report_contracts(
     database: str,
     catalog: ReportCatalog,
-    runner: ReportRunner,
+    runner,
     fixture_provider: ReportFixtureProvider,
     *,
     stop_on_mismatch: bool = True,
     resume_campaign_id: str = "",
     limit: int = 0,
     max_targets_per_call: int = 0,
+    ui_audit: bool = False,
+    ui_audit_runner=None,
     period: dict | None = None,
     max_rows: int = 5,
     timeout_seconds: float = 60,
@@ -722,6 +741,8 @@ async def validate_report_contracts(
             runner,
             fixture_provider,
             fixture_pack,
+            ui_audit=ui_audit,
+            ui_audit_runner=ui_audit_runner,
             period=period,
             max_rows=max_rows,
             timeout_seconds=timeout_seconds,
@@ -754,6 +775,7 @@ async def validate_report_contracts(
     campaign_snapshot = catalog.summarize_validation_campaign(campaign_id)
     summary = dict(campaign_snapshot.get("summary") or {})
     summary["total_targets"] = len(targets)
+    summary["ui_audit"] = bool(ui_audit)
     status = "stopped" if stopped else ("paused" if batch_limit_reached else "completed")
     catalog.finish_validation_campaign(
         campaign_id,
@@ -804,8 +826,14 @@ def _merge_fixture_packs(existing: dict, refreshed: dict) -> dict:
     base_period = existing.get("period") if isinstance(existing.get("period"), dict) else {}
     new_period = refreshed.get("period") if isinstance(refreshed.get("period"), dict) else {}
     period = {
-        "from": str(new_period.get("from") or base_period.get("from") or "2024-01-01"),
-        "to": str(new_period.get("to") or base_period.get("to") or new_period.get("from") or base_period.get("from") or "2024-12-31"),
+        "from": str(new_period.get("from") or base_period.get("from") or VALIDATION_WIDE_PERIOD["from"]),
+        "to": str(
+            new_period.get("to")
+            or base_period.get("to")
+            or new_period.get("from")
+            or base_period.get("from")
+            or VALIDATION_WIDE_PERIOD["to"]
+        ),
     }
     candidate_periods = []
     seen: set[tuple[str, str]] = set()
@@ -858,10 +886,12 @@ async def _validate_contract_target(
     target: dict,
     described: dict,
     catalog: ReportCatalog,
-    runner: ReportRunner,
+    runner,
     fixture_provider: ReportFixtureProvider,
     fixture_pack: dict,
     *,
+    ui_audit: bool = False,
+    ui_audit_runner=None,
     period: dict | None,
     max_rows: int,
     timeout_seconds: float,
@@ -984,6 +1014,36 @@ async def _validate_contract_target(
             attempt["comparison"] = comparison
             attempts.append(attempt)
             if comparison.get("matched"):
+                diagnostics = {"attempts": attempts, "comparison": comparison}
+                audit = await _run_ui_contract_audit(
+                    enabled=ui_audit,
+                    runner=ui_audit_runner,
+                    database=database,
+                    target=target,
+                    plan=plan,
+                    contract=contract,
+                    max_rows=strategy_max_rows,
+                    timeout_seconds=timeout_seconds,
+                )
+                if audit:
+                    diagnostics["ui_audit"] = audit
+                    if str(audit.get("terminal_state") or "") != "matched":
+                        return {
+                            "database": database,
+                            "report": target["report"],
+                            "variant": target.get("variant", ""),
+                            "title": target.get("title") or target["report"],
+                            "terminal_state": str(audit.get("terminal_state") or "deferred_ui_gap"),
+                            "strategy": f"{strategy.get('strategy')}+ui_audit",
+                            "run_id": str(audit.get("run_id") or result.get("run_id", "")),
+                            "contract_source": chosen_contract["source"],
+                            "contract_hash": contract_hash,
+                            "observed": audit.get("observed") or observed,
+                            "mismatch_code": str(audit.get("mismatch_code") or ""),
+                            "root_cause_class": str(audit.get("root_cause_class") or "ui_gap"),
+                            "diagnostics": diagnostics,
+                            "error": str(audit.get("error") or ""),
+                        }
                 return {
                     "database": database,
                     "report": target["report"],
@@ -997,7 +1057,7 @@ async def _validate_contract_target(
                     "observed": observed,
                     "mismatch_code": "",
                     "root_cause_class": "strategy_ranking" if index > 0 else "",
-                    "diagnostics": {"attempts": attempts, "comparison": comparison},
+                    "diagnostics": diagnostics,
                     "error": "",
                 }
             if comparison.get("acceptable_with_verified"):
@@ -1044,6 +1104,92 @@ async def _validate_contract_target(
         "root_cause_class": root_cause_class,
         "diagnostics": {"attempts": attempts},
         "error": error,
+    }
+
+
+async def _run_ui_contract_audit(
+    *,
+    enabled: bool,
+    runner,
+    database: str,
+    target: dict,
+    plan: dict,
+    contract: dict,
+    max_rows: int,
+    timeout_seconds: float,
+) -> dict:
+    if not enabled:
+        return {}
+    if runner is None:
+        return {
+            "enabled": True,
+            "ok": False,
+            "terminal_state": "deferred_ui_gap",
+            "root_cause_class": "ui_gap",
+            "mismatch_code": "ui_runner_unavailable",
+            "error": "UI audit requested, but UI runner is unavailable.",
+        }
+    try:
+        result = await runner.run_report(
+            database=database,
+            report=target["report"],
+            variant=target.get("variant", ""),
+            period=plan.get("period"),
+            filters=dict(plan.get("filters") or {}),
+            params=dict(plan.get("params") or {}),
+            context=dict(plan.get("context") or {}),
+            strategy="auto",
+            runner="ui",
+            wait=True,
+            max_rows=max_rows,
+            timeout_seconds=timeout_seconds,
+        )
+    except TypeError as exc:
+        return {
+            "enabled": True,
+            "ok": False,
+            "terminal_state": "deferred_ui_gap",
+            "root_cause_class": "ui_gap",
+            "mismatch_code": "ui_runner_unavailable",
+            "error": f"UI audit runner does not support explicit UI execution: {exc}",
+        }
+    except Exception as exc:
+        return {
+            "enabled": True,
+            "ok": False,
+            "terminal_state": "deferred_ui_gap",
+            "root_cause_class": "ui_gap",
+            "mismatch_code": "ui_runner_failed",
+            "error": str(exc),
+        }
+    audit = {
+        "enabled": True,
+        "ok": bool(result.get("ok")),
+        "run_id": str(result.get("run_id") or ""),
+        "runner_used": str(result.get("runner_used") or "ui"),
+        "extractor_used": str(result.get("extractor_used") or ""),
+        "error_code": str(result.get("error_code") or ""),
+        "fallback_used": bool(result.get("fallback_used")),
+    }
+    if not result.get("ok"):
+        return {
+            **audit,
+            "terminal_state": "deferred_ui_gap",
+            "root_cause_class": "ui_gap",
+            "mismatch_code": str(result.get("error_code") or "ui_runner_failed"),
+            "error": str(result.get("error") or result.get("message") or "UI audit failed."),
+        }
+    observed = result.get("observed_signature") or build_observed_signature(result)
+    comparison = compare_output_contract(contract, observed) if contract else {"matched": True, "mismatch_code": "", "acceptable_with_verified": False, "score": 1.0}
+    audit = {**audit, "observed": observed, "comparison": comparison}
+    if comparison.get("matched") or comparison.get("acceptable_with_verified"):
+        return {**audit, "terminal_state": "matched", "mismatch_code": "", "root_cause_class": "", "error": ""}
+    return {
+        **audit,
+        "terminal_state": "deferred_ui_gap",
+        "root_cause_class": "ui_gap",
+        "mismatch_code": str(comparison.get("mismatch_code") or "semantic_mismatch"),
+        "error": "UI result did not match the output contract.",
     }
 
 

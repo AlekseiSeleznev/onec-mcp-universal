@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from gateway.report_catalog import ReportCatalog
-from gateway.report_ui_runner import WebTestHttpReportClient, ReportUiRunner, _ui_fields
+from gateway.report_ui_runner import WebTestHttpReportClient, ReportUiRunner, _build_web_test_export_script, _ui_fields
 from gateway.tests.test_report_result_extractor import _write_xlsx
 
 
@@ -128,6 +128,7 @@ async def test_ui_runner_passes_saved_ui_strategy_to_client(tmp_path):
 
     assert client.calls[0]["ui_strategy"]["open"]["metadata_path"] == "Отчет.АнализСебестоимости"
     assert client.calls[0]["ui_strategy"]["parameter_map"]["Организация"] == "Организация"
+    assert client.calls[0]["ui_strategy"]["strict_fields"] is True
 
 
 def test_ui_fields_format_dates_and_skip_implicit_combined_period():
@@ -198,7 +199,30 @@ def test_ui_runner_default_strategy_uses_common_1c_period_fields(tmp_path):
 
     assert client.calls[0]["ui_strategy"]["parameter_map"]["start"] == "Период1ДатаНачала"
     assert client.calls[0]["ui_strategy"]["parameter_map"]["end"] == "Период1ДатаОкончания"
+    assert client.calls[0]["ui_strategy"]["strict_fields"] is False
     assert client.calls[0]["filters"] == {"Организация": "Металл-Сервис"}
+
+
+def test_web_test_script_uses_soft_field_fill_with_get_page_for_default_strategy():
+    script = _build_web_test_export_script(
+        "АнализСебестоимости",
+        "/tmp/report.xlsx",
+        "xlsx",
+        {"Период1ДатаНачала": "01.04.2024"},
+        {"strict_fields": False},
+        return_artifact_base64=True,
+    )
+
+    assert "const page = typeof getPage === 'function' ? getPage() : null;" in script
+    assert "async function closeTransientLinkDialogs()" in script
+    assert "async function navigateReportLink(metadataPath)" in script
+    assert "CurrentUrlContent" in script
+    assert "await fillFields({ CurrentUrlContent: link });" in script
+    assert "await clickElement('Перейти');" in script
+    assert "await closeForm({ save: false });" in script
+    assert "const strictFields = uiStrategy.strict_fields !== false;" in script
+    assert "REPORT_UI_FILL_WARNING=" in script
+    assert "if (page) try { await page.keyboard.press('Escape'); }" in script
 
 
 @pytest.mark.asyncio

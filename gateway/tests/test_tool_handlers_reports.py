@@ -71,6 +71,7 @@ def test_report_tools_require_explicit_database():
     assert "database" in schemas["validate_report_contracts"]["required"]
     assert "context" in schemas["run_report"]["properties"]
     assert "runner" in schemas["run_report"]["properties"]
+    assert "ui_audit" in schemas["validate_report_contracts"]["properties"]
     assert "database" in schemas["get_report_runner_policy"]["required"]
     assert "report" in schemas["get_report_runner_policy"]["required"]
     assert "preferred_runner" in schemas["set_report_runner_policy"]["properties"]
@@ -635,6 +636,159 @@ async def test_validate_report_contracts_is_variant_aware_and_persists_campaign(
     assert [item["variant"] for item in payload["items"]] == ["A", "B"]
     campaign = catalog.get_validation_campaign(payload["campaign_id"])
     assert campaign["items"][0]["terminal_state"] == "matched"
+
+
+@pytest.mark.asyncio
+async def test_validate_report_contracts_uses_ui_fallback_from_handler(tmp_path, registry, monkeypatch):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "Z01",
+        "/projects/Z01",
+        {
+            "reports": [
+                {
+                    "name": "Отчет",
+                    "aliases": [{"alias": "Отчет", "variant": "Основной", "confidence": 1.0}],
+                    "variants": [{"key": "Основной", "presentation": "Отчет"}],
+                    "strategies": [{"strategy": "raw_skd_runner", "variant": "Основной", "priority": 50, "confidence": 0.8}],
+                    "output_contracts": [
+                        {
+                            "variant": "Основной",
+                            "source": "declared",
+                            "contract": {
+                                "output_type": "rows",
+                                "expects_detail_rows": True,
+                                "confidence": "high",
+                                "confidence_score": 0.9,
+                                "expected_columns": ["Сумма"],
+                            },
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    class HeaderOnlyBackend:
+        async def call_tool(self, name, arguments):
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=json.dumps({"columns": ["C1"], "rows": [{"C1": "Заголовок"}], "totals": {}, "metadata": {}}),
+                    )
+                ]
+            )
+
+    class HeaderOnlyManager:
+        def get_db_backend(self, db_name, role):
+            return HeaderOnlyBackend() if db_name == "Z01" and role == "toolkit" else None
+
+    class FakeUiRunner:
+        def __init__(self):
+            self.calls = []
+
+        async def run_report(self, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "ok": True,
+                "run_id": "ui-run",
+                "runner_used": "ui",
+                "extractor_used": "xlsx_export",
+                "columns": ["Сумма"],
+                "rows": [{"Сумма": "1"}],
+                "output_type": "rows",
+                "contract_validation": {"matched": True},
+            }
+
+    fake_ui = FakeUiRunner()
+    monkeypatch.setattr(reports_mod.settings, "report_api_runner_enabled", True)
+    monkeypatch.setattr(reports_mod.settings, "report_ui_runner_enabled", True)
+    monkeypatch.setattr(reports_mod.settings, "report_ui_fallback_enabled", True)
+    monkeypatch.setattr(reports_mod, "_build_ui_report_runner", lambda catalog: fake_ui)
+
+    payload = json.loads(await try_handle_report_tool(
+        "validate_report_contracts",
+        {"database": "Z01", "limit": 1, "max_rows": 1, "stop_on_mismatch": False},
+        registry=registry,
+        manager=HeaderOnlyManager(),
+        catalog=catalog,
+    ))
+
+    assert payload["ok"] is True
+    assert payload["counts"]["matched"] == 1
+    assert fake_ui.calls
+    assert payload["items"][0]["run_id"] == "ui-run"
+
+
+@pytest.mark.asyncio
+async def test_validate_report_contracts_ui_audit_runs_after_api_match(tmp_path, registry, monkeypatch):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "Z01",
+        "/projects/Z01",
+        {
+            "reports": [
+                {
+                    "name": "Отчет",
+                    "aliases": [{"alias": "Отчет", "variant": "Основной", "confidence": 1.0}],
+                    "variants": [{"key": "Основной", "presentation": "Отчет"}],
+                    "strategies": [{"strategy": "raw_skd_runner", "variant": "Основной", "priority": 50, "confidence": 0.8}],
+                    "output_contracts": [
+                        {
+                            "variant": "Основной",
+                            "source": "declared",
+                            "contract": {
+                                "output_type": "rows",
+                                "expects_detail_rows": True,
+                                "confidence": "high",
+                                "confidence_score": 0.9,
+                                "expected_columns": ["A"],
+                            },
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    class FakeUiRunner:
+        def __init__(self):
+            self.calls = []
+
+        async def run_report(self, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "ok": True,
+                "run_id": "ui-audit-run",
+                "runner_used": "ui",
+                "extractor_used": "xlsx_export",
+                "columns": ["A"],
+                "rows": [{"A": "1"}],
+                "output_type": "rows",
+                "contract_validation": {"matched": True},
+            }
+
+    fake_ui = FakeUiRunner()
+    monkeypatch.setattr(reports_mod.settings, "report_api_runner_enabled", True)
+    monkeypatch.setattr(reports_mod.settings, "report_ui_runner_enabled", True)
+    monkeypatch.setattr(reports_mod.settings, "report_ui_fallback_enabled", True)
+    monkeypatch.setattr(reports_mod, "_build_ui_report_runner", lambda catalog: fake_ui)
+
+    payload = json.loads(await try_handle_report_tool(
+        "validate_report_contracts",
+        {"database": "Z01", "limit": 1, "max_rows": 1, "stop_on_mismatch": False, "ui_audit": True},
+        registry=registry,
+        manager=FakeManager(),
+        catalog=catalog,
+    ))
+
+    assert payload["ok"] is True
+    assert payload["counts"]["matched"] == 1
+    assert fake_ui.calls
+    assert fake_ui.calls[0]["report"] == "Отчет"
+    assert payload["items"][0]["diagnostics"]["ui_audit"]["terminal_state"] == "matched"
+    assert payload["items"][0]["diagnostics"]["ui_audit"]["run_id"] == "ui-audit-run"
 
 
 @pytest.mark.asyncio
@@ -1246,6 +1400,8 @@ async def test_validate_report_contracts_resume_restarts_from_stopper_and_recomp
         fixture_provider,
         fixture_pack,
         *,
+        ui_audit=False,
+        ui_audit_runner=None,
         period,
         max_rows,
         timeout_seconds,
@@ -1364,6 +1520,8 @@ async def test_validate_report_contracts_resume_extends_limited_campaign_order(t
         fixture_provider,
         fixture_pack,
         *,
+        ui_audit=False,
+        ui_audit_runner=None,
         period,
         max_rows,
         timeout_seconds,
@@ -1445,6 +1603,8 @@ async def test_validate_report_contracts_processes_resume_in_batches(tmp_path, m
         fixture_provider,
         fixture_pack,
         *,
+        ui_audit=False,
+        ui_audit_runner=None,
         period,
         max_rows,
         timeout_seconds,

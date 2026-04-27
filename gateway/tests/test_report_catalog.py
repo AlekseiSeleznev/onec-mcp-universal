@@ -396,6 +396,103 @@ def test_catalog_prefers_verified_output_contract_and_reorders_strategies(tmp_pa
     assert described["strategies"][0]["strategy"] == "bsp_variant_report_runner"
 
 
+def test_catalog_skips_value_locked_verified_output_contract(tmp_path):
+    catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP_DEMO",
+        "/projects/ERP_DEMO",
+        {
+            "reports": [
+                {
+                    "name": "АнализСебестоимости",
+                    "aliases": [{"alias": "Анализ себестоимости", "confidence": 1.0}],
+                    "variants": [{"key": "Основной", "presentation": "Анализ себестоимости"}],
+                    "strategies": [
+                        {"strategy": "ui_xlsx_runner", "variant": "Основной", "priority": 10, "confidence": 0.9},
+                        {"strategy": "bsp_variant_report_runner", "variant": "Основной", "priority": 20, "confidence": 0.8},
+                    ],
+                    "output_contracts": [
+                        {
+                            "variant": "Основной",
+                            "source": "declared",
+                            "contract": {
+                                "output_type": "rows",
+                                "expected_columns": ["Количество затрат", "Стоимость затрат"],
+                                "preferred_strategy": "bsp_variant_report_runner",
+                            },
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    catalog.upsert_output_contract(
+        "ERP_DEMO",
+        "АнализСебестоимости",
+        "Основной",
+        "verified",
+        {
+            "output_type": "rows",
+            "expected_columns": ["Услуги переработчика", "15\xa0000,00", "300,00"],
+            "preferred_strategy": "ui_xlsx_runner",
+        },
+    )
+
+    described = catalog.describe_report("ERP_DEMO", title="Анализ себестоимости")
+
+    assert described["output_contract"]["source"] == "declared"
+    assert described["output_contract"]["expected_columns"] == ["Количество затрат", "Стоимость затрат"]
+    assert described["strategies"][0]["strategy"] == "bsp_variant_report_runner"
+
+
+def test_catalog_skips_filter_value_locked_verified_output_contract(tmp_path):
+    catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP_DEMO",
+        "/projects/ERP_DEMO",
+        {
+            "reports": [
+                {
+                    "name": "АнализСебестоимости",
+                    "aliases": [{"alias": "Анализ себестоимости", "confidence": 1.0}],
+                    "variants": [{"key": "Основной", "presentation": "Анализ себестоимости"}],
+                    "strategies": [
+                        {"strategy": "ui_xlsx_runner", "variant": "Основной", "priority": 10, "confidence": 0.9},
+                        {"strategy": "bsp_variant_report_runner", "variant": "Основной", "priority": 20, "confidence": 0.8},
+                    ],
+                    "output_contracts": [
+                        {
+                            "variant": "Основной",
+                            "source": "declared",
+                            "contract": {
+                                "output_type": "rows",
+                                "expected_columns": ["Количество затрат", "Стоимость затрат"],
+                                "preferred_strategy": "bsp_variant_report_runner",
+                            },
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    catalog.upsert_output_contract(
+        "ERP_DEMO",
+        "АнализСебестоимости",
+        "Основной",
+        "verified",
+        {
+            "output_type": "rows",
+            "expected_columns": ["Организация", "Металл-Сервис"],
+            "preferred_strategy": "ui_xlsx_runner",
+        },
+    )
+
+    described = catalog.describe_report("ERP_DEMO", title="Анализ себестоимости")
+
+    assert described["output_contract"]["source"] == "declared"
+    assert described["strategies"][0]["strategy"] == "bsp_variant_report_runner"
+
+
 def test_catalog_can_upsert_single_report_analysis_without_clobbering_others(tmp_path):
     catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
     catalog.replace_analysis(

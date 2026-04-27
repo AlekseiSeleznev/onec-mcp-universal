@@ -109,6 +109,32 @@ def test_verified_output_contract_uses_column_header_not_first_data_row():
     assert contract["expected_columns"] == ["Материал", "Количество затрат", "Стоимость затрат"]
 
 
+def test_verified_output_contract_uses_extracted_columns_before_data_sample():
+    observed = {
+        "output_type": "rows",
+        "columns": ["Статья калькуляции", "Затрата", "Количество затрат", "Стоимость затрат"],
+        "header_rows": ["Себестоимость выпущенной продукции"],
+        "detail_rows_count": 2,
+        "detail_column_count": 4,
+        "detail_sample": [
+            {
+                "Статья калькуляции": "Услуги переработчика",
+                "Затрата": "Переработка давальческих материалов",
+                "Количество затрат": "50,000",
+                "Стоимость затрат": "15 000,00",
+            }
+        ],
+        "has_hierarchy": False,
+        "has_totals": True,
+        "artifacts_count": 0,
+    }
+
+    contract = build_verified_output_contract(observed, strategy_name="ui_xlsx_runner")
+
+    assert contract["expected_columns"] == ["Статья калькуляции", "Затрата", "Количество затрат", "Стоимость затрат"]
+    assert "Услуги переработчика" not in contract["expected_columns"]
+
+
 def test_compare_output_contract_accepts_empty_result_when_explicit_columns_match():
     observed = build_observed_signature(
         {

@@ -7,6 +7,8 @@ from typing import Any
 
 from .report_catalog import normalize_report_query
 
+VALIDATION_WIDE_PERIOD = {"from": "2000-01-01", "to": "2026-12-31"}
+
 
 class ReportFixtureProvider:
     def __init__(self, transport):
@@ -14,8 +16,8 @@ class ReportFixtureProvider:
 
     async def build_fixture_pack(self, database: str) -> dict[str, Any]:
         fallback = {
-            "period": {"from": "2024-01-01", "to": "2024-12-31"},
-            "candidate_periods": [{"from": "2024-01-01", "to": "2024-12-31"}],
+            "period": dict(VALIDATION_WIDE_PERIOD),
+            "candidate_periods": [dict(VALIDATION_WIDE_PERIOD)],
             "samples": {},
             "context": {},
             "diagnostics": {"source": "fallback"},
@@ -29,17 +31,24 @@ class ReportFixtureProvider:
             return fallback
         samples = payload.get("samples") if isinstance(payload.get("samples"), dict) else {}
         context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
-        period = payload.get("period") if isinstance(payload.get("period"), dict) else fallback["period"]
+        detected_period = payload.get("period") if isinstance(payload.get("period"), dict) else {}
         candidate_periods = payload.get("candidate_periods") if isinstance(payload.get("candidate_periods"), list) else fallback["candidate_periods"]
+        diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {"source": "probe"}
+        if detected_period:
+            diagnostics = dict(diagnostics)
+            diagnostics["detected_period"] = {
+                "from": str(detected_period.get("from") or ""),
+                "to": str(detected_period.get("to") or detected_period.get("from") or ""),
+            }
         return {
-            "period": {
-                "from": str(period.get("from") or fallback["period"]["from"]),
-                "to": str(period.get("to") or fallback["period"]["to"]),
-            },
-            "candidate_periods": self._normalize_period_candidates(candidate_periods, fallback["candidate_periods"]),
+            "period": dict(VALIDATION_WIDE_PERIOD),
+            "candidate_periods": self._normalize_period_candidates(
+                [dict(VALIDATION_WIDE_PERIOD), detected_period] + list(candidate_periods or []),
+                fallback["candidate_periods"],
+            ),
             "samples": samples,
             "context": context,
-            "diagnostics": payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {"source": "probe"},
+            "diagnostics": diagnostics,
         }
 
     def plan_inputs(self, described: dict, fixture_pack: dict[str, Any], *, period_override: dict | None = None) -> dict[str, Any]:
@@ -50,7 +59,7 @@ class ReportFixtureProvider:
             or self._period_hint_from_variant_metadata(described)
             or self._period_hint_from_report_title(str(report.get("title") or report.get("report") or ""))
             or fixture_pack.get("period")
-            or {"from": "2024-01-01", "to": "2024-12-31"}
+            or dict(VALIDATION_WIDE_PERIOD)
         )
         samples = fixture_pack.get("samples") if isinstance(fixture_pack.get("samples"), dict) else {}
         context_samples = fixture_pack.get("context") if isinstance(fixture_pack.get("context"), dict) else {}
@@ -119,7 +128,7 @@ class ReportFixtureProvider:
 
     def candidate_periods(self, fixture_pack: dict[str, Any], chosen_period: dict[str, Any] | None) -> list[dict[str, str]]:
         raw_candidates = fixture_pack.get("candidate_periods") if isinstance(fixture_pack.get("candidate_periods"), list) else []
-        fallback = [chosen_period or fixture_pack.get("period") or {"from": "2024-01-01", "to": "2024-12-31"}]
+        fallback = [chosen_period or fixture_pack.get("period") or dict(VALIDATION_WIDE_PERIOD)]
         return self._normalize_period_candidates(fallback + raw_candidates, fallback)
 
     def candidate_filter_values(self, fixture_pack: dict[str, Any], filter_name: str, current_value: Any) -> list[Any]:
@@ -144,7 +153,7 @@ class ReportFixtureProvider:
     def resolve_missing(self, missing_items: list[dict], required_context: list[dict], fixture_pack: dict[str, Any]) -> dict[str, Any]:
         samples = fixture_pack.get("samples") if isinstance(fixture_pack.get("samples"), dict) else {}
         context_samples = fixture_pack.get("context") if isinstance(fixture_pack.get("context"), dict) else {}
-        chosen_period = fixture_pack.get("period") if isinstance(fixture_pack.get("period"), dict) else {"from": "2024-01-01", "to": "2024-12-31"}
+        chosen_period = fixture_pack.get("period") if isinstance(fixture_pack.get("period"), dict) else dict(VALIDATION_WIDE_PERIOD)
         params: dict[str, Any] = {}
         context: dict[str, Any] = {}
         unresolved: list[dict] = []
@@ -300,7 +309,7 @@ class ReportFixtureProvider:
             result.append({"from": date_from, "to": date_to})
         if result:
             return result
-        return [{"from": "2024-01-01", "to": "2024-12-31"}]
+        return [dict(VALIDATION_WIDE_PERIOD)]
 
     @staticmethod
     def _period_hint_from_report_title(report_title: str) -> dict[str, str] | None:

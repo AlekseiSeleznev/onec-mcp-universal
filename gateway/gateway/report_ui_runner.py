@@ -171,12 +171,48 @@ def _build_web_test_export_script(
 const artifactPath = {json.dumps(artifact_path, ensure_ascii=False)};
 const uiStrategy = {json.dumps(ui_strategy, ensure_ascii=False)};
 const returnArtifactBase64 = {json.dumps(bool(return_artifact_base64))};
+const page = typeof getPage === 'function' ? getPage() : null;
+async function closeTransientLinkDialogs() {{
+  for (let i = 0; i < 3; i++) {{
+    let state = null;
+    try {{ state = await getFormState(); }} catch (_) {{}}
+    const fields = Array.isArray(state && state.fields) ? state.fields : [];
+    const isLinkDialog = Boolean(state && state.modal && fields.some((field) =>
+      field && (field.name === 'CurrentUrlContent' || field.label === 'Ссылка:')
+    ));
+    if (!isLinkDialog) return;
+    try {{
+      await closeForm({{ save: false }});
+    }} catch (_) {{
+      if (page) try {{ await page.keyboard.press('Escape'); }} catch (_) {{}}
+    }}
+    await wait(0.5);
+  }}
+}}
+await closeTransientLinkDialogs();
+async function navigateReportLink(metadataPath) {{
+  await navigateLink(metadataPath);
+  await wait(1);
+  let state = null;
+  try {{ state = await getFormState(); }} catch (_) {{}}
+  const fields = Array.isArray(state && state.fields) ? state.fields : [];
+  const isLinkDialog = Boolean(state && state.modal && fields.some((field) =>
+    field && (field.name === 'CurrentUrlContent' || field.label === 'Ссылка:')
+  ));
+  if (!isLinkDialog) return;
+  const link = String(metadataPath || '').startsWith('e1cib/')
+    ? String(metadataPath || '')
+    : 'e1cib/app/' + String(metadataPath || '').replace(/^e1cib\\/app\\//, '');
+  await fillFields({{ CurrentUrlContent: link }});
+  await clickElement('Перейти');
+  await wait(3);
+}}
 const openStrategy = uiStrategy.open || {{}};
 if (openStrategy.mode === 'section_command' && openStrategy.section && openStrategy.command) {{
   await navigateSection(openStrategy.section);
   await openCommand(openStrategy.command);
 }} else {{
-  await navigateLink(openStrategy.metadata_path || {json.dumps("Отчет." + report, ensure_ascii=False)});
+  await navigateReportLink(openStrategy.metadata_path || {json.dumps("Отчет." + report, ensure_ascii=False)});
 }}
 await wait(2);
 const fields = {json.dumps(fields, ensure_ascii=False)};
@@ -184,15 +220,26 @@ if (Object.keys(fields).length) {{
   const periodNames = new Set(['Период1ДатаНачала', 'Период1ДатаОкончания', 'Начало периода', 'Конец периода', 'Период']);
   const periodFields = Object.fromEntries(Object.entries(fields).filter(([key]) => periodNames.has(key)));
   const otherFields = Object.fromEntries(Object.entries(fields).filter(([key]) => !periodNames.has(key)));
+  const strictFields = uiStrategy.strict_fields !== false;
+  async function fillReportFields(values) {{
+    try {{
+      const filled = await fillFields(values);
+      console.log('REPORT_UI_FILL_JSON=' + JSON.stringify(filled.filled || []));
+      await wait(1);
+      return true;
+    }} catch (e) {{
+      if (strictFields) throw e;
+      console.log('REPORT_UI_FILL_WARNING=' + (e && e.message ? e.message : String(e)));
+      if (page) try {{ await page.keyboard.press('Escape'); }} catch (_) {{}}
+      await wait(1);
+      return false;
+    }}
+  }}
   if (Object.keys(periodFields).length) {{
-    const filled = await fillFields(periodFields);
-    console.log('REPORT_UI_FILL_JSON=' + JSON.stringify(filled.filled || []));
-    await wait(1);
+    await fillReportFields(periodFields);
   }}
   for (const [key, value] of Object.entries(otherFields)) {{
-    const filled = await fillFields({{ [key]: value }});
-    console.log('REPORT_UI_FILL_JSON=' + JSON.stringify(filled.filled || []));
-    await wait(1);
+    await fillReportFields({{ [key]: value }});
   }}
 }}
 const generateAction = uiStrategy.generate_action || {{}};
@@ -399,6 +446,9 @@ def _format_ui_date(value: object) -> object:
 def _resolved_ui_strategy(catalog: ReportCatalog, database: str, report_name: str, variant_key: str, export_format: str) -> dict:
     strategy = catalog.get_report_ui_strategy(database, report_name, variant_key) if hasattr(catalog, "get_report_ui_strategy") else {}
     if strategy:
+        payload = dict(strategy.get("strategy") or {})
+        payload.setdefault("strict_fields", True)
+        strategy = {**strategy, "strategy": payload}
         return strategy
     payload = {
         "open": {"mode": "metadata_link", "metadata_path": f"Отчет.{report_name}"},
@@ -409,5 +459,6 @@ def _resolved_ui_strategy(catalog: ReportCatalog, database: str, report_name: st
         },
         "generate_action": {"type": "click_text", "text": "Сформировать"},
         "export": {"format": export_format or "xlsx", "action": "save_as"},
+        "strict_fields": False,
     }
     return {"source": "default", "hash": "", "strategy": payload}

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from gateway.report_fixtures import ReportFixtureProvider, _fixture_pack_code
+from gateway.report_fixtures import ReportFixtureProvider, VALIDATION_WIDE_PERIOD, _fixture_pack_code
 
 
 def test_fixture_probe_code_has_no_local_procedure_definitions():
@@ -13,6 +13,30 @@ def test_fixture_probe_code_has_no_local_procedure_definitions():
     assert 'Образцы.Вставить("item"' in code
     assert 'Образцы.Вставить("payroll_employee"' in code
     assert 'Образцы.Вставить("payroll_organization"' in code
+
+
+def test_fixture_provider_uses_wide_validation_period_for_probe_result():
+    class FakeTransport:
+        async def execute_code(self, database, code):
+            return {
+                "ok": True,
+                "data": {
+                    "period": {"from": "2024-04-01", "to": "2024-04-30"},
+                    "candidate_periods": [{"from": "2024-04-01", "to": "2024-04-30"}],
+                    "samples": {},
+                    "context": {},
+                    "diagnostics": {"source": "probe"},
+                },
+            }
+
+    import asyncio
+
+    fixture_pack = asyncio.run(ReportFixtureProvider(FakeTransport()).build_fixture_pack("ERP"))
+
+    assert fixture_pack["period"] == VALIDATION_WIDE_PERIOD
+    assert fixture_pack["candidate_periods"][0] == VALIDATION_WIDE_PERIOD
+    assert {"from": "2024-04-01", "to": "2024-04-30"} in fixture_pack["candidate_periods"]
+    assert fixture_pack["diagnostics"]["detected_period"] == {"from": "2024-04-01", "to": "2024-04-30"}
 
 
 def test_fixture_provider_plans_filters_from_report_title_samples():
