@@ -16,10 +16,12 @@
  *   node src/run.mjs status                 — check session
  */
 import http from 'http';
-import * as browser from './browser.mjs';
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+
+process.env.PLAYWRIGHT_BROWSERS_PATH ??= '0';
+const browser = await import('./browser.mjs');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SESSION_FILE = resolve(__dirname, '..', '.browser-session.json');
