@@ -78,7 +78,7 @@ async def test_rate_limit_guard_disabled_short_circuits():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", ["/health", "/mcp", "/mcp/session", "/favicon.ico"])
+@pytest.mark.parametrize("path", ["/health", "/mcp", "/mcp/session", "/api/epf-heartbeat", "/favicon.ico"])
 async def test_rate_limit_guard_skips_exempt_and_non_api_routes(path: str):
     guard = build_rate_limit_guard(
         enabled=True,

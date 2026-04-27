@@ -9,6 +9,13 @@ from starlette.responses import JSONResponse
 from .api_token import request_needs_api_token
 
 
+RATE_LIMIT_EXEMPT_PATHS = {
+    "/health",
+    "/mcp",
+    "/api/epf-heartbeat",
+}
+
+
 @dataclass
 class _Bucket:
     window_started_at: int
@@ -55,7 +62,7 @@ def build_rate_limit_guard(
                 return await call_next(request)
 
             path = request.url.path
-            if path == "/health" or path == "/mcp" or path.startswith("/mcp/"):
+            if path in RATE_LIMIT_EXEMPT_PATHS or path.startswith("/mcp/"):
                 return await call_next(request)
 
             if not (

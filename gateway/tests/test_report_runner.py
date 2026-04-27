@@ -135,6 +135,42 @@ def _raw_probe_catalog(tmp_path):
     return catalog
 
 
+def _dataset_query_catalog(tmp_path):
+    catalog = ReportCatalog(tmp_path / "dataset-query.sqlite", tmp_path / "dataset-query-results")
+    catalog.replace_analysis(
+        "Z01",
+        "/projects/Z01",
+        {
+            "reports": [
+                {
+                    "name": "АнализВерсийОбъектов",
+                    "aliases": [{"alias": "Количество и объем хранимых версий объектов", "variant": "Основной", "confidence": 1.0}],
+                    "variants": [{"key": "Основной", "presentation": "Количество и объем хранимых версий объектов", "template": "ОсновнаяСхемаКомпоновкиДанных"}],
+                    "strategies": [
+                        {
+                            "strategy": "raw_skd_dataset_query_runner",
+                            "priority": 40,
+                            "confidence": 0.84,
+                            "variant": "Основной",
+                            "details": {
+                                "template": "ОсновнаяСхемаКомпоновкиДанных",
+                                "query_text": "ВЫБРАТЬ 1 КАК Количество, \"Catalog\" КАК ТипОбъекта, 12.34 КАК РазмерДанных",
+                                "selected_fields": ["ТипОбъекта", "Количество", "РазмерДанных"],
+                                "field_titles": {
+                                    "ТипОбъекта": "Тип объекта",
+                                    "Количество": "Количество",
+                                    "РазмерДанных": "Размер данных (Мб)",
+                                },
+                            },
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    return catalog
+
+
 def _bsp_catalog(tmp_path):
     catalog = ReportCatalog(tmp_path / "bsp.sqlite", tmp_path / "bsp-results")
     catalog.replace_analysis(
@@ -146,6 +182,44 @@ def _bsp_catalog(tmp_path):
                     "name": "АнализПравДоступа",
                     "aliases": [{"alias": "Анализ прав доступа", "variant": "Основной", "confidence": 1.0}],
                     "variants": [{"key": "Основной", "presentation": "Основной", "template": "ОсновнаяСхемаКомпоновкиДанных"}],
+                    "strategies": [
+                        {
+                            "strategy": "bsp_variant_report_runner",
+                            "priority": 25,
+                            "confidence": 0.8,
+                            "variant": "Основной",
+                            "output_type": "rows",
+                            "details": {"template": "ОсновнаяСхемаКомпоновкиДанных"},
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    return catalog
+
+
+def _bsp_standard_period_catalog(tmp_path):
+    catalog = ReportCatalog(tmp_path / "bsp-standard-period.sqlite", tmp_path / "bsp-standard-period-results")
+    catalog.replace_analysis(
+        "Z01",
+        "/projects/Z01",
+        {
+            "reports": [
+                {
+                    "name": "ОтчетСПериодомОтчета",
+                    "aliases": [{"alias": "Отчет с периодом отчета", "variant": "Основной", "confidence": 1.0}],
+                    "variants": [{"key": "Основной", "presentation": "Основной", "template": "ОсновнаяСхемаКомпоновкиДанных"}],
+                    "params": [
+                        {
+                            "variant": "Основной",
+                            "name": "ПериодРегистрацииОтчета",
+                            "presentation": "Период регистрации",
+                            "type_name": "StandardPeriod",
+                            "required": False,
+                            "source": "skd_variant_data_parameter",
+                        }
+                    ],
                     "strategies": [
                         {
                             "strategy": "bsp_variant_report_runner",
@@ -329,8 +403,10 @@ async def test_runner_executes_raw_skd_when_requested(tmp_path):
     assert "ПолучитьМакет(ИмяМакетаСКД)" in backend.calls[0][1]["code"]
     assert "ВариантыНастроек.Найти(КлючВарианта)" in backend.calls[0][1]["code"]
     assert 'Настройки.УстановитьЗначениеПараметра("Период", ДатаОкончанияПериода)' in backend.calls[0][1]["code"]
+    assert 'Настройки.УстановитьЗначениеПараметра("ПериодОтчета", СтандартныйПериодСКД)' in backend.calls[0][1]["code"]
     assert 'Настройки.УстановитьЗначениеПараметра("СтандартныйПериод", СтандартныйПериодСКД)' in backend.calls[0][1]["code"]
     assert 'Настройки.УстановитьЗначениеПараметра("Дата", ДатаОкончанияПериода)' in backend.calls[0][1]["code"]
+    assert 'Настройки.УстановитьЗначениеПараметра("ТекущаяДата", ДатаОкончанияПериода)' in backend.calls[0][1]["code"]
     assert 'Настройки.УстановитьЗначениеПараметра("ДатаОстатков", ДатаОкончанияПериода)' in backend.calls[0][1]["code"]
     assert 'Новый ПараметрКомпоновкиДанных("Период")' in backend.calls[0][1]["code"]
     assert 'Новый ПараметрКомпоновкиДанных("Пользователи")' not in backend.calls[0][1]["code"]
@@ -368,6 +444,7 @@ async def test_runner_retries_with_standard_period_when_report_needs_period_obje
     assert len(backend.calls) == 2
     assert 'Настройки.УстановитьЗначениеПараметра("Период", ДатаОкончанияПериода)' in backend.calls[0][1]["code"]
     assert 'Настройки.УстановитьЗначениеПараметра("Период", СтандартныйПериодСКД)' in backend.calls[1][1]["code"]
+    assert 'Настройки.УстановитьЗначениеПараметра("ПериодОтчета", СтандартныйПериодСКД)' in backend.calls[0][1]["code"]
     assert "{period_value}" not in backend.calls[0][1]["code"]
     assert "{period_value}" not in backend.calls[1][1]["code"]
     assert result["metadata"]["retry"] == "standard_period"
@@ -415,6 +492,37 @@ async def test_runner_executes_raw_skd_probe_strategy(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_runner_executes_direct_dataset_query_strategy(tmp_path):
+    backend = FakeBackend({"success": True, "data": {"rows": [{"Тип объекта": "Catalog", "Количество": 1, "Размер данных (Мб)": 12.34}]}})
+    runner = ReportRunner(_dataset_query_catalog(tmp_path), ToolkitReportTransport(FakeManager(backend)))
+
+    result = await runner.run_report(
+        database="Z01",
+        report="АнализВерсийОбъектов",
+        variant="Основной",
+        period=None,
+        filters={"Организация": "Ромашка"},
+        params={"ВыборкаКонтроля": True},
+        strategy="auto",
+        max_rows=25,
+    )
+
+    code = backend.calls[0][1]["code"]
+    assert result["ok"] is True
+    assert "Функция ЗначениеЗапросаДляJSON" not in code
+    assert 'Запрос.Текст = "ВЫБРАТЬ 1 КАК Количество, ""Catalog"" КАК ТипОбъекта, 12.34 КАК РазмерДанных"' in code
+    assert 'Запрос.УстановитьПараметр("ТекущаяДата", ДатаОкончанияПериода)' in code
+    assert 'Запрос.УстановитьПараметр("ПериодОтчета", СтандартныйПериодЗапроса)' in code
+    assert 'Запрос.УстановитьПараметр("ВыборкаКонтроля", Истина)' in code
+    assert 'Колонки.Добавить("Тип объекта")' in code
+    assert 'СтрокаРезультата.Вставить("РазмерДанных"' in code
+    assert 'ИсходнаяТаблица.Колонки.Найти("Организация") <> Неопределено' in code
+    assert 'Если ЗначениеПоляОтбораЗапроса1 <> ЗначениеОтбораСКД1 Тогда' in code
+    assert 'Если НормализованноеПолеОтбораЗапроса1 <> НормализованноеЗначениеОтбораЗапроса1 Тогда' in code
+    assert result["rows"][0]["Тип объекта"] == "Catalog"
+
+
+@pytest.mark.asyncio
 async def test_runner_executes_bsp_variant_report_strategy(tmp_path):
     backend = FakeBackend({"success": True, "data": {"rows": [{"A": 1}], "metadata": {"source": "bsp"}}})
     runner = ReportRunner(_bsp_catalog(tmp_path), ToolkitReportTransport(FakeManager(backend)))
@@ -442,8 +550,53 @@ async def test_runner_executes_bsp_variant_report_strategy(tmp_path):
     assert "ПараметрыФормирования.НастройкиКД = Настройки;" not in code
     assert "ПараметрыФормирования.СсылкаОтчета" in code
     assert "Справочник.ВариантыОтчетов" in code
+    assert 'И ВариантыОтчетов.КлючВарианта = &КлючВарианта' in code
     assert 'Настройки.УстановитьЗначениеПараметра("Период", ДатаОкончанияПериода)' in code
+    assert 'Настройки.УстановитьЗначениеПараметра("ПериодОтчета", СтандартныйПериодСКД)' in code
     assert 'Настройки.УстановитьЗначениеПараметра("СтандартныйПериод", СтандартныйПериодСКД)' in code
+
+
+@pytest.mark.asyncio
+async def test_runner_uses_declared_standard_period_param_names(tmp_path):
+    backend = FakeBackend({"success": True, "data": {"rows": [{"A": 1}], "metadata": {"source": "bsp"}}})
+    runner = ReportRunner(_bsp_standard_period_catalog(tmp_path), ToolkitReportTransport(FakeManager(backend)))
+
+    result = await runner.run_report(
+        database="Z01",
+        title="Отчет с периодом отчета",
+        period={"from": "2025-01-01", "to": "2025-12-31"},
+        filters={},
+        params={},
+        strategy="auto",
+        max_rows=1,
+    )
+
+    code = backend.calls[0][1]["code"]
+    assert result["ok"] is True
+    assert 'Настройки.УстановитьЗначениеПараметра("ПериодРегистрацииОтчета", СтандартныйПериодСКД)' in code
+
+
+@pytest.mark.asyncio
+async def test_runner_emits_runtime_standard_period_detection_for_undeclared_skd_periods(tmp_path):
+    backend = FakeBackend({"success": True, "data": {"rows": [{"A": 1}], "metadata": {"source": "bsp"}}})
+    runner = ReportRunner(_bsp_catalog(tmp_path), ToolkitReportTransport(FakeManager(backend)))
+
+    result = await runner.run_report(
+        database="Z01",
+        title="Анализ прав доступа",
+        period={"from": "2025-01-01", "to": "2025-12-31"},
+        filters={},
+        params={},
+        strategy="auto",
+        max_rows=1,
+    )
+
+    code = backend.calls[0][1]["code"]
+    assert result["ok"] is True
+    assert 'ТипПараметраСКД = ТипЗнч(ЭлементПараметраСКД.Значение);' in code
+    assert 'Если ТипПараметраСКД = Тип("СтандартныйПериод") Тогда' in code
+    assert 'ИначеЕсли ЭтоСтандартныйПериодСКД' in code
+    assert 'ЭлементПараметраСКД.Значение = СтандартныйПериодСКД;' in code
 
 
 @pytest.mark.asyncio
@@ -456,7 +609,7 @@ async def test_runner_applies_user_params_to_bsp_skd_settings(tmp_path):
         title="Анализ прав доступа",
         period=None,
         filters={},
-        params={"Договор": "000000001", "Сценарии": ["План", "Факт"]},
+        params={"Договор": "000000001", "Сценарии": ["План", "Факт"], "Пользователь": "Бот 1С-ЭДО"},
         strategy="auto",
         max_rows=1,
     )
@@ -469,6 +622,9 @@ async def test_runner_applies_user_params_to_bsp_skd_settings(tmp_path):
     assert 'ПользовательскийПараметрСКД1.Добавить("Факт")' in code
     assert 'Настройки.УстановитьЗначениеПараметра("Сценарии", ПользовательскийПараметрСКД1)' in code
     assert 'ПользовательскийПараметрСКД = ПользовательскиеНастройки.Элементы.Найти' in code
+    assert "Справочник.Пользователи" in code
+    assert 'Пользователи.Наименование = &ТочноеИмя' in code
+    assert 'Настройки.УстановитьЗначениеПараметра("Пользователь", ЗначениеПараметраСКД2)' in code
 
 
 @pytest.mark.asyncio

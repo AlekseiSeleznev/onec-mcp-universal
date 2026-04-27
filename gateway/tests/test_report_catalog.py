@@ -249,6 +249,90 @@ def test_catalog_result_storage_is_paged_and_gzipped(tmp_path):
     assert json.loads(page["diagnostics_json"]) == {"ok": True}
 
 
+def test_catalog_prefers_verified_output_contract_and_reorders_strategies(tmp_path):
+    catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "Z01",
+        "/projects/Z01",
+        {
+            "reports": [
+                {
+                    "name": "Себестоимость",
+                    "aliases": [{"alias": "Анализ себестоимости", "confidence": 1.0}],
+                    "variants": [{"key": "Основной", "presentation": "Анализ себестоимости"}],
+                    "strategies": [
+                        {"strategy": "raw_skd_runner", "variant": "Основной", "priority": 50, "confidence": 0.6},
+                        {"strategy": "bsp_variant_report_runner", "variant": "Основной", "priority": 60, "confidence": 0.8},
+                    ],
+                    "output_contracts": [
+                        {
+                            "variant": "Основной",
+                            "source": "declared",
+                            "contract": {"output_type": "rows", "preferred_strategy": "raw_skd_runner", "confidence": "medium"},
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    catalog.upsert_output_contract(
+        "Z01",
+        "Себестоимость",
+        "Основной",
+        "verified",
+        {"output_type": "rows", "preferred_strategy": "bsp_variant_report_runner", "confidence": "high"},
+    )
+    described = catalog.describe_report("Z01", title="Анализ себестоимости")
+
+    assert described["output_contract"]["source"] == "verified"
+    assert described["strategies"][0]["strategy"] == "bsp_variant_report_runner"
+
+
+def test_catalog_can_upsert_single_report_analysis_without_clobbering_others(tmp_path):
+    catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "Z01",
+        "/projects/Z01",
+        {
+            "reports": [
+                {
+                    "name": "Отчет1",
+                    "aliases": [{"alias": "Отчет 1", "confidence": 1.0}],
+                    "strategies": [{"strategy": "raw_skd_runner", "variant": "", "priority": 50, "confidence": 0.6}],
+                    "output_contracts": [{"variant": "", "source": "declared", "contract": {"preferred_strategy": "raw_skd_runner"}}],
+                },
+                {
+                    "name": "Отчет2",
+                    "aliases": [{"alias": "Отчет 2", "confidence": 1.0}],
+                    "strategies": [{"strategy": "raw_skd_runner", "variant": "", "priority": 50, "confidence": 0.6}],
+                },
+            ]
+        },
+    )
+
+    updated = catalog.upsert_report_analysis(
+        "Z01",
+        "/projects/Z01",
+        {
+            "name": "Отчет1",
+            "aliases": [{"alias": "Обновленный отчет 1", "confidence": 1.0}],
+            "strategies": [{"strategy": "raw_skd_dataset_query_runner", "variant": "", "priority": 40, "confidence": 0.9}],
+            "output_contracts": [{"variant": "", "source": "declared", "contract": {"preferred_strategy": "raw_skd_dataset_query_runner"}}],
+        },
+    )
+
+    first = catalog.describe_report("Z01", report="Отчет1")
+    second = catalog.describe_report("Z01", report="Отчет2")
+    found = catalog.find_reports("Z01", "обновленный отчет 1", limit=5)
+
+    assert updated["ok"] is True
+    assert first["strategies"][0]["strategy"] == "raw_skd_dataset_query_runner"
+    assert first["output_contract"]["preferred_strategy"] == "raw_skd_dataset_query_runner"
+    assert second["strategies"][0]["strategy"] == "raw_skd_runner"
+    assert found[0]["report"] == "Отчет1"
+
+
 def test_catalog_covers_error_and_edge_branches(tmp_path):
     catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
     catalog.replace_analysis(
@@ -290,3 +374,103 @@ def test_catalog_fetches_technical_report_when_alias_rows_are_missing(tmp_path):
     assert resolved["ok"] is True
     assert resolved["report"]["title"] == "ТехническийОтчет"
     assert resolved["report"]["variant"] == "Вариант"
+
+
+def test_catalog_summarizes_validation_campaign_and_resume_point(tmp_path):
+    catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
+    campaign_id = catalog.create_validation_campaign(
+        "ERP_DEMO",
+        mode="contracts",
+        fixture_pack={"period": {"from": "2024-01-01", "to": "2024-12-31"}},
+        order=[
+            {"report": "Отчет1", "variant": ""},
+            {"report": "Отчет2", "variant": ""},
+            {"report": "Отчет3", "variant": ""},
+        ],
+        stop_on_mismatch=True,
+    )
+    catalog.upsert_validation_item(
+        campaign_id,
+        ordinal=1,
+        database="ERP_DEMO",
+        report_name="Отчет1",
+        variant_key="",
+        title="Отчет 1",
+        status="matched",
+        terminal_state="matched",
+    )
+    catalog.upsert_validation_item(
+        campaign_id,
+        ordinal=2,
+        database="ERP_DEMO",
+        report_name="Отчет2",
+        variant_key="",
+        title="Отчет 2",
+        status="deferred_engine_gap",
+        terminal_state="deferred_engine_gap",
+        mismatch_code="missing_detail_rows",
+    )
+    catalog.finish_validation_campaign(
+        campaign_id,
+        status="stopped",
+        counts={"matched": 1, "deferred_engine_gap": 1},
+        summary={"processed": 2, "total_targets": 3},
+        stop_reason="deferred_engine_gap",
+    )
+
+    summary = catalog.summarize_validation_campaign(campaign_id)
+    catalog.mark_validation_campaign_running(campaign_id)
+    campaign = catalog.get_validation_campaign(campaign_id)
+
+    assert summary["counts"]["matched"] == 1
+    assert summary["counts"]["deferred_engine_gap"] == 1
+    assert summary["summary"]["processed"] == 2
+    assert summary["summary"]["total_targets"] == 3
+    assert summary["summary"]["resume_from_ordinal"] == 2
+    assert summary["stopper_item"]["report"] == "Отчет2"
+    assert campaign["status"] == "running"
+    assert campaign["stop_reason"] == ""
+
+
+def test_catalog_get_validation_campaign_recomputes_counts_from_items(tmp_path):
+    catalog = ReportCatalog(tmp_path / "report-catalog.sqlite", tmp_path / "results")
+    campaign_id = catalog.create_validation_campaign(
+        "ERP_DEMO",
+        mode="contracts",
+        order=[{"report": "Отчет1", "variant": ""}],
+        stop_on_mismatch=True,
+    )
+    catalog.upsert_validation_item(
+        campaign_id,
+        ordinal=1,
+        database="ERP_DEMO",
+        report_name="Отчет1",
+        variant_key="",
+        title="Отчет 1",
+        status="deferred_engine_gap",
+        terminal_state="deferred_engine_gap",
+    )
+    catalog.finish_validation_campaign(
+        campaign_id,
+        status="stopped",
+        counts={"deferred_engine_gap": 1},
+        summary={"processed": 1, "resume_from_ordinal": 1},
+        stop_reason="deferred_engine_gap",
+    )
+    catalog.upsert_validation_item(
+        campaign_id,
+        ordinal=1,
+        database="ERP_DEMO",
+        report_name="Отчет1",
+        variant_key="",
+        title="Отчет 1",
+        status="matched",
+        terminal_state="matched",
+    )
+
+    campaign = catalog.get_validation_campaign(campaign_id)
+
+    assert campaign["counts"]["matched"] == 1
+    assert campaign["counts"]["deferred_engine_gap"] == 0
+    assert campaign["summary"]["resume_from_ordinal"] == 2
+    assert campaign["items"][0]["terminal_state"] == "matched"

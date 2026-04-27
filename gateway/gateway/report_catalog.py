@@ -157,6 +157,56 @@ class ReportCatalog:
                 );
                 CREATE INDEX IF NOT EXISTS idx_report_runs_db_status
                     ON report_runs(db_slug, status);
+                CREATE TABLE IF NOT EXISTS report_output_contracts (
+                    db_slug TEXT NOT NULL,
+                    report_name TEXT NOT NULL,
+                    variant_key TEXT NOT NULL DEFAULT '',
+                    contract_source TEXT NOT NULL,
+                    contract_hash TEXT NOT NULL DEFAULT '',
+                    confidence REAL NOT NULL DEFAULT 0,
+                    contract_json TEXT NOT NULL DEFAULT '{}',
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (db_slug, report_name, variant_key, contract_source)
+                );
+                CREATE INDEX IF NOT EXISTS idx_report_output_contracts_lookup
+                    ON report_output_contracts(db_slug, report_name, variant_key, contract_source);
+                CREATE TABLE IF NOT EXISTS report_validation_campaigns (
+                    campaign_id TEXT PRIMARY KEY,
+                    db_slug TEXT NOT NULL,
+                    mode TEXT NOT NULL DEFAULT 'contracts',
+                    status TEXT NOT NULL DEFAULT 'running',
+                    stop_on_mismatch INTEGER NOT NULL DEFAULT 1,
+                    fixture_pack_json TEXT NOT NULL DEFAULT '{}',
+                    order_json TEXT NOT NULL DEFAULT '[]',
+                    counts_json TEXT NOT NULL DEFAULT '{}',
+                    summary_json TEXT NOT NULL DEFAULT '{}',
+                    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    finished_at TEXT NOT NULL DEFAULT '',
+                    stop_reason TEXT NOT NULL DEFAULT ''
+                );
+                CREATE TABLE IF NOT EXISTS report_validation_items (
+                    campaign_id TEXT NOT NULL,
+                    ordinal INTEGER NOT NULL DEFAULT 0,
+                    db_slug TEXT NOT NULL,
+                    report_name TEXT NOT NULL,
+                    variant_key TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    terminal_state TEXT NOT NULL DEFAULT '',
+                    strategy TEXT NOT NULL DEFAULT '',
+                    run_id TEXT NOT NULL DEFAULT '',
+                    contract_source TEXT NOT NULL DEFAULT '',
+                    contract_hash TEXT NOT NULL DEFAULT '',
+                    observed_json TEXT NOT NULL DEFAULT '{}',
+                    mismatch_code TEXT NOT NULL DEFAULT '',
+                    root_cause_class TEXT NOT NULL DEFAULT '',
+                    diagnostics_json TEXT NOT NULL DEFAULT '{}',
+                    error TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (campaign_id, report_name, variant_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_report_validation_items_lookup
+                    ON report_validation_items(db_slug, report_name, variant_key, updated_at);
                 """
             )
 
@@ -173,6 +223,10 @@ class ReportCatalog:
             ):
                 conn.execute(f"DELETE FROM {table} WHERE db_slug = ?", (database,))
             conn.execute(
+                "DELETE FROM report_output_contracts WHERE db_slug = ? AND contract_source = 'declared'",
+                (database,),
+            )
+            conn.execute(
                 """
                 INSERT OR REPLACE INTO catalog_meta
                     (db_slug, project_path, config_fingerprint, analyzer_version)
@@ -183,6 +237,35 @@ class ReportCatalog:
             for report in reports:
                 self._insert_report(conn, database, report)
         return {"ok": True, "database": database, "reports": len(reports), "fingerprint": fingerprint}
+
+    def upsert_report_analysis(self, database: str, project_path: str, report: dict) -> dict:
+        name = str(report.get("name") or "").strip()
+        if not name:
+            return {"ok": False, "error_code": "report_name_required"}
+        fingerprint = hashlib.sha256(_json_dumps(report).encode("utf-8")).hexdigest()
+        with self._connect() as conn:
+            for table in (
+                "report_aliases",
+                "report_variants",
+                "report_params",
+                "report_strategies",
+                "reports",
+            ):
+                conn.execute(f"DELETE FROM {table} WHERE db_slug = ? AND report_name = ?", (database, name))
+            conn.execute(
+                "DELETE FROM report_output_contracts WHERE db_slug = ? AND report_name = ? AND contract_source = 'declared'",
+                (database, name),
+            )
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO catalog_meta
+                    (db_slug, project_path, config_fingerprint, analyzer_version)
+                VALUES (?, ?, ?, ?)
+                """,
+                (database, str(project_path), fingerprint, "1"),
+            )
+            self._insert_report(conn, database, report)
+        return {"ok": True, "database": database, "report": name, "fingerprint": fingerprint}
 
     def list_reports(self, database: str, query: str = "", limit: int = 50) -> list[dict]:
         if query:
@@ -226,11 +309,18 @@ class ReportCatalog:
             return resolved
         report_name = resolved["report"]["report"]
         variant_key = resolved["report"].get("variant", "")
+        output_contracts = self._fetch_output_contracts(database, report_name, variant_key)
         return {
             **resolved,
             "variants": self._fetch_variants(database, report_name),
             "params": self._fetch_params(database, report_name, variant_key),
             "strategies": self._fetch_strategies(database, report_name, variant_key),
+            "output_contracts": output_contracts,
+            "output_contract": (
+                {**output_contracts[0]["contract"], "source": output_contracts[0]["source"], "hash": output_contracts[0]["hash"]}
+                if output_contracts else {}
+            ),
+            "last_contract_validation": self.get_latest_contract_validation(database, report_name, variant_key),
             "docs": self.get_report_docs(database, report_name, variant_key),
         }
 
@@ -631,6 +721,275 @@ class ReportCatalog:
                         _json_dumps(strategy.get("details") or {}),
                     ),
                 )
+        for output_contract in report.get("output_contracts") or []:
+            source = str(output_contract.get("source") or "").strip()
+            contract = output_contract.get("contract") if isinstance(output_contract.get("contract"), dict) else {}
+            if source and contract:
+                self._upsert_output_contract_conn(
+                    conn,
+                    database,
+                    name,
+                    str(output_contract.get("variant") or ""),
+                    source,
+                    contract,
+                )
+
+    def upsert_output_contract(
+        self,
+        database: str,
+        report_name: str,
+        variant_key: str,
+        contract_source: str,
+        contract: dict,
+    ) -> None:
+        with self._connect() as conn:
+            self._upsert_output_contract_conn(conn, database, report_name, variant_key, contract_source, contract)
+
+    def create_validation_campaign(
+        self,
+        database: str,
+        *,
+        mode: str,
+        fixture_pack: dict | None = None,
+        order: list[dict] | None = None,
+        stop_on_mismatch: bool = True,
+    ) -> str:
+        campaign_id = uuid.uuid4().hex
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO report_validation_campaigns
+                    (campaign_id, db_slug, mode, stop_on_mismatch, fixture_pack_json, order_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    campaign_id,
+                    database,
+                    mode,
+                    1 if stop_on_mismatch else 0,
+                    _json_dumps(fixture_pack or {}),
+                    _json_dumps(order or []),
+                ),
+            )
+        return campaign_id
+
+    def upsert_validation_item(
+        self,
+        campaign_id: str,
+        *,
+        ordinal: int,
+        database: str,
+        report_name: str,
+        variant_key: str,
+        title: str,
+        status: str,
+        terminal_state: str,
+        strategy: str = "",
+        run_id: str = "",
+        contract_source: str = "",
+        contract_hash: str = "",
+        observed: dict | None = None,
+        mismatch_code: str = "",
+        root_cause_class: str = "",
+        diagnostics: dict | None = None,
+        error: str = "",
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO report_validation_items
+                    (campaign_id, ordinal, db_slug, report_name, variant_key, title, status,
+                     terminal_state, strategy, run_id, contract_source, contract_hash,
+                     observed_json, mismatch_code, root_cause_class, diagnostics_json, error, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    campaign_id,
+                    ordinal,
+                    database,
+                    report_name,
+                    variant_key or "",
+                    title or report_name,
+                    status,
+                    terminal_state,
+                    strategy,
+                    run_id,
+                    contract_source,
+                    contract_hash,
+                    _json_dumps(observed or {}),
+                    mismatch_code,
+                    root_cause_class,
+                    _json_dumps(diagnostics or {}),
+                    error,
+                ),
+            )
+
+    def mark_validation_campaign_running(self, campaign_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE report_validation_campaigns
+                SET status = 'running', finished_at = '', stop_reason = ?
+                WHERE campaign_id = ?
+                """,
+                ("", campaign_id),
+            )
+
+    def update_validation_campaign_fixture_pack(self, campaign_id: str, fixture_pack: dict) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE report_validation_campaigns
+                SET fixture_pack_json = ?
+                WHERE campaign_id = ?
+                """,
+                (_json_dumps(fixture_pack or {}), campaign_id),
+            )
+
+    def update_validation_campaign_order(self, campaign_id: str, order: list[dict]) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE report_validation_campaigns
+                SET order_json = ?
+                WHERE campaign_id = ?
+                """,
+                (_json_dumps(order or []), campaign_id),
+            )
+
+    def summarize_validation_campaign(self, campaign_id: str) -> dict:
+        counts = {
+            "matched": 0,
+            "deferred_context": 0,
+            "deferred_unsupported": 0,
+            "deferred_engine_gap": 0,
+            "deferred_analyzer_gap": 0,
+            "error": 0,
+        }
+        with self._connect() as conn:
+            campaign = conn.execute(
+                "SELECT order_json FROM report_validation_campaigns WHERE campaign_id = ?",
+                (campaign_id,),
+            ).fetchone()
+            rows = conn.execute(
+                """
+                SELECT ordinal, report_name, variant_key, title, status, terminal_state, strategy,
+                       run_id, contract_source, contract_hash, observed_json, mismatch_code,
+                       root_cause_class, diagnostics_json, error
+                FROM report_validation_items
+                WHERE campaign_id = ?
+                ORDER BY ordinal, report_name, variant_key
+                """,
+                (campaign_id,),
+            ).fetchall()
+        items = []
+        stopper_item: dict | None = None
+        for row in rows:
+            terminal_state = str(row["terminal_state"] or row["status"] or "error")
+            counts[terminal_state if terminal_state in counts else "error"] += 1
+            item = {
+                "ordinal": row["ordinal"],
+                "report": row["report_name"],
+                "variant": row["variant_key"],
+                "title": row["title"],
+                "status": row["status"],
+                "terminal_state": terminal_state,
+                "strategy": row["strategy"],
+                "run_id": row["run_id"],
+                "contract_source": row["contract_source"],
+                "contract_hash": row["contract_hash"],
+                "observed": _json_loads(row["observed_json"], {}),
+                "mismatch_code": row["mismatch_code"],
+                "root_cause_class": row["root_cause_class"],
+                "diagnostics": _json_loads(row["diagnostics_json"], {}),
+                "error": row["error"],
+            }
+            items.append(item)
+            if stopper_item is None and terminal_state in {"deferred_engine_gap", "deferred_analyzer_gap", "error"}:
+                stopper_item = item
+        return {
+            "counts": counts,
+            "summary": {
+                "processed": len(items),
+                "total_targets": len(_json_loads(campaign["order_json"] if campaign else "[]", [])),
+                "last_ordinal": items[-1]["ordinal"] if items else 0,
+                "resume_from_ordinal": stopper_item["ordinal"] if stopper_item else ((items[-1]["ordinal"] + 1) if items else 1),
+            },
+            "stopper_item": stopper_item or {},
+            "items": items,
+        }
+
+    def finish_validation_campaign(
+        self,
+        campaign_id: str,
+        *,
+        status: str,
+        counts: dict,
+        summary: dict | None = None,
+        stop_reason: str = "",
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE report_validation_campaigns
+                SET status = ?, counts_json = ?, summary_json = ?, finished_at = CURRENT_TIMESTAMP, stop_reason = ?
+                WHERE campaign_id = ?
+                """,
+                (status, _json_dumps(counts), _json_dumps(summary or {}), stop_reason, campaign_id),
+            )
+
+    def get_validation_campaign(self, campaign_id: str) -> dict:
+        with self._connect() as conn:
+            campaign = conn.execute(
+                "SELECT * FROM report_validation_campaigns WHERE campaign_id = ?",
+                (campaign_id,),
+            ).fetchone()
+        if campaign is None:
+            return {"ok": False, "error_code": "campaign_not_found"}
+        live_summary = self.summarize_validation_campaign(campaign_id)
+        return {
+            "ok": True,
+            "campaign_id": campaign_id,
+            "database": campaign["db_slug"],
+            "mode": campaign["mode"],
+            "status": campaign["status"],
+            "stop_on_mismatch": bool(campaign["stop_on_mismatch"]),
+            "fixture_pack": _json_loads(campaign["fixture_pack_json"], {}),
+            "order": _json_loads(campaign["order_json"], []),
+            "counts": live_summary.get("counts") or _json_loads(campaign["counts_json"], {}),
+            "summary": live_summary.get("summary") or _json_loads(campaign["summary_json"], {}),
+            "started_at": campaign["started_at"],
+            "finished_at": campaign["finished_at"],
+            "stop_reason": campaign["stop_reason"],
+            "items": live_summary.get("items") or [],
+        }
+
+    def get_latest_contract_validation(self, database: str, report_name: str, variant_key: str = "") -> dict:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM report_validation_items
+                WHERE db_slug = ? AND report_name = ? AND variant_key = ?
+                ORDER BY updated_at DESC, ordinal DESC
+                LIMIT 1
+                """,
+                (database, report_name, variant_key or ""),
+            ).fetchone()
+        if row is None:
+            return {}
+        return {
+            "campaign_id": row["campaign_id"],
+            "status": row["status"],
+            "terminal_state": row["terminal_state"],
+            "strategy": row["strategy"],
+            "run_id": row["run_id"],
+            "contract_source": row["contract_source"],
+            "mismatch_code": row["mismatch_code"],
+            "root_cause_class": row["root_cause_class"],
+            "observed": _json_loads(row["observed_json"], {}),
+            "diagnostics": _json_loads(row["diagnostics_json"], {}),
+            "error": row["error"],
+        }
 
     def _query_reports(self, database: str) -> list[dict]:
         with self._connect() as conn:
@@ -811,7 +1170,17 @@ class ReportCatalog:
                 """,
                 (database, report_name, variant or ""),
             ).fetchall()
-        return [
+            if not rows and not variant:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM report_strategies
+                    WHERE db_slug = ? AND report_name = ?
+                    ORDER BY priority, confidence DESC
+                    """,
+                    (database, report_name),
+                ).fetchall()
+            preferred_strategy = self._preferred_strategy_conn(conn, database, report_name, variant or "")
+        items = [
             {
                 "strategy": row["strategy"],
                 "priority": row["priority"],
@@ -824,3 +1193,90 @@ class ReportCatalog:
             }
             for row in rows
         ]
+        if preferred_strategy:
+            items.sort(key=lambda item: (item["strategy"] != preferred_strategy, item["priority"], -float(item["confidence"] or 0)))
+        return items
+
+    def _fetch_output_contracts(self, database: str, report_name: str, variant: str = "") -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM report_output_contracts
+                WHERE db_slug = ? AND report_name = ? AND variant_key = ?
+                ORDER BY CASE contract_source WHEN 'verified' THEN 0 ELSE 1 END, updated_at DESC
+                """,
+                (database, report_name, variant or ""),
+            ).fetchall()
+            if not rows and not variant:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM report_output_contracts
+                    WHERE db_slug = ? AND report_name = ?
+                    ORDER BY CASE contract_source WHEN 'verified' THEN 0 ELSE 1 END, updated_at DESC
+                    """,
+                    (database, report_name),
+                ).fetchall()
+        return [
+            {
+                "source": row["contract_source"],
+                "hash": row["contract_hash"],
+                "confidence": row["confidence"],
+                "contract": _json_loads(row["contract_json"], {}),
+            }
+            for row in rows
+        ]
+
+    def _preferred_strategy_conn(self, conn: sqlite3.Connection, database: str, report_name: str, variant: str) -> str:
+        row = conn.execute(
+            """
+            SELECT contract_json
+            FROM report_output_contracts
+            WHERE db_slug = ? AND report_name = ? AND variant_key = ?
+            ORDER BY CASE contract_source WHEN 'verified' THEN 0 ELSE 1 END, updated_at DESC
+            LIMIT 1
+            """,
+            (database, report_name, variant),
+        ).fetchone()
+        if row is None and not variant:
+            row = conn.execute(
+                """
+                SELECT contract_json
+                FROM report_output_contracts
+                WHERE db_slug = ? AND report_name = ?
+                ORDER BY CASE contract_source WHEN 'verified' THEN 0 ELSE 1 END, updated_at DESC
+                LIMIT 1
+                """,
+                (database, report_name),
+            ).fetchone()
+        if row is None:
+            return ""
+        return str(_json_loads(row["contract_json"], {}).get("preferred_strategy") or "")
+
+    def _upsert_output_contract_conn(
+        self,
+        conn: sqlite3.Connection,
+        database: str,
+        report_name: str,
+        variant_key: str,
+        contract_source: str,
+        contract: dict,
+    ) -> None:
+        payload = dict(contract or {})
+        payload.setdefault("source", contract_source)
+        contract_hash = hashlib.sha256(_json_dumps(payload).encode("utf-8")).hexdigest()
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO report_output_contracts
+                (db_slug, report_name, variant_key, contract_source, contract_hash, confidence, contract_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                database,
+                report_name,
+                variant_key or "",
+                contract_source,
+                contract_hash,
+                float(payload.get("confidence_score") or 0),
+                _json_dumps(payload),
+            ),
+        )

@@ -39,6 +39,19 @@ def test_dashboard_reports_api_delegates_validate_all(test_client):
     assert resp.json()["counts"]["done"] == 1
 
 
+def test_dashboard_reports_api_delegates_validate_contracts(test_client):
+    async def fake_handler(name, arguments, **kwargs):
+        assert name == "validate_report_contracts"
+        assert arguments["database"] == "Z01"
+        return json.dumps({"ok": True, "counts": {"matched": 1, "error": 0}}, ensure_ascii=False)
+
+    with _patch_report_handler(fake_handler):
+        resp = test_client.post("/api/reports/validate-contracts", json={"database": "Z01"})
+
+    assert resp.status_code == 200
+    assert resp.json()["counts"]["matched"] == 1
+
+
 def test_dashboard_reports_api_wraps_non_json_handler_response(test_client):
     async def fake_handler(name, arguments, **kwargs):
         return "plain error"

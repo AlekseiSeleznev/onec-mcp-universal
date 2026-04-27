@@ -68,6 +68,7 @@ def test_report_tools_require_explicit_database():
     assert "database" in schemas["analyze_reports"]["required"]
     assert "database" in schemas["enrich_report_docs"]["required"]
     assert "database" in schemas["validate_all_reports"]["required"]
+    assert "database" in schemas["validate_report_contracts"]["required"]
     assert "context" in schemas["run_report"]["properties"]
 
 
@@ -501,6 +502,966 @@ def test_validation_targets_are_report_level_not_alias_level(tmp_path):
     assert len(targets) == 2
 
 
+@pytest.mark.asyncio
+async def test_validate_report_contracts_is_variant_aware_and_persists_campaign(tmp_path, registry):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "Z01",
+        "/projects/Z01",
+        {
+            "reports": [
+                {
+                    "name": "МногоВариантов",
+                    "aliases": [
+                        {"alias": "Первый вариант", "variant": "A", "confidence": 1.0},
+                        {"alias": "Второй вариант", "variant": "B", "confidence": 1.0},
+                    ],
+                    "variants": [
+                        {"key": "A", "presentation": "Первый вариант"},
+                        {"key": "B", "presentation": "Второй вариант"},
+                    ],
+                    "strategies": [
+                        {"strategy": "raw_skd_runner", "variant": "A", "priority": 50, "confidence": 0.8},
+                        {"strategy": "raw_skd_runner", "variant": "B", "priority": 50, "confidence": 0.8},
+                    ],
+                    "output_contracts": [
+                        {"variant": "A", "source": "declared", "contract": {"output_type": "rows", "expects_detail_rows": False, "confidence": "low"}},
+                        {"variant": "B", "source": "declared", "contract": {"output_type": "rows", "expects_detail_rows": False, "confidence": "low"}},
+                    ],
+                }
+            ]
+        },
+    )
+
+    payload = json.loads(await try_handle_report_tool(
+        "validate_report_contracts",
+        {"database": "Z01", "stop_on_mismatch": True, "max_rows": 1},
+        registry=registry,
+        manager=FakeManager(),
+        catalog=catalog,
+    ))
+
+    assert payload["ok"] is True
+    assert payload["counts"]["matched"] == 2
+    assert payload["counts"]["error"] == 0
+    assert [item["variant"] for item in payload["items"]] == ["A", "B"]
+    campaign = catalog.get_validation_campaign(payload["campaign_id"])
+    assert campaign["items"][0]["terminal_state"] == "matched"
+
+
+@pytest.mark.asyncio
+async def test_validate_report_contracts_retries_with_larger_row_limit_after_truncated_header_only(tmp_path):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP",
+        "/projects/ERP",
+        {
+            "reports": [
+                {
+                    "name": "Отчет",
+                    "aliases": [{"alias": "Отчет", "variant": "Основной", "confidence": 1.0}],
+                    "variants": [{"key": "Основной", "presentation": "Отчет"}],
+                    "strategies": [{"strategy": "raw_skd_probe_runner", "variant": "Основной", "priority": 50, "confidence": 0.8}],
+                    "output_contracts": [{"variant": "Основной", "source": "declared", "contract": {"output_type": "rows", "expects_detail_rows": True, "confidence": "medium", "expected_columns": []}}],
+                }
+            ]
+        },
+    )
+
+    class StubFixtureProvider:
+        async def build_fixture_pack(self, database):
+            return {"period": {"from": "2024-01-01", "to": "2024-12-31"}, "samples": {}, "context": {}, "diagnostics": {"source": "stub"}}
+
+        def plan_inputs(self, described, fixture_pack, *, period_override=None):
+            return {"period": fixture_pack["period"], "params": {}, "filters": {}, "context": {}, "missing": []}
+
+        def resolve_missing(self, missing_items, required_context, fixture_pack):
+            return {"params": {}, "context": {}, "unresolved": list(missing_items) + list(required_context)}
+
+    class RetryRunner:
+        def __init__(self):
+            self.calls = []
+
+        async def run_report(self, **kwargs):
+            self.calls.append(kwargs["max_rows"])
+            if len(self.calls) == 1:
+                return {
+                    "ok": True,
+                    "run_id": "first",
+                    "output_type": "rows",
+                    "columns": ["C1", "C2", "C3"],
+                    "rows": [
+                        {"C1": "Заголовок отчета", "C2": "", "C3": ""},
+                        {"C1": "Колонка 1", "C2": "Колонка 2", "C3": "Колонка 3"},
+                    ],
+                    "metadata": {"tabular_height": 120},
+                    "warnings": ["Result truncated by max_rows."],
+                    "observed_signature": {
+                        "output_type": "rows",
+                        "row_count": 2,
+                        "column_count": 3,
+                        "header_rows": ["Заголовок отчета", "Колонка 1 | Колонка 2 | Колонка 3"],
+                        "detail_rows_count": 0,
+                        "detail_sample": [],
+                        "detail_column_count": 0,
+                        "max_nonempty_cells": 3,
+                        "has_totals": False,
+                        "has_hierarchy": False,
+                        "artifacts_count": 0,
+                        "warnings": ["Result truncated by max_rows."],
+                        "observed_tokens": ["Заголовок отчета", "Колонка 1", "Колонка 2", "Колонка 3"],
+                        "observed_tokens_norm": ["заголовок отчета", "колонка 1", "колонка 2", "колонка 3"],
+                        "metadata": {"tabular_height": 120},
+                    },
+                    "contract_validation": {"matched": False, "mismatch_code": "header_only", "acceptable_with_verified": False, "score": 0.1},
+                }
+            return {
+                "ok": True,
+                "run_id": "second",
+                "output_type": "rows",
+                "columns": ["C1", "C2"],
+                "rows": [{"C1": "Строка", "C2": "1"}],
+                "metadata": {"tabular_height": 120},
+                "warnings": [],
+                "observed_signature": {
+                    "output_type": "rows",
+                    "row_count": 1,
+                    "column_count": 2,
+                    "header_rows": [],
+                    "detail_rows_count": 1,
+                    "detail_sample": [{"C1": "Строка", "C2": "1"}],
+                    "detail_column_count": 2,
+                    "max_nonempty_cells": 2,
+                    "has_totals": False,
+                    "has_hierarchy": False,
+                    "artifacts_count": 0,
+                    "warnings": [],
+                    "observed_tokens": ["Строка", "1"],
+                    "observed_tokens_norm": ["строка", "1"],
+                    "metadata": {"tabular_height": 120},
+                },
+                "contract_validation": {"matched": True, "mismatch_code": "", "acceptable_with_verified": False, "score": 1.0},
+            }
+
+    runner = RetryRunner()
+    payload = await reports_mod.validate_report_contracts(
+        "ERP",
+        catalog,
+        runner,
+        StubFixtureProvider(),
+        stop_on_mismatch=True,
+        max_rows=20,
+        timeout_seconds=30,
+    )
+
+    assert payload["counts"]["matched"] == 1
+    assert runner.calls == [20, 120]
+
+
+@pytest.mark.asyncio
+async def test_validate_report_contracts_retries_with_larger_row_limit_after_truncated_semantic_mismatch(tmp_path):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP",
+        "/projects/ERP",
+        {
+            "reports": [
+                {
+                    "name": "Отчет",
+                    "aliases": [{"alias": "Отчет", "variant": "Основной", "confidence": 1.0}],
+                    "variants": [{"key": "Основной", "presentation": "Отчет"}],
+                    "strategies": [{"strategy": "raw_skd_probe_runner", "variant": "Основной", "priority": 50, "confidence": 0.8}],
+                    "output_contracts": [
+                        {
+                            "variant": "Основной",
+                            "source": "declared",
+                            "contract": {
+                                "output_type": "rows",
+                                "expects_detail_rows": True,
+                                "confidence": "high",
+                                "confidence_score": 0.82,
+                                "expected_columns": ["Период", "Сумма", "Налог"],
+                            },
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    class StubFixtureProvider:
+        async def build_fixture_pack(self, database):
+            return {"period": {"from": "2024-01-01", "to": "2024-12-31"}, "samples": {}, "context": {}, "diagnostics": {"source": "stub"}}
+
+        def plan_inputs(self, described, fixture_pack, *, period_override=None):
+            return {"period": fixture_pack["period"], "params": {}, "filters": {}, "context": {}, "missing": []}
+
+        def resolve_missing(self, missing_items, required_context, fixture_pack):
+            return {"params": {}, "context": {}, "unresolved": list(missing_items) + list(required_context)}
+
+    class RetryRunner:
+        def __init__(self):
+            self.calls = []
+
+        async def run_report(self, **kwargs):
+            self.calls.append(kwargs["max_rows"])
+            if len(self.calls) == 1:
+                return {
+                    "ok": True,
+                    "run_id": "first",
+                    "output_type": "rows",
+                    "columns": ["C1", "C2"],
+                    "rows": [
+                        {"C1": "Отчет", "C2": ""},
+                        {"C1": "Период", "C2": "Январь 2024 - Декабрь 2024"},
+                    ],
+                    "metadata": {"tabular_height": 40},
+                    "warnings": ["Result truncated by max_rows."],
+                    "observed_signature": {
+                        "output_type": "rows",
+                        "row_count": 2,
+                        "column_count": 2,
+                        "columns": ["C1", "C2"],
+                        "header_rows": ["Отчет"],
+                        "detail_rows_count": 1,
+                        "detail_sample": [{"C1": "Период", "C2": "Январь 2024 - Декабрь 2024"}],
+                        "detail_column_count": 2,
+                        "max_nonempty_cells": 2,
+                        "has_totals": False,
+                        "has_hierarchy": False,
+                        "artifacts_count": 0,
+                        "warnings": ["Result truncated by max_rows."],
+                        "observed_tokens": ["Отчет", "Период", "Январь 2024 - Декабрь 2024"],
+                        "observed_tokens_norm": ["отчет", "период", "январь 2024 декабрь 2024"],
+                        "metadata": {"tabular_height": 40},
+                    },
+                    "contract_validation": {"matched": False, "mismatch_code": "semantic_mismatch", "acceptable_with_verified": False, "score": 0.2},
+                }
+            return {
+                "ok": True,
+                "run_id": "second",
+                "output_type": "rows",
+                    "columns": ["C1", "C2"],
+                    "rows": [{"C1": "Период", "C2": "100"}],
+                    "metadata": {"tabular_height": 40},
+                    "warnings": [],
+                    "observed_signature": {
+                        "output_type": "rows",
+                        "row_count": 1,
+                        "column_count": 3,
+                        "columns": ["C1", "C2", "C3"],
+                        "header_rows": [],
+                        "detail_rows_count": 1,
+                        "detail_sample": [{"C1": "Период", "C2": "Сумма", "C3": "Налог"}],
+                        "detail_column_count": 3,
+                        "max_nonempty_cells": 3,
+                        "has_totals": False,
+                        "has_hierarchy": False,
+                        "artifacts_count": 0,
+                        "warnings": [],
+                        "observed_tokens": ["Период", "Сумма", "Налог"],
+                        "observed_tokens_norm": ["период", "сумма", "налог"],
+                        "metadata": {"tabular_height": 40},
+                    },
+                    "contract_validation": {"matched": True, "mismatch_code": "", "acceptable_with_verified": False, "score": 1.0},
+                }
+
+    runner = RetryRunner()
+    payload = await reports_mod.validate_report_contracts(
+        "ERP",
+        catalog,
+        runner,
+        StubFixtureProvider(),
+        stop_on_mismatch=True,
+        max_rows=5,
+        timeout_seconds=30,
+    )
+
+    assert payload["counts"]["matched"] == 1
+    assert runner.calls == [5, 40]
+
+
+@pytest.mark.asyncio
+async def test_validate_report_contracts_retries_candidate_periods_for_empty_results(tmp_path):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP",
+        "/projects/ERP",
+        {
+            "reports": [
+                {
+                    "name": "Отчет",
+                    "synonym": "Отчет",
+                    "aliases": [{"alias": "Отчет", "variant": "Основной", "confidence": 1.0}],
+                    "variants": [{"key": "Основной", "presentation": "Отчет"}],
+                    "strategies": [{"strategy": "bsp_variant_report_runner", "variant": "Основной", "priority": 50, "confidence": 0.8}],
+                    "output_contracts": [{"variant": "Основной", "source": "declared", "contract": {"output_type": "rows", "expects_detail_rows": True, "confidence": "medium", "expected_columns": []}}],
+                }
+            ]
+        },
+    )
+
+    class StubFixtureProvider:
+        async def build_fixture_pack(self, database):
+            return {
+                "period": {"from": "2025-05-01", "to": "2025-05-31"},
+                "candidate_periods": [
+                    {"from": "2025-05-01", "to": "2025-05-31"},
+                    {"from": "2024-04-01", "to": "2024-04-30"},
+                ],
+                "samples": {},
+                "context": {},
+                "diagnostics": {"source": "stub"},
+            }
+
+        def plan_inputs(self, described, fixture_pack, *, period_override=None):
+            return {"period": fixture_pack["period"], "params": {}, "filters": {}, "context": {}, "missing": []}
+
+        def resolve_missing(self, missing_items, required_context, fixture_pack):
+            return {"params": {}, "context": {}, "unresolved": list(missing_items) + list(required_context)}
+
+        def candidate_periods(self, fixture_pack, chosen_period):
+            return list(fixture_pack["candidate_periods"])
+
+    class RetryPeriodRunner:
+        def __init__(self):
+            self.calls = []
+
+        async def run_report(self, **kwargs):
+            self.calls.append(kwargs["period"])
+            if kwargs["period"]["from"] == "2025-05-01":
+                return {
+                    "ok": True,
+                    "run_id": "first",
+                    "output_type": "rows",
+                    "columns": [],
+                    "rows": [],
+                    "metadata": {"tabular_height": 0},
+                    "warnings": [],
+                    "observed_signature": {
+                        "output_type": "rows",
+                        "row_count": 0,
+                        "column_count": 0,
+                        "columns": [],
+                        "header_rows": [],
+                        "detail_rows_count": 0,
+                        "detail_sample": [],
+                        "detail_column_count": 0,
+                        "max_nonempty_cells": 0,
+                        "has_totals": False,
+                        "has_hierarchy": False,
+                        "artifacts_count": 0,
+                        "warnings": [],
+                        "observed_tokens": [],
+                        "observed_tokens_norm": [],
+                        "metadata": {"tabular_height": 0},
+                    },
+                }
+            return {
+                "ok": True,
+                "run_id": "second",
+                "output_type": "rows",
+                "columns": ["C1", "C2"],
+                "rows": [{"C1": "Строка", "C2": "1"}],
+                "metadata": {"tabular_height": 1},
+                "warnings": [],
+                "observed_signature": {
+                    "output_type": "rows",
+                    "row_count": 1,
+                    "column_count": 2,
+                    "columns": ["C1", "C2"],
+                    "header_rows": [],
+                    "detail_rows_count": 1,
+                    "detail_sample": [{"C1": "Строка", "C2": "1"}],
+                    "detail_column_count": 2,
+                    "max_nonempty_cells": 2,
+                    "has_totals": False,
+                    "has_hierarchy": False,
+                    "artifacts_count": 0,
+                    "warnings": [],
+                    "observed_tokens": ["Строка", "1"],
+                    "observed_tokens_norm": ["строка", "1"],
+                    "metadata": {"tabular_height": 1},
+                },
+            }
+
+    runner = RetryPeriodRunner()
+    payload = await reports_mod.validate_report_contracts(
+        "ERP",
+        catalog,
+        runner,
+        StubFixtureProvider(),
+        stop_on_mismatch=True,
+        max_rows=20,
+        timeout_seconds=30,
+    )
+
+    assert payload["counts"]["matched"] == 1
+    assert runner.calls == [
+        {"from": "2025-05-01", "to": "2025-05-31"},
+        {"from": "2024-04-01", "to": "2024-04-30"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_validate_report_contracts_retries_candidate_organization_filters_for_empty_results(tmp_path):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP",
+        "/projects/ERP",
+        {
+            "reports": [
+                {
+                    "name": "Отчет",
+                    "synonym": "Отчет",
+                    "aliases": [{"alias": "Отчет", "variant": "Основной", "confidence": 1.0}],
+                    "variants": [{"key": "Основной", "presentation": "Отчет"}],
+                    "strategies": [{"strategy": "raw_skd_dataset_query_runner", "variant": "Основной", "priority": 40, "confidence": 0.8}],
+                    "output_contracts": [{"variant": "Основной", "source": "declared", "contract": {"output_type": "rows", "expects_detail_rows": True, "confidence": "medium", "expected_columns": []}}],
+                }
+            ]
+        },
+    )
+
+    class StubFixtureProvider:
+        async def build_fixture_pack(self, database):
+            return {
+                "period": {"from": "2024-01-01", "to": "2024-12-31"},
+                "samples": {
+                    "organization": "Пустая организация",
+                    "organization_candidates": ["Пустая организация", "Рабочая организация"],
+                },
+                "context": {},
+                "diagnostics": {"source": "stub"},
+            }
+
+        def plan_inputs(self, described, fixture_pack, *, period_override=None):
+            return {
+                "period": fixture_pack["period"],
+                "params": {},
+                "filters": {"Организация": fixture_pack["samples"]["organization"]},
+                "context": {},
+                "missing": [],
+            }
+
+        def resolve_missing(self, missing_items, required_context, fixture_pack):
+            return {"params": {}, "context": {}, "unresolved": list(missing_items) + list(required_context)}
+
+        def candidate_filter_values(self, fixture_pack, filter_name, current_value):
+            if filter_name == "Организация":
+                return ["Рабочая организация"] if current_value == "Пустая организация" else []
+            return []
+
+    class RetryOrganizationRunner:
+        def __init__(self):
+            self.calls = []
+
+        async def run_report(self, **kwargs):
+            self.calls.append(dict(kwargs["filters"]))
+            if kwargs["filters"]["Организация"] == "Пустая организация":
+                return {
+                    "ok": True,
+                    "run_id": "first",
+                    "output_type": "rows",
+                    "columns": [],
+                    "rows": [],
+                    "metadata": {"tabular_height": 0},
+                    "warnings": [],
+                    "observed_signature": {
+                        "output_type": "rows",
+                        "row_count": 0,
+                        "column_count": 0,
+                        "columns": [],
+                        "header_rows": [],
+                        "detail_rows_count": 0,
+                        "detail_sample": [],
+                        "detail_column_count": 0,
+                        "max_nonempty_cells": 0,
+                        "has_totals": False,
+                        "has_hierarchy": False,
+                        "artifacts_count": 0,
+                        "warnings": [],
+                        "observed_tokens": [],
+                        "observed_tokens_norm": [],
+                        "metadata": {"tabular_height": 0},
+                    },
+                }
+            return {
+                "ok": True,
+                "run_id": "second",
+                "output_type": "rows",
+                "columns": ["C1", "C2"],
+                "rows": [{"C1": "Строка", "C2": "1"}],
+                "metadata": {"tabular_height": 1},
+                "warnings": [],
+                "observed_signature": {
+                    "output_type": "rows",
+                    "row_count": 1,
+                    "column_count": 2,
+                    "columns": ["C1", "C2"],
+                    "header_rows": [],
+                    "detail_rows_count": 1,
+                    "detail_sample": [{"C1": "Строка", "C2": "1"}],
+                    "detail_column_count": 2,
+                    "max_nonempty_cells": 2,
+                    "has_totals": False,
+                    "has_hierarchy": False,
+                    "artifacts_count": 0,
+                    "warnings": [],
+                    "observed_tokens": ["Строка", "1"],
+                    "observed_tokens_norm": ["строка", "1"],
+                    "metadata": {"tabular_height": 1},
+                },
+            }
+
+    runner = RetryOrganizationRunner()
+    payload = await reports_mod.validate_report_contracts(
+        "ERP",
+        catalog,
+        runner,
+        StubFixtureProvider(),
+        stop_on_mismatch=True,
+        max_rows=20,
+        timeout_seconds=30,
+    )
+
+    assert payload["counts"]["matched"] == 1
+    assert runner.calls == [
+        {"Организация": "Пустая организация"},
+        {"Организация": "Рабочая организация"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_validate_report_contracts_classifies_stable_header_only_as_context_gap(tmp_path):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP",
+        "/projects/ERP",
+        {
+            "reports": [
+                {
+                    "name": "Отчет",
+                    "synonym": "Отчет",
+                    "aliases": [{"alias": "Отчет", "variant": "Основной", "confidence": 1.0}],
+                    "variants": [{"key": "Основной", "presentation": "Отчет"}],
+                    "strategies": [{"strategy": "raw_skd_probe_runner", "variant": "Основной", "priority": 50, "confidence": 0.8}],
+                    "output_contracts": [{"variant": "Основной", "source": "declared", "contract": {"output_type": "rows", "expects_detail_rows": True, "confidence": "medium", "expected_columns": ["Количество к оформлению"]}}],
+                }
+            ]
+        },
+    )
+
+    class StubFixtureProvider:
+        async def build_fixture_pack(self, database):
+            return {"period": {"from": "2024-01-01", "to": "2024-12-31"}, "samples": {}, "context": {}, "diagnostics": {"source": "stub"}}
+
+        def plan_inputs(self, described, fixture_pack, *, period_override=None):
+            return {"period": fixture_pack["period"], "params": {}, "filters": {}, "context": {}, "missing": []}
+
+        def resolve_missing(self, missing_items, required_context, fixture_pack):
+            return {"params": {}, "context": {}, "unresolved": list(missing_items) + list(required_context)}
+
+        def candidate_periods(self, fixture_pack, chosen_period):
+            return [fixture_pack["period"]]
+
+    class HeaderOnlyRunner:
+        async def run_report(self, **kwargs):
+            return {
+                "ok": True,
+                "run_id": "header-only",
+                "output_type": "rows",
+                "columns": ["C1", "C2"],
+                "rows": [
+                    {"C1": "Параметры:", "C2": "Период:"},
+                    {"C1": "Отбор:", "C2": "Количество к оформлению Не равно \"0\""},
+                ],
+                "observed_signature": {
+                    "output_type": "rows",
+                    "row_count": 2,
+                    "column_count": 2,
+                    "columns": ["C1", "C2"],
+                    "header_rows": ["Параметры: | Период:", "Отбор: | Количество к оформлению Не равно \"0\""],
+                    "detail_rows_count": 0,
+                    "detail_sample": [],
+                    "detail_column_count": 0,
+                    "max_nonempty_cells": 2,
+                    "has_totals": False,
+                    "has_hierarchy": False,
+                    "artifacts_count": 0,
+                    "warnings": [],
+                    "observed_tokens": ["Параметры:", "Период:", "Отбор:", "Количество к оформлению Не равно \"0\""],
+                    "observed_tokens_norm": ["параметры", "период", "отбор", "количество к оформлению не равно 0"],
+                    "metadata": {},
+                },
+            }
+
+    payload = await reports_mod.validate_report_contracts(
+        "ERP",
+        catalog,
+        HeaderOnlyRunner(),
+        StubFixtureProvider(),
+        stop_on_mismatch=True,
+        max_rows=20,
+        timeout_seconds=30,
+    )
+
+    assert payload["counts"]["deferred_context"] == 1
+    assert payload["counts"]["deferred_engine_gap"] == 0
+    assert payload["items"][0]["root_cause_class"] == "fixture_gap"
+    assert payload["items"][0]["mismatch_code"] == "header_only"
+
+
+@pytest.mark.asyncio
+async def test_validate_report_contracts_resume_restarts_from_stopper_and_recomputes_counts(tmp_path, monkeypatch):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP",
+        "/projects/ERP",
+        {
+            "reports": [
+                {
+                    "name": "Отчет1",
+                    "aliases": [{"alias": "Отчет 1", "confidence": 1.0}],
+                    "strategies": [{"strategy": "raw_skd_runner", "variant": "", "priority": 50, "confidence": 0.8}],
+                    "output_contracts": [{"variant": "", "source": "declared", "contract": {"output_type": "rows", "expects_detail_rows": False, "confidence": "low"}}],
+                },
+                {
+                    "name": "Отчет2",
+                    "aliases": [{"alias": "Отчет 2", "confidence": 1.0}],
+                    "strategies": [{"strategy": "raw_skd_runner", "variant": "", "priority": 50, "confidence": 0.8}],
+                    "output_contracts": [{"variant": "", "source": "declared", "contract": {"output_type": "rows", "expects_detail_rows": False, "confidence": "low"}}],
+                },
+                {
+                    "name": "Отчет3",
+                    "aliases": [{"alias": "Отчет 3", "confidence": 1.0}],
+                    "strategies": [{"strategy": "raw_skd_runner", "variant": "", "priority": 50, "confidence": 0.8}],
+                    "output_contracts": [{"variant": "", "source": "declared", "contract": {"output_type": "rows", "expects_detail_rows": False, "confidence": "low"}}],
+                },
+            ]
+        },
+    )
+
+    class StubFixtureProvider:
+        async def build_fixture_pack(self, database):
+            return {"period": {"from": "2024-01-01", "to": "2024-12-31"}, "samples": {}, "context": {}, "diagnostics": {"source": "stub"}}
+
+    phase = {"value": 1}
+    calls: list[tuple[int, str]] = []
+
+    async def fake_validate_target(
+        database,
+        target,
+        described,
+        catalog,
+        runner,
+        fixture_provider,
+        fixture_pack,
+        *,
+        period,
+        max_rows,
+        timeout_seconds,
+    ):
+        report = str(target.get("report") or "")
+        calls.append((phase["value"], report))
+        if phase["value"] == 1 and report == "Отчет2":
+            return {
+                "database": database,
+                "report": report,
+                "variant": "",
+                "title": report,
+                "terminal_state": "deferred_engine_gap",
+                "strategy": "raw_skd_runner",
+                "run_id": "run-2a",
+                "contract_source": "declared",
+                "contract_hash": "hash",
+                "mismatch_code": "header_only",
+                "root_cause_class": "engine_gap",
+                "observed": {"row_count": 2},
+                "diagnostics": {"phase": 1},
+                "error": "",
+            }
+        return {
+            "database": database,
+            "report": report,
+            "variant": "",
+            "title": report,
+            "terminal_state": "matched",
+            "strategy": "raw_skd_runner",
+            "run_id": f"run-{phase['value']}-{report}",
+            "contract_source": "declared",
+            "contract_hash": "hash",
+            "mismatch_code": "",
+            "root_cause_class": "",
+            "observed": {"row_count": 1},
+            "diagnostics": {"phase": phase["value"]},
+            "error": "",
+        }
+
+    monkeypatch.setattr(reports_mod, "_validate_contract_target", fake_validate_target)
+
+    first = await reports_mod.validate_report_contracts(
+        "ERP",
+        catalog,
+        runner=object(),
+        fixture_provider=StubFixtureProvider(),
+        stop_on_mismatch=True,
+        max_rows=20,
+        timeout_seconds=30,
+    )
+
+    phase["value"] = 2
+    second = await reports_mod.validate_report_contracts(
+        "ERP",
+        catalog,
+        runner=object(),
+        fixture_provider=StubFixtureProvider(),
+        stop_on_mismatch=True,
+        resume_campaign_id=first["campaign_id"],
+        max_rows=20,
+        timeout_seconds=30,
+    )
+    campaign = catalog.get_validation_campaign(first["campaign_id"])
+
+    assert first["status"] == "stopped"
+    assert first["counts"]["matched"] == 1
+    assert first["counts"]["deferred_engine_gap"] == 1
+    assert first["resume_from_ordinal"] == 2
+    assert second["status"] == "completed"
+    assert second["counts"]["matched"] == 3
+    assert second["counts"]["deferred_engine_gap"] == 0
+    assert second["total"] == 3
+    assert second["processed_in_call"] == 2
+    assert calls == [
+        (1, "Отчет1"),
+        (1, "Отчет2"),
+        (2, "Отчет2"),
+        (2, "Отчет3"),
+    ]
+    assert campaign["status"] == "completed"
+    assert [item["terminal_state"] for item in campaign["items"]] == ["matched", "matched", "matched"]
+
+
+@pytest.mark.asyncio
+async def test_validate_report_contracts_resume_extends_limited_campaign_order(tmp_path, monkeypatch):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP",
+        "/projects/ERP",
+        {
+            "reports": [
+                {
+                    "name": f"Отчет{i}",
+                    "aliases": [{"alias": f"Отчет {i}", "confidence": 1.0}],
+                    "strategies": [{"strategy": "raw_skd_runner", "variant": "", "priority": 50, "confidence": 0.8}],
+                    "output_contracts": [{"variant": "", "source": "declared", "contract": {"output_type": "rows", "expects_detail_rows": False}}],
+                }
+                for i in range(1, 4)
+            ]
+        },
+    )
+
+    class StubFixtureProvider:
+        async def build_fixture_pack(self, database):
+            return {"period": {"from": "2024-01-01", "to": "2024-12-31"}, "samples": {}, "context": {}}
+
+    calls: list[str] = []
+
+    async def fake_validate_target(
+        database,
+        target,
+        described,
+        catalog,
+        runner,
+        fixture_provider,
+        fixture_pack,
+        *,
+        period,
+        max_rows,
+        timeout_seconds,
+    ):
+        report = str(target.get("report") or "")
+        calls.append(report)
+        return {
+            "database": database,
+            "report": report,
+            "variant": "",
+            "title": report,
+            "terminal_state": "matched",
+            "strategy": "raw_skd_runner",
+            "run_id": f"run-{report}",
+            "contract_source": "declared",
+            "contract_hash": "hash",
+            "mismatch_code": "",
+            "root_cause_class": "",
+            "observed": {"row_count": 1},
+            "diagnostics": {},
+            "error": "",
+        }
+
+    monkeypatch.setattr(reports_mod, "_validate_contract_target", fake_validate_target)
+
+    first = await reports_mod.validate_report_contracts(
+        "ERP",
+        catalog,
+        runner=object(),
+        fixture_provider=StubFixtureProvider(),
+        limit=1,
+    )
+    second = await reports_mod.validate_report_contracts(
+        "ERP",
+        catalog,
+        runner=object(),
+        fixture_provider=StubFixtureProvider(),
+        resume_campaign_id=first["campaign_id"],
+    )
+    campaign = catalog.get_validation_campaign(first["campaign_id"])
+
+    assert first["summary"]["total_targets"] == 1
+    assert second["summary"]["total_targets"] == 3
+    assert second["processed_in_call"] == 2
+    assert second["counts"]["matched"] == 3
+    assert len(campaign["order"]) == 3
+    assert calls == ["Отчет1", "Отчет2", "Отчет3"]
+
+
+@pytest.mark.asyncio
+async def test_validate_report_contracts_processes_resume_in_batches(tmp_path, monkeypatch):
+    catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
+    catalog.replace_analysis(
+        "ERP",
+        "/projects/ERP",
+        {
+            "reports": [
+                {
+                    "name": f"Отчет{i}",
+                    "aliases": [{"alias": f"Отчет {i}", "confidence": 1.0}],
+                    "strategies": [{"strategy": "raw_skd_runner", "variant": "", "priority": 50, "confidence": 0.8}],
+                    "output_contracts": [{"variant": "", "source": "declared", "contract": {"output_type": "rows", "expects_detail_rows": False}}],
+                }
+                for i in range(1, 5)
+            ]
+        },
+    )
+
+    class StubFixtureProvider:
+        async def build_fixture_pack(self, database):
+            return {"period": {"from": "2024-01-01", "to": "2024-12-31"}, "samples": {}, "context": {}}
+
+    async def fake_validate_target(
+        database,
+        target,
+        described,
+        catalog,
+        runner,
+        fixture_provider,
+        fixture_pack,
+        *,
+        period,
+        max_rows,
+        timeout_seconds,
+    ):
+        report = str(target.get("report") or "")
+        return {
+            "database": database,
+            "report": report,
+            "variant": "",
+            "title": report,
+            "terminal_state": "matched",
+            "strategy": "raw_skd_runner",
+            "run_id": f"run-{report}",
+            "contract_source": "declared",
+            "contract_hash": "hash",
+            "mismatch_code": "",
+            "root_cause_class": "",
+            "observed": {"row_count": 1},
+            "diagnostics": {},
+            "error": "",
+        }
+
+    monkeypatch.setattr(reports_mod, "_validate_contract_target", fake_validate_target)
+
+    first = await reports_mod.validate_report_contracts(
+        "ERP",
+        catalog,
+        runner=object(),
+        fixture_provider=StubFixtureProvider(),
+        max_targets_per_call=2,
+    )
+    second = await reports_mod.validate_report_contracts(
+        "ERP",
+        catalog,
+        runner=object(),
+        fixture_provider=StubFixtureProvider(),
+        resume_campaign_id=first["campaign_id"],
+        max_targets_per_call=2,
+    )
+
+    assert first["status"] == "paused"
+    assert first["stop_reason"] == "batch_limit"
+    assert first["processed_in_call"] == 2
+    assert first["summary"]["resume_from_ordinal"] == 3
+    assert second["status"] == "completed"
+    assert second["processed_in_call"] == 2
+    assert second["counts"]["matched"] == 4
+
+
+def test_merge_fixture_packs_prefers_refreshed_samples_and_keeps_candidates():
+    merged = reports_mod._merge_fixture_packs(
+        {
+            "period": {"from": "2024-01-01", "to": "2024-12-31"},
+            "candidate_periods": [{"from": "2024-01-01", "to": "2024-12-31"}],
+            "samples": {"employee": "Кузнецов", "organization": "Металл-Сервис"},
+            "context": {},
+            "diagnostics": {"source": "existing"},
+        },
+        {
+            "period": {"from": "2024-02-01", "to": "2024-02-29"},
+            "candidate_periods": [{"from": "2024-02-01", "to": "2024-02-29"}],
+            "samples": {"payroll_employee": "Белкина", "payroll_organization": "Андромеда Плюс"},
+            "context": {"object_description": {"_objectRef": "Document.X(1)"}},
+            "diagnostics": {"source": "refreshed"},
+        },
+    )
+
+    assert merged["period"] == {"from": "2024-02-01", "to": "2024-02-29"}
+    assert merged["candidate_periods"] == [
+        {"from": "2024-02-01", "to": "2024-02-29"},
+        {"from": "2024-01-01", "to": "2024-12-31"},
+    ]
+    assert merged["samples"]["employee"] == "Кузнецов"
+    assert merged["samples"]["payroll_employee"] == "Белкина"
+    assert merged["samples"]["payroll_organization"] == "Андромеда Плюс"
+    assert merged["context"]["object_description"] == {"_objectRef": "Document.X(1)"}
+    assert merged["diagnostics"]["resume_refresh"] is True
+
+
+def test_choose_output_contract_skips_value_locked_verified_contract():
+    described = {
+        "output_contracts": [
+            {
+                "source": "verified",
+                "contract": {
+                    "output_type": "rows",
+                    "expected_columns": ["Услуги переработчика", "Услуги переработчика", "15\xa0000,00"],
+                },
+            },
+            {
+                "source": "declared",
+                "contract": {
+                    "output_type": "rows",
+                    "expected_columns": ["Количество затрат", "Стоимость затрат"],
+                },
+            },
+        ]
+    }
+
+    chosen = reports_mod._choose_output_contract(described)
+
+    assert chosen["source"] == "declared"
+    assert chosen["contract"]["expected_columns"] == ["Количество затрат", "Стоимость затрат"]
+
+
 def test_select_doc_targets_uses_candidates_query_and_list_paths(tmp_path):
     catalog = ReportCatalog(tmp_path / "catalog.sqlite", tmp_path / "results")
     catalog.replace_analysis(
@@ -549,6 +1510,52 @@ def test_get_default_catalog_creates_singleton_when_missing(tmp_path, monkeypatc
     monkeypatch.setattr(reports_mod, "ReportCatalog", lambda: created)
 
     assert get_default_catalog() is created
+
+
+def test_classify_contract_attempts_prefers_primary_required_context_and_keeps_context_message():
+    root_cause, terminal_state, mismatch_code, error = reports_mod._classify_contract_attempts(
+        [
+            {
+                "strategy": "bsp_variant_report_runner",
+                "error_code": "required_context",
+                "message": "Для запуска отчета нужен существующий объект 1С.",
+                "required_context": [{"name": "object_description", "type": "_objectRef"}],
+            },
+            {
+                "strategy": "raw_skd_probe_runner",
+                "error_code": "unsupported_runtime",
+                "error": '{(14, 2)}: Таблица не найдена "ВТКандидаты"',
+            },
+        ]
+    )
+
+    assert root_cause == "missing_context"
+    assert terminal_state == "deferred_context"
+    assert mismatch_code == ""
+    assert error == "Для запуска отчета нужен существующий объект 1С."
+
+
+def test_classify_contract_attempts_prefers_earlier_unsupported_over_later_context():
+    root_cause, terminal_state, mismatch_code, error = reports_mod._classify_contract_attempts(
+        [
+            {
+                "strategy": "raw_skd_probe_runner",
+                "error_code": "unsupported_runtime",
+                "error": '{(14, 2)}: Таблица не найдена "ВТКандидаты"',
+            },
+            {
+                "strategy": "bsp_variant_report_runner",
+                "error_code": "required_context",
+                "message": "Для запуска отчета нужен существующий объект 1С.",
+                "required_context": [{"name": "object_description", "type": "_objectRef"}],
+            },
+        ]
+    )
+
+    assert root_cause == "unsupported_runtime"
+    assert terminal_state == "deferred_unsupported"
+    assert mismatch_code == ""
+    assert error == '{(14, 2)}: Таблица не найдена "ВТКандидаты"'
 
 
 def test_project_path_candidates_map_hostfs_to_workspace(monkeypatch):

@@ -10,6 +10,7 @@ from typing import Protocol
 from mcp.types import CallToolResult
 
 from .report_catalog import ReportCatalog, normalize_report_query
+from .report_contracts import build_observed_signature, build_verified_output_contract, compare_output_contract
 from .report_failure import classify_report_failure, status_from_error_code
 
 
@@ -215,8 +216,32 @@ class ReportRunner:
                 self.catalog.finish_run(database, run_id, status="error", diagnostics={"strategy": selected, "attempts": attempts}, error=executed.get("error", ""))
             return structured or executed
         result = self._normalize_payload(executed["data"], max_rows)
-        self.catalog.finish_run(database, run_id, status="done", result=result, diagnostics={"strategy": selected, "attempts": attempts})
-        return {"ok": True, "run_id": run_id, **result}
+        observed_signature = build_observed_signature(result)
+        expected_contract = described.get("output_contract") or {}
+        comparison = compare_output_contract(expected_contract, observed_signature) if expected_contract else {"matched": True, "mismatch_code": "", "acceptable_with_verified": False, "score": 1.0}
+        diagnostics = {
+            "strategy": selected,
+            "attempts": attempts,
+            "observed_signature": observed_signature,
+            "contract_validation": comparison,
+        }
+        if comparison.get("matched") or comparison.get("acceptable_with_verified"):
+            verified_contract = build_verified_output_contract(observed_signature, strategy_name=str(selected.get("strategy") or ""))
+            self.catalog.upsert_output_contract(
+                database,
+                described["report"]["report"],
+                described["report"].get("variant", ""),
+                "verified",
+                verified_contract,
+            )
+        self.catalog.finish_run(database, run_id, status="done", result=result, diagnostics=diagnostics)
+        return {
+            "ok": True,
+            "run_id": run_id,
+            "observed_signature": observed_signature,
+            "contract_validation": comparison,
+            **result,
+        }
 
     @staticmethod
     def _select_strategy(strategies: list[dict], requested: str) -> dict | None:
@@ -230,6 +255,7 @@ class ReportRunner:
                 "adapter_entrypoint",
                 "bsp_variant_report_runner",
                 "context_defaults_runner",
+                "raw_skd_dataset_query_runner",
                 "raw_skd_runner",
                 "raw_skd_probe_runner",
                 "form_artifact_runner",
@@ -252,6 +278,7 @@ class ReportRunner:
     ) -> str:
         report = described.get("report") or {}
         strategy_name = strategy.get("strategy")
+        standard_period_params = ReportRunner._standard_period_param_names(described)
         if strategy_name == "adapter_entrypoint" and strategy.get("details", {}).get("adapter") == "payroll_sheet":
             return _payroll_sheet_code(period, filters, params, max_rows)
         if strategy_name in {"bsp_variant_report_runner", "context_defaults_runner"}:
@@ -264,11 +291,28 @@ class ReportRunner:
                 params,
                 max_rows,
                 period_style=period_style,
+                standard_period_params=standard_period_params,
             )
         if strategy_name == "form_artifact_runner":
             return _form_artifact_code(report.get("report", ""), report.get("variant", ""), context or {}, max_rows)
         if strategy_name == "manager_no_arg_function_runner":
             return _manager_no_arg_function_code(report.get("report", ""), strategy.get("entrypoint", ""), max_rows)
+        if strategy_name == "raw_skd_dataset_query_runner":
+            details = strategy.get("details") if isinstance(strategy.get("details"), dict) else {}
+            return _raw_skd_dataset_query_code(
+                report.get("report", ""),
+                report.get("variant", ""),
+                ReportRunner._raw_skd_template_name(described, strategy),
+                str(details.get("query_text") or ""),
+                list(details.get("selected_fields") or []),
+                dict(details.get("field_titles") or {}),
+                period,
+                filters,
+                params,
+                max_rows,
+                period_style=period_style,
+                standard_period_params=standard_period_params,
+            )
         if strategy_name in {"raw_skd_runner", "raw_skd_probe_runner"}:
             return _raw_skd_code(
                 report.get("report", ""),
@@ -279,8 +323,29 @@ class ReportRunner:
                 params,
                 max_rows,
                 period_style=period_style,
+                standard_period_params=standard_period_params,
             )
         return "Результат = \"{}\";"
+
+    @staticmethod
+    def _standard_period_param_names(described: dict) -> list[str]:
+        names = ["ПериодОтчета"]
+        for item in described.get("params") or []:
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            normalized_name = normalize_report_query(name)
+            normalized_type = normalize_report_query(str(item.get("type_name") or ""))
+            if "standardperiod" in normalized_type or ("период" in normalized_name and "отчет" in normalized_name):
+                names.append(name)
+        unique: list[str] = []
+        seen: set[str] = set()
+        for name in names:
+            if name in seen:
+                continue
+            seen.add(name)
+            unique.append(name)
+        return unique
 
     @staticmethod
     def _missing_context_for_strategy(strategy: dict, context: dict) -> list[dict]:
@@ -362,6 +427,15 @@ def _bsl_identifier(value: object) -> str:
     return raw if re.fullmatch(r"[A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*", raw) else ""
 
 
+def _bsl_query_text_literal(value: object) -> str:
+    lines = [str(line).rstrip() for line in str(value or "").splitlines()]
+    if not lines:
+        return ""
+    if len(lines) == 1:
+        return _bsl_string(lines[0])
+    return "\n".join([_bsl_string(lines[0]), *[_bsl_string("|" + line) for line in lines[1:]]])
+
+
 def _bsl_date_literal(value: object, fallback: str) -> str:
     raw = str(value or fallback)
     parts = raw[:10].split("-")
@@ -402,6 +476,8 @@ def _user_skd_parameter_code(params: dict) -> str:
         name = str(raw_name or "").strip()
         if not name or value is None:
             continue
+        preamble, resolved_expr = _resolve_parameter_value_expr(name, value, index)
+        blocks.extend(preamble)
         if isinstance(value, (list, tuple)):
             variable = f"ПользовательскийПараметрСКД{index}"
             blocks.append(f"{variable} = Новый Массив;")
@@ -411,7 +487,7 @@ def _user_skd_parameter_code(params: dict) -> str:
                 blocks.append(f"{variable}.Добавить({_bsl_parameter_value_expr(name, item)});")
             blocks.append(_set_skd_parameter_block(name, variable))
             continue
-        blocks.append(_set_skd_parameter_block(name, _bsl_parameter_value_expr(name, value)))
+        blocks.append(_set_skd_parameter_block(name, resolved_expr))
     return "\n".join(blocks)
 
 
@@ -453,6 +529,44 @@ def _resolve_filter_value_expr(name: str, value: object, index: int) -> tuple[li
     return blocks, variable
 
 
+def _resolve_parameter_value_expr(name: str, value: object, index: int) -> tuple[list[str], str]:
+    expr = _bsl_parameter_value_expr(name, value)
+    normalized = normalize_report_query(name)
+    if normalized not in {"пользователь", "user"}:
+        return [], expr
+    if isinstance(value, (list, tuple, dict)) or value is None:
+        return [], expr
+    variable = f"ЗначениеПараметраСКД{index}"
+    search_var = f"СтрокаЗначенияПараметраСКД{index}"
+    query_var = f"ЗапросЗначенияПараметраСКД{index}"
+    scan_var = f"ВыборкаЗначенияПараметраСКД{index}"
+    blocks = [
+        f"{search_var} = {expr};",
+        f"{variable} = Неопределено;",
+        "Попытка",
+        f"    Если Не ПустаяСтрока({search_var}) Тогда",
+        f"        {query_var} = Новый Запрос;",
+        f'        {query_var}.Текст = "ВЫБРАТЬ РАЗРЕШЕННЫЕ ПЕРВЫЕ 1',
+        '|   Пользователи.Ссылка КАК Ссылка',
+        '|ИЗ',
+        '|   Справочник.Пользователи КАК Пользователи',
+        '|ГДЕ',
+        '|   Пользователи.Наименование = &ТочноеИмя',
+        '|    ИЛИ Пользователи.Наименование ПОДОБНО &Поиск";',
+        f'        {query_var}.УстановитьПараметр("ТочноеИмя", {search_var});',
+        f'        {query_var}.УстановитьПараметр("Поиск", "%" + {search_var} + "%");',
+        f"        {scan_var} = {query_var}.Выполнить().Выбрать();",
+        f"        Если {scan_var}.Следующий() Тогда",
+        f"            {variable} = {scan_var}.Ссылка;",
+        "        КонецЕсли;",
+        "    КонецЕсли;",
+        "Исключение",
+        f'    Предупреждения.Добавить("Parameter reference { _bsl_string(name) } not resolved: " + ОписаниеОшибки());',
+        "КонецПопытки;",
+    ]
+    return blocks, variable
+
+
 def _set_skd_filter_block(name: str, value_expr: str) -> str:
     safe_name = _bsl_string(name)
     return f"""
@@ -489,6 +603,165 @@ def _user_skd_filter_code(filters: dict) -> str:
         preamble, value_expr = _resolve_filter_value_expr(name, value, index)
         blocks.extend(preamble)
         blocks.append(_set_skd_filter_block(name, value_expr))
+    return "\n".join(blocks)
+
+
+def _query_parameter_set_block(name: str, value_expr: str) -> str:
+    safe_name = _bsl_string(name)
+    return f"""
+Попытка
+    Запрос.УстановитьПараметр("{safe_name}", {value_expr});
+Исключение
+    Предупреждения.Добавить("Query parameter {safe_name} not set: " + ОписаниеОшибки());
+КонецПопытки;
+""".strip()
+
+
+def _query_parameter_code(
+    period: dict,
+    filters: dict,
+    params: dict,
+    *,
+    period_style: str = "date",
+    standard_period_params: list[str] | None = None,
+) -> str:
+    date_from = _bsl_date_literal(period.get("from") or period.get("start"), "0001-01-01")
+    date_to = _bsl_date_literal(period.get("to") or period.get("end") or period.get("from") or period.get("start"), "0001-01-01")
+    period_value = "СтандартныйПериодЗапроса" if period_style == "standard_period" else "ДатаОкончанияПериода"
+    date_params = {
+        "НачалоПериода": "ДатаНачалаПериода",
+        "Дата": "ДатаОкончанияПериода",
+        "ТекущаяДата": "ДатаОкончанияПериода",
+        "ДатаНачала": "ДатаНачалаПериода",
+        "ДатаС": "ДатаНачалаПериода",
+        "ДатаОстатков": "ДатаОкончанияПериода",
+        "ПериодНачало": "ДатаНачалаПериода",
+        "КонецПериода": "ДатаОкончанияПериода",
+        "ДатаОкончания": "ДатаОкончанияПериода",
+        "ДатаПо": "ДатаОкончанияПериода",
+        "ПериодОкончание": "ДатаОкончанияПериода",
+        "Период": period_value,
+        "ПериодОтчета": "СтандартныйПериодЗапроса",
+        "СтандартныйПериод": "СтандартныйПериодЗапроса",
+        "День": "ДатаОкончанияПериода",
+    }
+    for name in standard_period_params or []:
+        clean_name = str(name or "").strip()
+        if clean_name:
+            date_params.setdefault(clean_name, "СтандартныйПериодЗапроса")
+    blocks = [
+        f"ДатаНачалаПериода = {date_from};",
+        f"ДатаОкончанияПериода = {date_to};",
+        "СтандартныйПериодЗапроса = ДатаОкончанияПериода;",
+        "Попытка",
+        "    СтандартныйПериодЗапроса = Новый СтандартныйПериод(ДатаНачалаПериода, ДатаОкончанияПериода);",
+        "Исключение",
+        "    СтандартныйПериодЗапроса = ДатаОкончанияПериода;",
+        "КонецПопытки;",
+    ]
+    for name, value in date_params.items():
+        blocks.append(_query_parameter_set_block(name, value))
+    for index, (raw_name, value) in enumerate((params or {}).items()):
+        name = str(raw_name or "").strip()
+        if not name or value is None:
+            continue
+        blocks.extend(_query_parameter_item_blocks(name, value, index))
+    offset = len(params or {})
+    for index, (raw_name, value) in enumerate((filters or {}).items(), start=offset):
+        name = str(raw_name or "").strip()
+        if not name or value is None:
+            continue
+        preamble, value_expr = _resolve_filter_value_expr(name, value, index)
+        blocks.extend(preamble)
+        blocks.extend(_query_parameter_item_blocks(name, value, index, value_expr=value_expr))
+    return "\n".join(blocks)
+
+
+def _query_parameter_item_blocks(name: str, value: object, index: int, *, value_expr: str | None = None) -> list[str]:
+    if value_expr is not None:
+        return [_query_parameter_set_block(name, value_expr)]
+    if isinstance(value, (list, tuple)):
+        variable = f"ПараметрЗапроса{index}"
+        blocks = [f"{variable} = Новый Массив;"]
+        for item in value:
+            if item is None:
+                continue
+            blocks.append(f"{variable}.Добавить({_bsl_parameter_value_expr(name, item)});")
+        blocks.append(_query_parameter_set_block(name, variable))
+        return blocks
+    preamble, resolved_expr = _resolve_parameter_value_expr(name, value, index)
+    return [*preamble, _query_parameter_set_block(name, resolved_expr)]
+
+
+def _dataset_query_row_field_block(field_name: str, column_title: str, row_key: str, index: int) -> str:
+    identifier = _bsl_identifier(field_name)
+    if not identifier:
+        return ""
+    row_identifier = _bsl_identifier(row_key)
+    if not row_identifier:
+        return ""
+    value_var = f"ЗначениеПоляЗапроса{index}"
+    type_var = f"ТипЗначенияПоляЗапроса{index}"
+    json_var = f"ЗначениеПоляJSON{index}"
+    return f"""
+    {value_var} = СтрокаТаблицы.{identifier};
+    Если {value_var} = Неопределено Тогда
+        {json_var} = "";
+    Иначе
+        {type_var} = ТипЗнч({value_var});
+        Если {type_var} = Тип("Строка")
+            Или {type_var} = Тип("Число")
+            Или {type_var} = Тип("Булево") Тогда
+            {json_var} = {value_var};
+        ИначеЕсли {type_var} = Тип("Дата") Тогда
+            {json_var} = Формат({value_var}, "ДЛФ=yyyy-MM-ddTHH:mm:ss");
+        Иначе
+            {json_var} = Строка({value_var});
+        КонецЕсли;
+    КонецЕсли;
+    СтрокаРезультата.Вставить("{_bsl_string(row_identifier)}", {json_var});
+""".strip()
+
+
+def _dataset_query_runtime_filter_code(filters: dict, *, start_index: int = 0) -> str:
+    if not isinstance(filters, dict):
+        filters = {}
+    blocks: list[str] = []
+    for index, (raw_name, value) in enumerate(filters.items(), start=start_index):
+        name = str(raw_name or "").strip()
+        if not name or value is None or isinstance(value, dict):
+            continue
+        safe_name = _bsl_string(name)
+        has_column_var = f"ЕстьПолеОтбораЗапроса{index}"
+        cell_var = f"ЗначениеПоляОтбораЗапроса{index}"
+        normalized_actual_var = f"НормализованноеПолеОтбораЗапроса{index}"
+        normalized_expected_var = f"НормализованноеЗначениеОтбораЗапроса{index}"
+        if isinstance(value, (list, tuple)):
+            continue
+        value_expr = _resolve_filter_value_expr(name, value, index)[1]
+        blocks.extend(
+            [
+                f'{has_column_var} = ИсходнаяТаблица.Колонки.Найти("{safe_name}") <> Неопределено;',
+                f"Если {has_column_var} Тогда",
+                f'    {cell_var} = СтрокаТаблицы["{safe_name}"];',
+                f"    Если {cell_var} <> {value_expr} Тогда",
+                f'        {normalized_actual_var} = "";',
+                f'        {normalized_expected_var} = "";',
+                "        Попытка",
+                f"            {normalized_actual_var} = СокрЛП(НРег(Строка({cell_var})));",
+                "        Исключение",
+                "        КонецПопытки;",
+                "        Попытка",
+                f"            {normalized_expected_var} = СокрЛП(НРег(Строка({value_expr})));",
+                "        Исключение",
+                "        КонецПопытки;",
+                f"        Если {normalized_actual_var} <> {normalized_expected_var} Тогда",
+                "            Продолжить;",
+                "        КонецЕсли;",
+                "    КонецЕсли;",
+                "КонецЕсли;",
+            ]
+        )
     return "\n".join(blocks)
 
 
@@ -650,12 +923,18 @@ def _bsp_variant_report_code(
     max_rows: int,
     *,
     period_style: str = "date",
+    standard_period_params: list[str] | None = None,
 ) -> str:
     report_ref = _bsl_string(report_name)
     variant_key = _bsl_string(variant)
     template_ref = _bsl_string(template_name or "ОсновнаяСхемаКомпоновкиДанных")
     payload = _bsl_string(json.dumps({"period": period, "filters": filters, "params": params, "max_rows": max_rows}, ensure_ascii=False))
-    parameter_code = _raw_skd_parameter_code(period or {}, params or {}, period_style=period_style)
+    parameter_code = _raw_skd_parameter_code(
+        period or {},
+        params or {},
+        period_style=period_style,
+        standard_period_params=standard_period_params,
+    )
     filter_code = _user_skd_filter_code(filters or {})
     return f"""
 // Generated by onec-mcp-universal BSP report runner.
@@ -706,6 +985,26 @@ def _bsp_variant_report_code(
             КонецЕсли;
         Иначе
             СсылкаВарианта = ВариантыОтчетов.ВариантОтчета(СсылкаОтчета, КлючВарианта);
+            Если СсылкаВарианта = Неопределено Тогда
+                ЗапросВарианта = Новый Запрос;
+                ЗапросВарианта.Текст =
+                    "ВЫБРАТЬ РАЗРЕШЕННЫЕ ПЕРВЫЕ 1
+                    |   ВариантыОтчетов.Ссылка КАК СсылкаВарианта
+                    |ИЗ
+                    |   Справочник.ВариантыОтчетов КАК ВариантыОтчетов
+                    |ГДЕ
+                    |   ВариантыОтчетов.Отчет = &Отчет
+                    |   И ВариантыОтчетов.КлючВарианта = &КлючВарианта
+                    |
+                    |УПОРЯДОЧИТЬ ПО
+                    |   ВариантыОтчетов.ПометкаУдаления";
+                ЗапросВарианта.УстановитьПараметр("Отчет", СсылкаОтчета);
+                ЗапросВарианта.УстановитьПараметр("КлючВарианта", КлючВарианта);
+                ВыборкаВарианта = ЗапросВарианта.Выполнить().Выбрать();
+                Если ВыборкаВарианта.Следующий() Тогда
+                    СсылкаВарианта = ВыборкаВарианта.СсылкаВарианта;
+                КонецЕсли;
+            КонецЕсли;
         КонецЕсли;
         Если СсылкаВарианта <> Неопределено Тогда
             ПараметрыФормирования.СсылкаВарианта = СсылкаВарианта;
@@ -791,11 +1090,17 @@ def _bsp_variant_report_code(
     КонецЕсли;
 КонецЦикла;
 
+КоличествоРисунков = 0;
+Попытка
+    КоличествоРисунков = ДокументРезультат.Рисунки.Количество();
+Исключение
+КонецПопытки;
 МетаданныеРезультата = Новый Структура;
 МетаданныеРезультата.Вставить("report", ИмяОтчета);
 МетаданныеРезультата.Вставить("variant", КлючВарианта);
 МетаданныеРезультата.Вставить("template", ИмяМакетаСКД);
 МетаданныеРезультата.Вставить("source", "bsp_variant_report_runner");
+МетаданныеРезультата.Вставить("drawing_count", КоличествоРисунков);
 МетаданныеРезультата.Вставить("tabular_height", ДокументРезультат.ВысотаТаблицы);
 МетаданныеРезультата.Вставить("tabular_width", ДокументРезультат.ШиринаТаблицы);
 МетаданныеРезультата.Вставить("params_json", ПараметрыЗапускаJSON);
@@ -933,12 +1238,18 @@ def _raw_skd_code(
     max_rows: int,
     *,
     period_style: str = "date",
+    standard_period_params: list[str] | None = None,
 ) -> str:
     report_ref = _bsl_string(report_name)
     variant_key = _bsl_string(variant)
     template_ref = _bsl_string(template_name or "ОсновнаяСхемаКомпоновкиДанных")
     payload = _bsl_string(json.dumps({"period": period, "filters": filters, "params": params, "max_rows": max_rows}, ensure_ascii=False))
-    parameter_code = _raw_skd_parameter_code(period or {}, params or {}, period_style=period_style)
+    parameter_code = _raw_skd_parameter_code(
+        period or {},
+        params or {},
+        period_style=period_style,
+        standard_period_params=standard_period_params,
+    )
     filter_code = _user_skd_filter_code(filters or {})
     return f"""
 // Generated by onec-mcp-universal raw SKD runner.
@@ -1013,13 +1324,112 @@ def _raw_skd_code(
     КонецЕсли;
 КонецЦикла;
 
+КоличествоРисунков = 0;
+Попытка
+    КоличествоРисунков = ДокументРезультат.Рисунки.Количество();
+Исключение
+КонецПопытки;
 МетаданныеРезультата = Новый Структура;
 МетаданныеРезультата.Вставить("report", ИмяОтчета);
 МетаданныеРезультата.Вставить("variant", КлючВарианта);
 МетаданныеРезультата.Вставить("template", ИмяМакетаСКД);
 МетаданныеРезультата.Вставить("source", "raw_skd_runner");
+МетаданныеРезультата.Вставить("drawing_count", КоличествоРисунков);
 МетаданныеРезультата.Вставить("tabular_height", ДокументРезультат.ВысотаТаблицы);
 МетаданныеРезультата.Вставить("tabular_width", ДокументРезультат.ШиринаТаблицы);
+МетаданныеРезультата.Вставить("params_json", ПараметрыЗапускаJSON);
+
+Результат = Новый Структура("columns, rows, totals, metadata, warnings", Колонки, Строки, Новый Структура, МетаданныеРезультата, Предупреждения);
+""".strip()
+
+
+def _raw_skd_dataset_query_code(
+    report_name: str,
+    variant: str,
+    template_name: str,
+    query_text: str,
+    selected_fields: list[str],
+    field_titles: dict[str, str],
+    period: dict,
+    filters: dict,
+    params: dict,
+    max_rows: int,
+    *,
+    period_style: str = "date",
+    standard_period_params: list[str] | None = None,
+) -> str:
+    report_ref = _bsl_string(report_name)
+    variant_key = _bsl_string(variant)
+    template_ref = _bsl_string(template_name or "ОсновнаяСхемаКомпоновкиДанных")
+    safe_query = _bsl_query_text_literal(query_text)
+    payload = _bsl_string(json.dumps({"period": period, "filters": filters, "params": params, "max_rows": max_rows}, ensure_ascii=False))
+    parameter_code = _query_parameter_code(
+        period or {},
+        filters or {},
+        params or {},
+        period_style=period_style,
+        standard_period_params=standard_period_params,
+    )
+    runtime_filter_code = _dataset_query_runtime_filter_code(filters or {}, start_index=len(params or {}))
+    columns_code = "\n".join(
+        f'Колонки.Добавить("{_bsl_string(field_titles.get(field, field))}");'
+        for field in selected_fields
+    )
+    row_code = "\n".join(
+        _dataset_query_row_field_block(field, str(field_titles.get(field, field) or field), field, index)
+        for index, field in enumerate(selected_fields)
+        if _bsl_identifier(field)
+    )
+    return f"""
+// Generated by onec-mcp-universal direct SKD dataset query runner.
+ПараметрыЗапускаJSON = "{payload}";
+ИмяОтчета = "{report_ref}";
+КлючВарианта = "{variant_key}";
+ИмяМакетаСКД = "{template_ref}";
+МаксимумСтрок = {int(max_rows or 0)};
+
+Предупреждения = Новый Массив;
+Запрос = Новый Запрос;
+Запрос.Текст = "{safe_query}";
+{parameter_code}
+
+ИсходнаяТаблица = Новый ТаблицаЗначений;
+Попытка
+    ИсходнаяТаблица = Запрос.Выполнить().Выгрузить();
+Исключение
+    Предупреждения.Добавить("Direct dataset query execution failed: " + ОписаниеОшибки());
+    ВызватьИсключение ОписаниеОшибки();
+КонецПопытки;
+
+Колонки = Новый Массив;
+{columns_code}
+
+Строки = Новый Массив;
+ВсегоПодходящихСтрок = 0;
+РезультатОбрезан = Ложь;
+Для Каждого СтрокаТаблицы Из ИсходнаяТаблица Цикл
+{runtime_filter_code}
+    ВсегоПодходящихСтрок = ВсегоПодходящихСтрок + 1;
+    Если МаксимумСтрок > 0 И ВсегоПодходящихСтрок > МаксимумСтрок Тогда
+        РезультатОбрезан = Истина;
+        Продолжить;
+    КонецЕсли;
+    СтрокаРезультата = Новый Структура;
+{row_code}
+    Строки.Добавить(СтрокаРезультата);
+КонецЦикла;
+Если РезультатОбрезан Тогда
+    Предупреждения.Добавить("Result truncated by max_rows.");
+КонецЕсли;
+
+МетаданныеРезультата = Новый Структура;
+МетаданныеРезультата.Вставить("report", ИмяОтчета);
+МетаданныеРезультата.Вставить("variant", КлючВарианта);
+МетаданныеРезультата.Вставить("template", ИмяМакетаСКД);
+МетаданныеРезультата.Вставить("source", "raw_skd_dataset_query_runner");
+МетаданныеРезультата.Вставить("dataset_mode", "direct_query");
+МетаданныеРезультата.Вставить("rowset_count", ИсходнаяТаблица.Количество());
+МетаданныеРезультата.Вставить("filtered_rowset_count", ВсегоПодходящихСтрок);
 МетаданныеРезультата.Вставить("params_json", ПараметрыЗапускаJSON);
 
 Результат = Новый Структура("columns, rows, totals, metadata, warnings", Колонки, Строки, Новый Структура, МетаданныеРезультата, Предупреждения);
@@ -1031,6 +1441,7 @@ def _raw_skd_parameter_code(
     params: dict | None = None,
     *,
     period_style: str = "date",
+    standard_period_params: list[str] | None = None,
 ) -> str:
     date_from = _bsl_date_literal(period.get("from") or period.get("start"), "0001-01-01")
     date_to = _bsl_date_literal(period.get("to") or period.get("end") or period.get("from") or period.get("start"), "0001-01-01")
@@ -1038,6 +1449,7 @@ def _raw_skd_parameter_code(
     date_params = {
         "НачалоПериода": "ДатаНачалаПериода",
         "Дата": "ДатаОкончанияПериода",
+        "ТекущаяДата": "ДатаОкончанияПериода",
         "ДатаНачала": "ДатаНачалаПериода",
         "ДатаС": "ДатаНачалаПериода",
         "ДатаОстатков": "ДатаОкончанияПериода",
@@ -1047,9 +1459,14 @@ def _raw_skd_parameter_code(
         "ДатаПо": "ДатаОкончанияПериода",
         "ПериодОкончание": "ДатаОкончанияПериода",
         "Период": period_value,
+        "ПериодОтчета": "СтандартныйПериодСКД",
         "СтандартныйПериод": "СтандартныйПериодСКД",
         "День": "ДатаОкончанияПериода",
     }
+    for name in standard_period_params or []:
+        clean_name = str(name or "").strip()
+        if clean_name:
+            date_params.setdefault(clean_name, "СтандартныйПериодСКД")
     blocks = [
         f"ДатаНачалаПериода = {date_from};",
         f"ДатаОкончанияПериода = {date_to};",
@@ -1092,8 +1509,23 @@ def _raw_skd_parameter_code(
 Попытка
     Для Каждого ЭлементПараметраСКД Из Настройки.ПараметрыДанных.Элементы Цикл
         ИмяПараметраСКД = НРег(Строка(ЭлементПараметраСКД.Параметр));
+        ТипПараметраСКД = Неопределено;
+        ЭтоСтандартныйПериодСКД = Ложь;
+        Попытка
+            ТипПараметраСКД = ТипЗнч(ЭлементПараметраСКД.Значение);
+            Если ТипПараметраСКД = Тип("СтандартныйПериод") Тогда
+                ЭтоСтандартныйПериодСКД = Истина;
+            КонецЕсли;
+        Исключение
+        КонецПопытки;
         Если (ИмяПараметраСКД = "пользователь" Или Найти(ИмяПараметраСКД, ".пользователь") > 0) И ТекущийПользовательСКД <> Неопределено Тогда
             ЭлементПараметраСКД.Значение = ТекущийПользовательСКД;
+            ЭлементПараметраСКД.Использование = Истина;
+        ИначеЕсли ЭтоСтандартныйПериодСКД
+            И (ИмяПараметраСКД = "период"
+                Или Найти(ИмяПараметраСКД, ".период") > 0
+                Или Найти(ИмяПараметраСКД, "период") > 0) Тогда
+            ЭлементПараметраСКД.Значение = СтандартныйПериодСКД;
             ЭлементПараметраСКД.Использование = Истина;
         ИначеЕсли Найти(ИмяПараметраСКД, "начал") > 0 Тогда
             ЭлементПараметраСКД.Значение = ДатаНачалаПериода;

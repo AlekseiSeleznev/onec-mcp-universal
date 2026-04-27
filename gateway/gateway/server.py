@@ -651,7 +651,9 @@ _REPORT_API_ACTIONS = {
     "describe": "describe_report",
     "run": "run_report",
     "validate-all": "validate_all_reports",
+    "validate-contracts": "validate_report_contracts",
     "result": "get_report_result",
+    "campaign": "get_report_validation_campaign",
     "explain": "explain_report_strategy",
 }
 
